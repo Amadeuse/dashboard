@@ -103,15 +103,15 @@ $existingImage = (string) ($old['existing_image'] ?? '');
 
           <div class="col-md-6">
             <div class="input-group">
-              <div class="form-floating">
-                <select class="form-select <?= $bad('product_type_id') ?>" id="product_type_id" name="product_type_id" required>
-                  <option value=""></option>
-                  <?php foreach ($productTypes as $pt): ?>
-                    <option value="<?= (int) $pt['id'] ?>" <?= $selected('product_type_id', (string) $pt['id']) ?>><?= e($pt['name']) ?></option>
-                  <?php endforeach; ?>
-                </select>
-                <label for="product_type_id"><?= t('prod.type') ?> *</label>
-              </div>
+              <select class="form-select <?= $bad('product_type_id') ?>" id="product_type_id" name="product_type_id" required
+                      data-ds-select data-search-placeholder="<?= t('table.search') ?>"
+                      data-no-results="<?= t('table.empty') ?>" data-clear-label="<?= t('cust.clear_field') ?>">
+                <option value=""></option>
+                <?php foreach ($productTypes as $pt): ?>
+                  <option value="<?= (int) $pt['id'] ?>" <?= $selected('product_type_id', (string) $pt['id']) ?>><?= e($pt['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+              <label for="product_type_id"><?= t('prod.type') ?> *</label>
               <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal"
                       data-bs-target="#productTypeModal" title="<?= t('prod.manage') ?>"><i class="bi bi-gear"></i></button>
             </div>
@@ -120,15 +120,15 @@ $existingImage = (string) ($old['existing_image'] ?? '');
 
           <div class="col-md-6">
             <div class="input-group">
-              <div class="form-floating">
-                <select class="form-select <?= $bad('unit_id') ?>" id="unit_id" name="unit_id" required>
-                  <option value=""></option>
-                  <?php foreach ($units as $u): ?>
-                    <option value="<?= (int) $u['id'] ?>" <?= $selected('unit_id', (string) $u['id']) ?>><?= e($u['name']) ?></option>
-                  <?php endforeach; ?>
-                </select>
-                <label for="unit_id"><?= t('prod.unit') ?> *</label>
-              </div>
+              <select class="form-select <?= $bad('unit_id') ?>" id="unit_id" name="unit_id" required
+                      data-ds-select data-search-placeholder="<?= t('table.search') ?>"
+                      data-no-results="<?= t('table.empty') ?>" data-clear-label="<?= t('cust.clear_field') ?>">
+                <option value=""></option>
+                <?php foreach ($units as $u): ?>
+                  <option value="<?= (int) $u['id'] ?>" <?= $selected('unit_id', (string) $u['id']) ?>><?= e($u['name']) ?></option>
+                <?php endforeach; ?>
+              </select>
+              <label for="unit_id"><?= t('prod.unit') ?> *</label>
               <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal"
                       data-bs-target="#unitModal" title="<?= t('prod.manage') ?>"><i class="bi bi-gear"></i></button>
             </div>
@@ -369,6 +369,7 @@ $scripts = ds_table_script() . <<<'HTML'
       option.value = data.id;
       option.textContent = data.name;
       select.value = data.id;
+      select.dsSelect?.refresh(); // new/renamed <option> + the fresh value, into the trigger
 
       let item = list.querySelector('[data-id="' + data.id + '"]');
       if (!item) {
@@ -458,7 +459,9 @@ $scripts = ds_table_script() . <<<'HTML'
 
       document.getElementById('name').value = row.dataset.name || '';
       document.getElementById('product_type_id').value = row.dataset.type || '';
+      document.getElementById('product_type_id').dsSelect?.refresh();
       document.getElementById('unit_id').value = row.dataset.unit || '';
+      document.getElementById('unit_id').dsSelect?.refresh();
       document.getElementById('unit_price').value = row.dataset.price || '';
       document.getElementById('remaining_qty').value = row.dataset.qty || '';
       document.getElementById('image').value = '';
@@ -491,6 +494,14 @@ $scripts = ds_table_script() . <<<'HTML'
       preview.classList.add('d-none');
       placeholder.classList.remove('d-none');
       labelSpan.textContent = submitBtn.dataset.labelAdd;
+      // In this engine, a form's 'reset' event fires *before* the browser has
+      // actually put the native <select>s back to their default value — a
+      // refresh() called synchronously here still reads the pre-reset value.
+      // One tick later, the reset has landed.
+      setTimeout(() => {
+        document.getElementById('product_type_id').dsSelect?.refresh();
+        document.getElementById('unit_id').dsSelect?.refresh();
+      }, 0);
     });
   })();
 </script>

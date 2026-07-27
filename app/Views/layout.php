@@ -18,6 +18,7 @@
   <link href="/assets/css/design-system.css" rel="stylesheet">
   <link href="/vendor/table/css/ds-table.css" rel="stylesheet">
   <link href="/vendor/floating-label/css/floating-label.css" rel="stylesheet">
+  <link href="/vendor/select/css/ds-select.css" rel="stylesheet">
   <!-- gb_symbols: icon set requested for project-specific glyphs (e.g. gb_rs) not in Bootstrap Icons -->
   <link href="/assets/fonts/gb/style.css" rel="stylesheet">
 </head>
@@ -35,6 +36,7 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/assets/js/app.js"></script>
 <script src="/vendor/floating-label/js/floating-label.js"></script>
+<script src="/vendor/select/js/ds-select.js"></script>
 <?= $scripts ?? '' ?>
 </body>
 </html>

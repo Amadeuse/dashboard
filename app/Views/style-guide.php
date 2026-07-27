@@ -132,6 +132,56 @@
   </div>
 </div>
 
+<!-- Select (ds-select) -->
+<div class="card ds-card mb-4">
+  <div class="card-body">
+    <h2 class="h5 fw-bold mb-3"><?= t('sg.select') ?></h2>
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="small text-secondary mb-2"><?= t('sg.select_single_label') ?></div>
+        <select class="form-select" id="sgCountry" data-ds-select
+                data-search-placeholder="<?= t('table.search') ?>"
+                data-no-results="<?= t('table.empty') ?>"
+                data-clear-label="<?= t('cust.clear_field') ?>">
+          <option value=""></option>
+          <option value="ge">Georgia</option>
+          <option value="de">Germany</option>
+          <option value="fr">France</option>
+          <option value="it">Italy</option>
+          <option value="es">Spain</option>
+          <option value="tr">Türkiye</option>
+          <option value="am" disabled>Armenia (disabled)</option>
+          <option value="az">Azerbaijan</option>
+        </select>
+        <label for="sgCountry"><?= t('sg.select_country_label') ?></label>
+      </div>
+
+      <div class="col-md-4">
+        <div class="small text-secondary mb-2"><?= t('sg.select_multi_label') ?></div>
+        <select class="form-select" id="sgSkills" multiple data-ds-select
+                data-search-placeholder="<?= t('table.search') ?>"
+                data-no-results="<?= t('table.empty') ?>">
+          <option value="php" selected>PHP</option>
+          <option value="js" selected>JavaScript</option>
+          <option value="css">CSS</option>
+          <option value="sql">SQL</option>
+          <option value="docker">Docker</option>
+        </select>
+        <label for="sgSkills"><?= t('sg.select_skills_label') ?></label>
+      </div>
+
+      <div class="col-md-4">
+        <div class="small text-secondary mb-2"><?= t('sg.select_disabled_label') ?></div>
+        <select class="form-select" id="sgDisabled" disabled data-ds-select>
+          <option>Option A</option>
+          <option>Option B</option>
+        </select>
+        <label for="sgDisabled"><?= t('sg.select_option_label') ?></label>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Radius token -->
 <div class="card ds-card">
   <div class="card-body">
