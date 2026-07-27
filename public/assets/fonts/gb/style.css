@@ -1,0 +1,162 @@
+@font-face {
+  font-family: 'gb_symbols';
+  src:  url('fonts/gb_symbols.eot?qu4scn');
+  src:  url('fonts/gb_symbols.eot?qu4scn#iefix') format('embedded-opentype'),
+    url('fonts/gb_symbols.ttf?qu4scn') format('truetype'),
+    url('fonts/gb_symbols.woff?qu4scn') format('woff'),
+    url('fonts/gb_symbols.svg?qu4scn#gb_symbols') format('svg');
+  font-weight: normal;
+  font-style: normal;
+  font-display: block;
+}
+
+i[class^="gb_"], i[class*=" gb_"] {
+  /* use !important to prevent issues with browser extensions that change fonts */
+  font-family: 'gb_symbols' !important;
+  speak-as: never;
+  font-style: normal;
+  font-weight: normal;
+  font-variant: normal;
+  text-transform: none;
+  line-height: 1;
+
+  /* Better Font Rendering =========== */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 2x size modifier */
+i[class^="gb_"].gb_2x, 
+i[class*=" gb_"].gb_2x {
+  font-size: 2em;
+}
+
+.gb_delivery:before {
+  content: "\e918";
+  position: relative;
+  top: 2px;
+}
+.gb_handbag:before {
+  content: "\e919";
+  position: relative;
+  top: 2px;
+}
+.gb_cart:before {
+  content: "\e917";
+  position: relative;
+  top: 2px;
+}
+.gb_bottom:before {
+  content: "\e913";
+  position: relative;
+  top: 2px;
+}
+.gb_top:before {
+  content: "\e914";
+  position: relative;
+  top: 2px;
+}
+.gb_left:before {
+  content: "\e915";
+  position: relative;
+  top: 2px;
+}
+.gb_right:before {
+  content: "\e916";
+  position: relative;
+  top: 2px;
+}
+.gb_ad:before {
+  content: "\e90a";
+  position: relative;
+  top: 2px;
+}
+.gb_digital:before {
+  content: "\e90b";
+  position: relative;
+  top: 2px;
+}
+.gb_laser:before {
+  content: "\e90c";
+  position: relative;
+  top: 2px;
+}
+.gb_lprinter:before {
+  content: "\e90d";
+  position: relative;
+  top: 2px;
+}
+.gb_offset:before {
+  content: "\e90e";
+  position: relative;
+  top: 2px;
+}
+.gb_promo:before {
+  content: "\e90f";
+  position: relative;
+  top: 2px;
+}
+.gb_screen:before {
+  content: "\e910";
+  position: relative;
+  top: 2px;
+}
+.gb_sublimation:before {
+  content: "\e911";
+  position: relative;
+  top: 2px;
+}
+.gb_uv:before {
+  content: "\e912";
+  position: relative;
+  top: 2px;
+}
+.gb_rs:before {
+  content: "\e901";
+  position: relative;
+  top: 2px;
+}
+.gb_rs-full:before {
+  content: "\e908";
+  position: relative;
+  top: 2px;
+}
+.gb_rs-line:before {
+  content: "\e909";
+  position: relative;
+}
+.gb_bcross:before {
+  content: "\e903";
+  position: relative;
+  top: 2px;
+}
+.gb_bcross-circle:before {
+  content: "\e904";
+  position: relative;
+  top: 2px;
+}
+.gb_orn1:before {
+  content: "\e905";
+  position: relative;
+  top: 2px;
+}
+.gb_orn2:before {
+  content: "\e906";
+  position: relative;
+  top: 2px;
+}
+.gb_orn3:before {
+  content: "\e907";
+  position: relative;
+  top: 2px;
+}
+.gb_bor:before {
+  content: "\e902";
+  position: relative;
+  top: 2px;
+}
+.gb_gel:before {
+  content: "\e900";
+  position: relative;
+  top: 2px; 
+}

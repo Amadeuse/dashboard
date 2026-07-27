@@ -1,0 +1,8 @@
+/.env
+/sql/
+
+# OSPanel-local config, not needed to run or deploy the project
+/.osp/
+
+# Project backup archive, not source
+/dashboard.loc.rar

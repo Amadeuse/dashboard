@@ -1,0 +1,127 @@
+/* ==========================================================================
+   floating-label — labels that sit on the input's border, plus a clear button.
+
+   From public/vendor/fl.loc (a Bootstrap demo page). Adapted for this project:
+   the two hard-coded colours now come from our tokens, so the label chip and
+   the focus ring follow --bs-primary and survive dark mode.
+
+   Markup:
+     <div class="form-floating">
+       <input class="form-control" id="x" placeholder=" ">   <-- placeholder=" " required
+       <label for="x">Label</label>
+       <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
+     </div>
+   The clear button is optional; its visibility is pure CSS (see the bottom).
+   ========================================================================== */
+
+:root {
+  /* was #005ae0 / #fff — both are theme decisions, not library ones */
+  --fl-primary-color: var(--bs-primary);
+  --fl-primary-rgb: var(--bs-primary-rgb);
+  --fl-bg-color: var(--bs-body-bg);
+  --fl-transition-duration: .25s;
+  --fl-label-padding: .375rem .75rem;
+  --fl-label-opacity: .5;
+}
+
+/* Keep the input at normal height instead of Bootstrap's taller floating variant */
+.form-floating > .form-control,
+.form-floating > .form-control:focus,
+.form-floating > .form-control:not(:placeholder-shown) {
+  height: auto;
+  min-height: 2.9rem;
+  padding: .375rem .75rem;
+  line-height: 1.5;
+  transition: padding-right var(--fl-transition-duration) ease-out;
+}
+
+.form-floating > .form-control-sm,
+.form-floating > .form-control-sm:focus,
+.form-floating > .form-control-sm:not(:placeholder-shown) {
+  min-height: 2rem;
+  padding: .25rem .5rem;
+  font-size: .875rem;
+}
+
+.form-floating > label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  padding: var(--fl-label-padding);
+  text-align: start;
+  white-space: nowrap;
+  pointer-events: none;
+  transform-origin: 0 0;
+  transform: translate(0, 0) scale(1);
+  transition: transform var(--fl-transition-duration) ease-out,
+              opacity var(--fl-transition-duration) ease-out,
+              color var(--fl-transition-duration) ease-out,
+              background-color var(--fl-transition-duration) ease-out;
+  opacity: var(--fl-label-opacity);
+  background-color: transparent;
+  display: flex;
+  align-items: center;
+}
+
+.form-floating > .form-control-sm ~ label {
+  padding: .25rem .5rem;
+  font-size: .875rem;
+}
+
+/* Floated: the label becomes a small chip punched into the border */
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label {
+  transform: translate(10px, -50%) scale(.9);
+  padding: 0 4px;
+  background-color: var(--fl-bg-color);
+  color: var(--fl-primary-color);
+  opacity: 1;
+  z-index: 5;
+  /* Was line-height:1. Georgian descenders (ვ ტ ღ ყ ჯ) hang well below the
+     baseline; at 1 they fell outside the chip's painted box and the input's
+     border line ran straight through them, so the text looked clipped.
+     1.4em covers ascender + descender of Noto Sans Georgian. */
+  line-height: 1.4;
+  height: auto;
+  align-items: center;
+}
+
+.form-floating > .form-control:focus {
+  border-color: var(--fl-primary-color);
+  box-shadow: 0 0 0 .15rem rgba(var(--fl-primary-rgb), .25);
+}
+
+/* A rejected field keeps its own colour — the floated chip must not repaint it primary */
+.form-floating > .form-control.is-invalid ~ label { color: var(--bs-danger); }
+.form-floating > .form-control.is-invalid:focus {
+  border-color: var(--bs-danger);
+  box-shadow: 0 0 0 .15rem rgba(var(--bs-danger-rgb), .25);
+}
+
+/* ---- Clear button ---- */
+.form-floating { position: relative; }
+
+.form-floating > .form-control:not(:placeholder-shown) { padding-right: 2.5rem; }
+
+.btn-clear {
+  position: absolute;
+  right: .75rem;
+  top: 50%;
+  transform: translateY(-50%) scale(.8);
+  z-index: 6;
+  display: none;
+  transition: transform .3s ease;
+  cursor: pointer;
+}
+.btn-clear:hover { transform: translateY(-50%) scale(.8) rotate(90deg); }
+
+/* Visibility is CSS, not JS: an empty input shows its placeholder, a filled one
+   does not. The original kept this in script.js with two extra listeners. */
+.form-floating > .form-control:not(:placeholder-shown) ~ .btn-clear { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .form-floating > label,
+  .form-floating > .form-control,
+  .btn-clear { transition: none; }
+}

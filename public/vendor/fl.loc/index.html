@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Bootstrap demo</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="container">
+    <div class="container text-center mt-5">
+      <h1>Hello, world!</h1>
+      <p>ეს არის Bootstrap 5-ის საწყისი გვერდი.</p>
+      <button type="button" class="btn btn-primary">ღილაკი</button>
+      <hr>
+    </div>
+
+    <!-- Normal Input with Floating Label -->
+    <div class="form-floating mb-3">
+      <input type="email" class="form-control" id="floatingInputEmail" placeholder=" ">
+      <label for="floatingInputEmail">Normal Input</label>
+      <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
+    </div>
+
+    <!-- Small Input with Floating Label -->
+    <div class="form-floating mb-3">
+      <input type="text" class="form-control form-control-sm" id="floatingInputSm" placeholder=" ">
+      <label for="floatingInputSm">Small Input (sm)</label>
+      <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
+    </div>
+
+    <!-- Input Group with Floating Label (Username) -->
+    <div class="input-group mb-3">
+      <div class="form-floating">
+        <input type="text" class="form-control" id="floatingInputUsername" placeholder=" ">
+        <label for="floatingInputUsername">Username</label>
+        <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
+      </div>
+      <span class="input-group-text">@</span>
+    </div>
+
+    <!-- Input Group with Floating Label (Recipient's username with Button) -->
+    <div class="input-group mb-3">
+      <div class="form-floating">
+        <input type="text" class="form-control" id="floatingInputRecipient" placeholder=" ">
+        <label for="floatingInputRecipient">Recipient's username</label>
+        <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
+      </div>
+      <button class="btn btn-outline-secondary" type="button" id="button-addon2">Button</button>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <script src="script.js"></script>
+  </body>
+</html>

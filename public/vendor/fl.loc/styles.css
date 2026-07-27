@@ -1,0 +1,103 @@
+/* Custom Floating Label Styles - On Border */
+
+:root {
+  --fl-primary-color: #005ae0;
+  --fl-primary-rgb: 0, 90, 224;
+  --fl-bg-color: #fff;
+  --fl-transition-duration: 0.25s;
+  --fl-label-float-size: 0.75rem;
+  --fl-label-padding: 0.375rem 0.75rem;
+  --fl-label-opacity: 0.5;
+}
+
+/* Override Bootstrap's form-floating specific styles to keep input height standard */
+.form-floating > .form-control,
+.form-floating > .form-control:focus,
+.form-floating > .form-control:not(:placeholder-shown) {
+  height: auto;
+  min-height: 48px; /* Standard Bootstrap input height */
+  padding: 0.375rem 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  transition: padding-right var(--fl-transition-duration) ease-out;
+}
+
+/* Override for SM inputs */
+.form-floating > .form-control-sm,
+.form-floating > .form-control-sm:focus,
+.form-floating > .form-control-sm:not(:placeholder-shown) {
+  min-height: 31px; /* Small Bootstrap input height */
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.form-floating > label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  padding: var(--fl-label-padding);
+  text-align: start;
+  white-space: nowrap;
+  pointer-events: none;
+  transform-origin: 0 0;
+  transform: translate(0, 0) scale(1);
+  transition: transform var(--fl-transition-duration) ease-out, 
+              opacity var(--fl-transition-duration) ease-out, 
+              color var(--fl-transition-duration) ease-out,
+              background-color var(--fl-transition-duration) ease-out;
+  opacity: var(--fl-label-opacity);
+  background-color: transparent;
+  will-change: transform, opacity;
+  display: flex;
+  align-items: center;
+}
+
+/* Padding adjustment for SM label */
+.form-floating > .form-control-sm ~ label {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label {
+  transform: translate(10px, -50%) scale(0.9);
+  padding: 0 3px;
+  background-color: var(--fl-bg-color);
+  color: var(--fl-primary-color);
+  opacity: 1;
+  z-index: 5;
+  line-height: 1;
+  height: auto;
+  align-items: flex-start;
+}
+
+.form-floating > .form-control:focus {
+  border-color: var(--fl-primary-color);
+  box-shadow: 0 0 0 0.15rem rgba(var(--fl-primary-rgb), 0.25);
+}
+
+/* Dynamic padding for clear button */
+.form-floating > .form-control:not(:placeholder-shown) {
+  padding-right: 2.5rem;
+}
+
+/* Clear Button Styles */
+.form-floating {
+  position: relative;
+}
+
+.btn-clear {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%) scale(0.8);
+  z-index: 6;
+  display: none;
+  transition: transform 0.3s ease;
+  cursor: pointer;
+}
+
+.btn-clear:hover {
+  transform: translateY(-50%) scale(0.8) rotate(90deg);
+}

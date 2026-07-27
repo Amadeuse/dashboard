@@ -1,0 +1,312 @@
+/* ==========================================================================
+   Nova — Dashboard Design System
+   Built on top of Bootstrap 5.3. Tokens live as CSS custom properties so
+   light/dark mode (data-bs-theme) and re-theming both work at runtime.
+   ========================================================================== */
+
+/* ---- Tokens ---- */
+:root,
+[data-bs-theme="light"],
+[data-bs-theme="dark"] {
+  --ds-font-sans: "Inter", "Noto Sans Georgian", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* One radius for every rectangular element — subtle, never pill */
+  --ds-radius: .5rem;
+  --bs-border-radius: var(--ds-radius);
+  --bs-border-radius-sm: var(--ds-radius);
+  --bs-border-radius-lg: var(--ds-radius);
+  --bs-border-radius-xl: var(--ds-radius);
+  --bs-border-radius-xxl: var(--ds-radius);
+  --bs-border-radius-2xl: var(--ds-radius);
+  --bs-border-radius-pill: var(--ds-radius);
+
+  --ds-sidebar-width: 248px;
+  --ds-topbar-height: 56px;
+  --ds-sidebar-bg: #0f1425;
+  --ds-sidebar-border: #1d2440;
+
+  /* Brand accent overrides Bootstrap's default blue */
+  --bs-primary: #6366f1;
+  --bs-primary-rgb: 99, 102, 241;
+  --bs-primary-text-emphasis: #4f46e5;
+  --bs-primary-bg-subtle: #e5e4fd;
+  --bs-primary-border-subtle: #c9c8fb;
+  --bs-link-color: var(--bs-primary);
+  --bs-link-color-rgb: var(--bs-primary-rgb);
+  --bs-link-hover-color: #4f46e5;
+  --bs-link-hover-color-rgb: 79, 70, 229;
+
+  --bs-body-font-family: var(--ds-font-sans);
+  --ds-shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+  --ds-shadow-md: 0 10px 28px -8px rgba(15, 23, 42, .12);
+}
+
+[data-bs-theme="dark"] {
+  --bs-primary-bg-subtle: #241f5c;
+  --bs-primary-border-subtle: #362f82;
+  --ds-shadow-md: 0 10px 28px -8px rgba(0, 0, 0, .5);
+}
+
+html { font-size: 90%; }
+
+body {
+  font-family: var(--ds-font-sans);
+  background-color: var(--bs-tertiary-bg);
+}
+
+/* ---- Primary color propagation (Bootstrap 5.3 bakes literal hex into
+   component-local vars, so the handful of components in use get an
+   explicit override here instead of a full Sass rebuild). ---- */
+.btn-primary {
+  --bs-btn-bg: var(--bs-primary);
+  --bs-btn-border-color: var(--bs-primary);
+  --bs-btn-hover-bg: var(--bs-link-hover-color);
+  --bs-btn-hover-border-color: var(--bs-link-hover-color);
+  --bs-btn-active-bg: var(--bs-link-hover-color);
+  --bs-btn-active-border-color: var(--bs-link-hover-color);
+  --bs-btn-disabled-bg: var(--bs-primary);
+  --bs-btn-disabled-border-color: var(--bs-primary);
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--bs-primary);
+  --bs-btn-border-color: var(--bs-primary);
+  --bs-btn-hover-bg: var(--bs-primary);
+  --bs-btn-hover-border-color: var(--bs-primary);
+  --bs-btn-active-bg: var(--bs-primary);
+  --bs-btn-active-border-color: var(--bs-primary);
+}
+.bg-primary { background-color: var(--bs-primary) !important; }
+.text-primary { color: var(--bs-primary) !important; }
+.border-primary { border-color: var(--bs-primary) !important; }
+.nav-pills .nav-link.active { background-color: var(--bs-primary); }
+.form-check-input:checked { background-color: var(--bs-primary); border-color: var(--bs-primary); }
+.form-switch .form-check-input:checked { background-color: var(--bs-primary); border-color: var(--bs-primary); }
+.progress-bar { background-color: var(--bs-primary); }
+.page-link { color: var(--bs-primary); }
+.page-item.active .page-link { background-color: var(--bs-primary); border-color: var(--bs-primary); }
+.dropdown-item.active, .dropdown-item:active { background-color: var(--bs-primary); }
+
+/* ---- Layout shell ---- */
+.ds-sidebar {
+  width: var(--ds-sidebar-width);
+  /* !important: Bootstrap's .offcanvas-lg forces transparent above the lg breakpoint */
+  background: var(--ds-sidebar-bg) !important;
+  color: #cbd5e1;
+  border-right: 1px solid var(--ds-sidebar-border);
+}
+.ds-sidebar .offcanvas-header,
+.ds-sidebar .offcanvas-body { padding: 0; }
+.ds-sidebar-inner { display: flex; flex-direction: column; height: 100%; padding: 0 .75rem .75rem; }
+
+.ds-brand-row {
+  /* height matches the topbar so both bottom borders land on the same line */
+  height: var(--ds-topbar-height);
+  margin: 0 -.75rem 2rem;  /* cancel .ds-sidebar-inner padding so the rule spans full width */
+  padding: 0 1.25rem;
+  border-bottom: 1px solid var(--ds-sidebar-border);
+}
+.ds-brand {
+  display: flex; align-items: center; gap: .6rem; color: #fff; text-decoration: none;
+}
+.ds-brand-mark {
+  width: 32px; height: 32px; border-radius: var(--ds-radius);
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: .95rem; color: #fff; flex-shrink: 0;
+}
+.ds-brand-name { font-weight: 700; font-size: 1rem; letter-spacing: -.01em; line-height: 1.2; }
+.ds-brand-meta { font-size: .75rem; color: #6c7691; font-weight: 500; }
+
+.ds-nav { display: flex; flex-direction: column; gap: .1rem; flex: 1; }
+.ds-nav-link {
+  display: flex; align-items: center; gap: .7rem;
+  padding: .5rem .6rem; border-radius: var(--ds-radius);
+  color: #c3c9d9; text-decoration: none; font-size: .87rem; font-weight: 500;
+  transition: background-color .15s ease, color .15s ease;
+}
+.ds-nav-link i { font-size: 1rem; width: 1.15rem; text-align: center; color: var(--bs-primary); }
+.ds-nav-link:hover { background: rgba(255,255,255,.05); color: #fff; }
+.ds-nav-link:hover i { animation: ds-vibrate .35s ease-in-out; }
+
+@keyframes ds-vibrate {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-1.5px) rotate(-7deg); }
+  40% { transform: translateX(1.5px) rotate(7deg); }
+  60% { transform: translateX(-1px) rotate(-5deg); }
+  80% { transform: translateX(1px) rotate(5deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ds-nav-link:hover i { animation: none; }
+}
+.ds-nav-link.active { background: rgba(99,102,241,.15); color: #fff; }
+
+/* ---- Second level: plain <details>, no JS ---- */
+.ds-nav-group { display: flex; flex-direction: column; gap: .1rem; interpolate-size: allow-keywords; }
+.ds-nav-group > summary { cursor: pointer; list-style: none; }        /* Firefox marker */
+.ds-nav-group > summary::-webkit-details-marker { display: none; }    /* Safari marker */
+.ds-nav-caret {
+  margin-left: auto; font-size: .7rem !important; color: #6c7691 !important;
+  transition: transform .15s ease;
+}
+.ds-nav-group[open] > summary .ds-nav-caret { transform: rotate(180deg); }
+/* Slide-down without JS. interpolate-size is what makes height:auto animatable;
+   content-visibility must transition with allow-discrete or the panel vanishes
+   instantly on close instead of sliding shut.
+   Engines without ::details-content just toggle instantly — nothing breaks. */
+.ds-nav-group::details-content {
+  display: flex; flex-direction: column; gap: .1rem;
+  block-size: 0; overflow: hidden;
+  transition: block-size .2s ease, content-visibility .2s allow-discrete;
+}
+.ds-nav-group[open]::details-content { block-size: auto; }
+/* Must sit after the rule above — a media query adds no specificity, so an
+   earlier override would simply lose to it. */
+@media (prefers-reduced-motion: reduce) {
+  .ds-nav-group::details-content,
+  .ds-nav-caret { transition: none; }
+}
+.ds-nav-link:hover .ds-nav-caret { animation: none; }                 /* only the leading icon vibrates */
+/* Sub-items line up under the parent label, not under its icon */
+.ds-nav-sublink { padding-left: 2.3rem; font-size: .83rem; color: #9aa3b8; }
+
+/* ---- Collapsible card (<details class="card">) — same trick, content-area colours ---- */
+.card > summary { cursor: pointer; list-style: none; }
+.card > summary::-webkit-details-marker { display: none; }
+.ds-details-caret { transition: transform .15s ease; }
+details[open] > summary .ds-details-caret { transform: rotate(180deg); }
+.card::details-content {
+  block-size: 0; overflow: hidden;
+  transition: block-size .2s ease, content-visibility .2s allow-discrete;
+}
+details.card[open]::details-content { block-size: auto; }
+details.card { interpolate-size: allow-keywords; }
+@media (prefers-reduced-motion: reduce) {
+  .card::details-content, .ds-details-caret { transition: none; }
+}
+.ds-nav-section {
+  /* Inter has no Georgian glyphs, so Latin renders in Inter (uppercased below) while
+     Georgian falls through to BPG Arial Caps, whose glyphs are already Mtavruli-shaped.
+     text-transform is a no-op on Georgian — browsers never map Mkhedruli to Mtavruli. */
+  font-family: "Inter", "BPG Arial Caps", "Noto Sans Georgian", sans-serif;
+  text-transform: uppercase; font-size: .68rem; font-weight: 700;
+  letter-spacing: .08em; color: #6c7691;
+  /* margin:0 kills the <p> default margin-bottom, which pushed the label toward
+     the group above it. Space above must stay clearly larger than space below. */
+  margin: 0;
+  line-height: 1;
+  /* left padding is larger than .ds-nav-link's .6rem so the label sits off the
+     item column and reads as a divider rather than another entry */
+  padding: 1.35rem .6rem .45rem 1rem;
+}
+.ds-nav-section:first-child { padding-top: .45rem; }
+
+.ds-sidebar-footer {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .75rem; border-radius: var(--ds-radius);
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--ds-sidebar-border);
+}
+
+.ds-main { margin-left: 0; }
+@media (min-width: 992px) {
+  .ds-main { margin-left: var(--ds-sidebar-width); transition: margin-left .2s ease; }
+  .ds-sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh; overflow-y: auto; z-index: 1030;
+    transition: transform .2s ease;
+  }
+  /* ponytail: collapse fully hides the rail; swap for an icon-only rail if labels-on-hover is wanted */
+  .ds-sidebar-collapsed .ds-sidebar { transform: translateX(-100%); }
+  .ds-sidebar-collapsed .ds-main { margin-left: 0; }
+}
+
+.ds-topbar {
+  height: var(--ds-topbar-height);
+  position: sticky; top: 0; z-index: 1020;
+  background: var(--bs-body-bg);
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+/* Borderless icon button used across the topbar */
+.ds-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; flex-shrink: 0;
+  padding: 0; border: 0; border-radius: var(--ds-radius);
+  background: transparent; color: var(--bs-secondary-color);
+  font-size: 1.05rem; line-height: 1; text-decoration: none;
+  transition: background-color .15s ease, color .15s ease;
+}
+.ds-icon-btn:hover { background: var(--bs-tertiary-bg); color: var(--bs-emphasis-color); }
+.ds-collapse-icon { transition: transform .2s ease; }
+.ds-sidebar-collapsed .ds-collapse-icon { transform: rotate(180deg); }
+
+.ds-flag { border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, .12); }
+
+.ds-search { max-width: 340px; border-radius: var(--ds-radius); overflow: hidden; }
+.ds-search .input-group-text,
+.ds-search .form-control {
+  background: var(--bs-tertiary-bg);
+  border: 0; box-shadow: none;
+}
+.ds-search .input-group-text { color: var(--bs-secondary-color); padding-right: 0; }
+.ds-search .form-control { padding-left: .5rem; font-size: .9rem; }
+
+.ds-user-btn { border: 0; padding: .25rem .5rem; border-radius: var(--ds-radius); }
+.ds-user-btn:hover { background: var(--bs-tertiary-bg); }
+.ds-caret { font-size: .7rem; color: var(--bs-secondary-color); }
+
+.ds-avatar-soft {
+  background: var(--bs-primary-bg-subtle) !important;
+  color: var(--bs-primary) !important;
+  width: 30px; height: 30px; font-size: .78rem;
+}
+
+.ds-dot {
+  position: absolute; top: 6px; right: 7px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--bs-danger);
+  border: 2px solid var(--bs-body-bg);
+}
+
+.ds-content { padding: 1.75rem; }
+
+/* ---- Components ---- */
+.ds-card {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  box-shadow: var(--ds-shadow-sm);
+}
+
+.ds-icon-tile {
+  width: 46px; height: 46px; border-radius: var(--ds-radius);
+  display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+}
+
+.ds-avatar {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 600; font-size: .8rem; color: #fff; flex-shrink: 0;
+}
+
+.ds-timeline { position: relative; margin: 0; padding: 0; list-style: none; }
+.ds-timeline li { position: relative; padding-left: 1.75rem; padding-bottom: 1.25rem; }
+.ds-timeline li:last-child { padding-bottom: 0; }
+.ds-timeline li::before {
+  content: ""; position: absolute; left: 4px; top: 4px;
+  width: 9px; height: 9px; border-radius: 50%; background: var(--bs-primary);
+}
+.ds-timeline li::after {
+  content: ""; position: absolute; left: 8px; top: 16px; bottom: 0;
+  width: 1px; background: var(--bs-border-color);
+}
+.ds-timeline li:last-child::after { display: none; }
+
+.ds-swatch {
+  height: 72px; border-radius: var(--ds-radius);
+  border: 1px solid var(--bs-border-color);
+}
+
+.ds-theme-toggle { width: 38px; height: 38px; padding: 0; }
+[data-bs-theme="dark"] .ds-icon-sun { display: inline-block; }
+[data-bs-theme="dark"] .ds-icon-moon { display: none; }
+[data-bs-theme="light"] .ds-icon-sun { display: none; }
+[data-bs-theme="light"] .ds-icon-moon { display: inline-block; }

@@ -1,0 +1,46 @@
+[
+  {
+    "section": "nav.main",
+    "items": [
+      { "label": "nav.dashboard", "icon": "bi-grid-1x2-fill", "url": "/" },
+      {
+        "label": "nav.analytics", "icon": "bi-bar-chart-fill",
+        "children": [
+          { "label": "nav.analytics_overview", "url": "#" },
+          { "label": "nav.analytics_reports",  "url": "#" },
+          { "label": "nav.analytics_traffic",  "url": "#" }
+        ]
+      },
+      {
+        "label": "nav.orders", "icon": "bi-cart3",
+        "children": [
+          { "label": "nav.orders_all",     "url": "#" },
+          { "label": "nav.orders_pending", "url": "#" },
+          { "label": "nav.orders_new",     "url": "#" }
+        ]
+      },
+      { "label": "nav.customers", "icon": "bi-people-fill", "url": "/customers" },
+      {
+        "label": "nav.products", "icon": "bi-box-seam",
+        "children": [
+          { "label": "nav.products_list",       "url": "#" },
+          { "label": "nav.products_categories", "url": "#" }
+        ]
+      }
+    ]
+  },
+  {
+    "section": "nav.system",
+    "items": [
+      { "label": "nav.design_system", "icon": "bi-palette-fill", "url": "/style-guide" },
+      {
+        "label": "nav.settings", "icon": "bi-gear-fill",
+        "children": [
+          { "label": "nav.settings_general", "url": "#" },
+          { "label": "nav.settings_users",   "url": "#" }
+        ]
+      },
+      { "label": "nav.help", "icon": "bi-question-circle-fill", "url": "#" }
+    ]
+  }
+]

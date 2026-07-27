@@ -1,0 +1,7 @@
+RewriteEngine On
+
+# Existing files and folders (assets) are served directly; everything else
+# goes to the front controller.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [QSA,L]

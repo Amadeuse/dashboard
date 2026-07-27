@@ -1,0 +1,159 @@
+/* ==========================================================================
+   ds-table — styles for the client-side table (see assets/js/ds-table.js)
+
+   The sortable-header block comes from vendor/table; the hard-coded #0d6efd
+   is the one thing changed, so the arrows follow --bs-primary and dark mode.
+   ========================================================================== */
+
+/* ---- The panel itself: a bordered box that sits inside a card, never *as* the card ---- */
+.ds-table {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  background: var(--bs-body-bg);
+}
+
+/* ---- Toolbar: search left, page size right ---- */
+.ds-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem;
+}
+.ds-table-search { flex: 1 1 16rem; }
+.ds-table-search .form-control {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  background: var(--bs-body-bg);
+  box-shadow: none;
+  padding: .5rem .75rem;
+}
+.ds-table-search .form-control:focus {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .12);
+}
+
+.ds-table-per-page {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: 0;
+  white-space: nowrap;
+  font-size: .85rem;
+  color: var(--bs-secondary-color);
+}
+.ds-table-per-page select { width: auto; }
+
+/* ---- One type size and one weight for the whole table ---- */
+.ds-table th,
+.ds-table td,
+.ds-table td .badge,
+.ds-table td code,
+.ds-table td small,
+.ds-table td .small { font-size: .875rem; }
+.ds-table th,
+.ds-table td,
+.ds-table td * { font-weight: 400; }
+
+/* Keeps the grid off the panel border, matching the toolbar and footer padding */
+.ds-table .table-responsive { padding: 0 1rem; }
+
+/* Rows that open the edit form on click (see customers.php) — cursor is the
+   only affordance needed since table-hover already highlights the row. */
+.ds-row-editable { cursor: pointer; }
+
+/* ---- Grid lines on every cell, header included ---- */
+.ds-table .table {
+  margin: 0;
+  border-color: var(--bs-border-color);
+}
+.ds-table .table > :not(caption) > * > * {
+  border: 1px solid var(--bs-border-color);
+  padding: .65rem .75rem;
+  background-image: none; /* cancel Bootstrap's hover/stripe shadow so lines stay crisp */
+}
+.ds-table .table > thead > tr > th { border-bottom-width: 1px; }
+/* The grid already separates the rows; a second hover tint on top of it reads as noise */
+.ds-table .table-hover > tbody > tr:hover > * { background-color: var(--bs-tertiary-bg); }
+
+/* ---- Sortable headers ---- */
+.ds-table th.sortable-header {
+  user-select: none;
+  white-space: nowrap;
+  position: relative;
+  padding-right: 1.5rem !important;
+  cursor: pointer;
+  transition: background-color .2s ease;
+}
+.ds-table th.sortable-header:hover { background-color: rgba(var(--bs-emphasis-color-rgb), .05); }
+.ds-table th.sortable-header:focus-visible { outline: 2px solid var(--bs-primary); outline-offset: -2px; }
+
+.ds-table th.sortable-header::after {
+  content: '⇅';
+  position: absolute;
+  right: .5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: .75rem;
+  opacity: .4;
+  transition: opacity .2s ease;
+}
+.ds-table th.sortable-header:hover::after { opacity: .7; }
+.ds-table th.sort-asc::after  { content: '↑'; opacity: 1; color: var(--bs-primary); }
+.ds-table th.sort-desc::after { content: '↓'; opacity: 1; color: var(--bs-primary); }
+
+/* ---- Footer: row count left, pager right ---- */
+.ds-table-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem;
+}
+/* Separate rounded boxes rather than Bootstrap's joined strip, with the active
+   page filled green — matching the pager the old system used. */
+.ds-table-footer .pagination {
+  flex-wrap: wrap;
+  gap: .25rem;
+  --ds-page-active: var(--bs-primary);
+}
+.ds-table-footer .page-link {
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  color: var(--bs-primary);
+  background: var(--bs-body-bg);
+  padding: .3rem .7rem;
+  min-width: 2.1rem;
+  text-align: center;
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.ds-table-footer .page-link:hover {
+  background: var(--bs-tertiary-bg);
+  border-color: var(--bs-secondary-border-subtle);
+  color: var(--bs-primary);
+}
+.ds-table-footer .page-item.active .page-link {
+  background: var(--ds-page-active);
+  border-color: var(--ds-page-active);
+  color: #fff;
+}
+.ds-table-footer .page-item.disabled .page-link {
+  color: var(--bs-secondary-color);
+  background: var(--bs-body-bg);
+  opacity: .55;
+}
+/* The … separator is a label, not a button — no box around it. */
+.ds-table-footer .page-item.disabled .page-link.ds-page-gap {
+  border-color: transparent;
+  background: none;
+  min-width: 1.5rem;
+  padding-inline: .25rem;
+}
+
+@media (max-width: 576px) {
+  .ds-table-toolbar { padding: .75rem .75rem .5rem; }
+  .ds-table-footer { padding: .75rem; }
+  .ds-table th.sortable-header { padding-right: 1rem !important; }
+  .ds-table th.sortable-header::after { font-size: .65rem; right: .25rem; }
+}
