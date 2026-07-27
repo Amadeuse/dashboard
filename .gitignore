@@ -1,5 +1,6 @@
 /.env
 /sql/
+/public/assets/uploads/
 
 # OSPanel-local config, not needed to run or deploy the project
 /.osp/

@@ -20,13 +20,7 @@
         ]
       },
       { "label": "nav.customers", "icon": "bi-people-fill", "url": "/customers" },
-      {
-        "label": "nav.products", "icon": "bi-box-seam",
-        "children": [
-          { "label": "nav.products_list",       "url": "#" },
-          { "label": "nav.products_categories", "url": "#" }
-        ]
-      }
+      { "label": "nav.products", "icon": "bi-box-seam", "url": "/products" }
     ]
   },
   {

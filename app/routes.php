@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Controllers\CustomerController;
 use App\Controllers\DashboardController;
+use App\Controllers\LookupController;
+use App\Controllers\ProductController;
 use App\Controllers\StyleGuideController;
 
 /**
@@ -26,3 +28,8 @@ $router->get('/style-guide', [StyleGuideController::class, 'index']);
 
 $router->get('/customers', [CustomerController::class, 'index']);
 $router->post('/customers', [CustomerController::class, 'store']);
+
+$router->get('/products', [ProductController::class, 'index']);
+$router->post('/products', [ProductController::class, 'store']);
+$router->post('/product-types', [LookupController::class, 'productTypes']);
+$router->post('/units', [LookupController::class, 'units']);
