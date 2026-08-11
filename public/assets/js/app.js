@@ -17,6 +17,10 @@
     });
   });
 
+  document.querySelectorAll("[data-module-toggle]").forEach((form) => {
+    form.querySelector("input[type=checkbox]").addEventListener("change", () => form.submit());
+  });
+
   // Flash messages (e.g. "customer added") fade out on their own — no close
   // button needed. bootstrap.Alert already owns the fade + DOM removal, so
   // this just schedules the same close() a manual dismiss button would call.

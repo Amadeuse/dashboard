@@ -12,22 +12,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/app/bootstrap.php';
 
-$pdo = App\Core\Db::conn();
-$pdo->exec('CREATE TABLE IF NOT EXISTS migrations (
-    name VARCHAR(255) NOT NULL PRIMARY KEY,
-    applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
-
-$done = $pdo->query('SELECT name FROM migrations')->fetchAll(PDO::FETCH_COLUMN);
-
-foreach (glob(__DIR__ . '/migrations/*.sql') as $file) {
-    $name = basename($file);
-    if (in_array($name, $done, true)) {
-        continue;
-    }
-
-    $pdo->exec(file_get_contents($file));
-    $pdo->prepare('INSERT INTO migrations (name) VALUES (?)')->execute([$name]);
+foreach (App\Core\Migrator::run(__DIR__ . '/migrations') as $name) {
     echo "applied  $name\n";
 }
 

@@ -30,8 +30,9 @@
       {
         "label": "nav.settings", "icon": "bi-gear-fill",
         "children": [
-          { "label": "nav.settings_general", "url": "#" },
-          { "label": "nav.settings_users",   "url": "#" }
+          { "label": "nav.settings_general", "url": "/settings/organization" },
+          { "label": "nav.settings_users",   "url": "/settings/users" },
+          { "label": "nav.settings_modules", "url": "/settings/modules" }
         ]
       },
       { "label": "nav.help", "icon": "bi-question-circle-fill", "url": "#" }

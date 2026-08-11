@@ -81,6 +81,7 @@ body {
 .nav-pills .nav-link.active { background-color: var(--bs-primary); }
 .form-check-input:checked { background-color: var(--bs-primary); border-color: var(--bs-primary); }
 .form-switch .form-check-input:checked { background-color: var(--bs-primary); border-color: var(--bs-primary); }
+.ds-module-switch:hover { cursor: pointer; }
 .progress-bar { background-color: var(--bs-primary); }
 .page-link { color: var(--bs-primary); }
 .page-item.active .page-link { background-color: var(--bs-primary); border-color: var(--bs-primary); }
@@ -178,7 +179,22 @@ details[open] > summary .ds-details-caret { transform: rotate(180deg); }
   block-size: 0; overflow: hidden;
   transition: block-size .2s ease, content-visibility .2s allow-discrete;
 }
-details.card[open]::details-content { block-size: auto; }
+/* overflow:hidden above is what makes the grow/shrink clip cleanly while it
+   runs — but left in place after the card is fully open, it also clips any
+   absolutely-positioned dropdown inside it (ds-select's panel, any future
+   one) the instant that panel extends past the card's own box.
+   `overflow .2s .2s` keeps it hidden for the opening animation's whole
+   duration (delay = the block-size duration, 0s transition-duration of its
+   own → an abrupt flip right when the grow finishes) and only relaxes to
+   visible once the card has actually finished opening. Closing goes back to
+   the base rule above, where overflow isn't in the transition list at all —
+   an unlisted property changes with no animation, so it re-clips instantly
+   the moment the card starts closing, not .2s into the shrink. */
+details.card[open]::details-content {
+  block-size: auto;
+  overflow: visible;
+  transition: block-size .2s ease, content-visibility .2s allow-discrete, overflow 0s .2s;
+}
 details.card { interpolate-size: allow-keywords; }
 @media (prefers-reduced-motion: reduce) {
   .card::details-content, .ds-details-caret { transition: none; }
@@ -249,6 +265,11 @@ details.card { interpolate-size: allow-keywords; }
 }
 .ds-search .input-group-text { color: var(--bs-secondary-color); padding-right: 0; }
 .ds-search .form-control { padding-left: .5rem; font-size: .9rem; }
+
+/* IBAN account rows on /settings/organization — the addon is just a snug
+   frame around a .ds-avatar circle, not Bootstrap's usual padded text. */
+.ds-bank-addon { padding: .3rem .55rem; background: var(--bs-tertiary-bg); }
+.bank-account-row .bank-account-remove { flex: 0 0 auto; }
 
 .ds-user-btn { border: 0; padding: .25rem .5rem; border-radius: var(--ds-radius); }
 .ds-user-btn:hover { background: var(--bs-tertiary-bg); }

@@ -1,0 +1,6 @@
+{
+  "name": "module.warehouse.name",
+  "description": "module.warehouse.description",
+  "version": "1.0.0",
+  "enabled_by_default": true
+}

@@ -1,0 +1,198 @@
+/* ==========================================================================
+   Auth pages (login/register/forgot/reset) — no sidebar/topbar, one centered
+   card. Loaded only by app/Views/auth/_layout.php.
+   ========================================================================== */
+
+.ds-auth-shell {
+  --ds-auth-card-w: 500px;
+  min-height: 100vh;
+  display: flex;
+  background-color: var(--bs-tertiary-bg);
+}
+
+/* ---- Left half: a rotating Pixabay photo (query "finance") cross-fading in,
+   over a brand-gradient fallback (shows through until the first photo loads,
+   or permanently if PIXABAY_API_KEY isn't set). The box-shadow on its
+   right edge is the "dividing line" — a soft drop shadow bleeding onto the
+   form half, so the split reads as two stacked panels, not a flat color
+   change. Hidden below 900px — the form gets the full width instead of
+   squeezing both halves onto a phone screen. ---- */
+.ds-auth-visual {
+  flex: 1 1 50%;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 2.5rem;
+  background: linear-gradient(160deg, var(--bs-primary) 0%, #3730a3 100%);
+  box-shadow: 12px 0 32px -12px rgba(0, 0, 0, .4);
+}
+.ds-auth-visual-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+}
+.ds-auth-visual-photo.is-visible { opacity: 1; }
+.ds-auth-visual-scrim {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 20, 40, 0) 40%, rgba(15, 20, 40, .78) 100%);
+}
+.ds-auth-visual-caption { position: relative; z-index: 2; max-width: 360px; }
+.ds-auth-visual-tagline { margin: 0; color: #fff; font-size: 1.05rem; font-weight: 500; }
+.ds-auth-visual-credit {
+  display: block;
+  margin-top: .6rem;
+  color: rgba(255, 255, 255, .75);
+  font-size: .72rem;
+  text-decoration: none;
+}
+.ds-auth-visual-credit:hover { color: #fff; text-decoration: underline; }
+@media (prefers-reduced-motion: reduce) {
+  .ds-auth-visual-photo { transition: none; }
+}
+@media (max-width: 900px) {
+  .ds-auth-visual { display: none; }
+}
+
+.ds-auth-main {
+  flex: 1 1 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1.5rem;
+  gap: 2rem;
+}
+
+.ds-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  text-decoration: none;
+  color: var(--bs-emphasis-color);
+  font-weight: 700;
+}
+
+.ds-auth-card {
+  /* Fallback (no visual half — mobile, or forgot/reset which stack full-width):
+     a small generic slide, there's no dividing line to emerge from here. */
+  --ds-auth-card-offset: -32px;
+  width: 100%;
+  max-width: var(--ds-auth-card-w);
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  margin: auto 0;
+  background: var(--bs-body-bg);
+  animation: ds-auth-card-in 1s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+/* ≥901px: the visual half is showing, so its shadowed right edge sits at
+   exactly 50vw — the card starts flush against that line (its own left
+   edge aligned to the boundary) and slides out to its centered resting
+   spot, i.e. it visibly emerges from the shadow. (A custom property, not a
+   second @keyframes with the same name in a @media block — that redeclare
+   trick didn't reliably override the first one; this does.) */
+@media (min-width: 901px) {
+  .ds-auth-card {
+    --ds-auth-card-offset: calc(-1 * (50vw - var(--ds-auth-card-w)) / 2);
+  }
+}
+
+@keyframes ds-auth-card-in {
+  from { opacity: 0; transform: translateX(var(--ds-auth-card-offset)); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-auth-card { animation: none; }
+}
+
+.ds-auth-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 1rem;
+  margin-bottom: -.1rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.ds-auth-title { font-size: 1.35rem; font-weight: 700; margin-bottom: .25rem; }
+.ds-auth-subtitle { color: var(--bs-secondary-color); font-size: .9rem; margin-bottom: 0; }
+
+.ds-auth-panel { display: flex; flex-direction: column; gap: 1rem; }
+
+.ds-auth-google-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  font-weight: 600;
+}
+
+.ds-auth-divider {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  color: var(--bs-secondary-color);
+  font-size: .8rem;
+}
+.ds-auth-divider::before, .ds-auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--bs-border-color);
+}
+
+.ds-auth-tabs {
+  display: flex;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  padding: .25rem;
+  gap: .25rem;
+}
+.ds-auth-tab {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: .4rem .75rem;
+  border-radius: calc(var(--ds-radius) - .2rem);
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.ds-auth-tab.active { background: var(--bs-primary); color: #fff; }
+
+.ds-auth-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; font-size: .85rem; }
+.ds-auth-link { color: var(--bs-primary); text-decoration: none; font-size: .85rem; }
+.ds-auth-link:hover { text-decoration: underline; }
+.ds-auth-submit { width: 100%; }
+.ds-auth-footer { text-align: center; font-size: .85rem; color: var(--bs-secondary-color); margin: 0; }
+
+.ds-auth-otp-field { display: flex; flex-direction: column; gap: .5rem; }
+.ds-auth-otp-row { display: flex; gap: .5rem; }
+.ds-auth-otp-box {
+  flex: 1;
+  min-width: 0;
+  height: 2.75rem;
+  text-align: center;
+  font-size: 1.1rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+}
+.ds-auth-otp-box:focus {
+  border-color: var(--bs-primary);
+  outline: 0;
+  box-shadow: 0 0 0 .15rem rgba(var(--bs-primary-rgb), .25);
+}

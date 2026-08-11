@@ -75,9 +75,9 @@ final class Customer
         $errors = [];
 
         if ($clean['customer_name'] === '') {
-            $errors['customer_name'] = t('cust.err_name_required');
+            $errors['customer_name'] = terr('cust.err_name_required');
         } elseif (mb_strlen($clean['customer_name']) > 255) {
-            $errors['customer_name'] = t('cust.err_too_long', 255);
+            $errors['customer_name'] = terr('cust.err_too_long', 255);
         }
 
         // The imported data uses '0' as "no tax id" (271 rows of it). Normalise it to
@@ -89,19 +89,19 @@ final class Customer
 
         if ($clean['customer_taxid'] !== '') {
             if (mb_strlen($clean['customer_taxid']) > 64) {
-                $errors['customer_taxid'] = t('cust.err_too_long', 64);
+                $errors['customer_taxid'] = terr('cust.err_too_long', 64);
             } elseif (self::taxIdTaken($clean['customer_taxid'], $excludeId)) {
-                $errors['customer_taxid'] = t('cust.err_taxid_taken');
+                $errors['customer_taxid'] = terr('cust.err_taxid_taken');
             }
         }
 
         if ($clean['customer_email'] !== '' && !filter_var($clean['customer_email'], FILTER_VALIDATE_EMAIL)) {
-            $errors['customer_email'] = t('cust.err_email');
+            $errors['customer_email'] = terr('cust.err_email');
         }
 
         foreach (['customer_contact', 'customer_phone', 'customer_email', 'customer_address'] as $f) {
             if (mb_strlen($clean[$f]) > 255) {
-                $errors[$f] = t('cust.err_too_long', 255);
+                $errors[$f] = terr('cust.err_too_long', 255);
             }
         }
 

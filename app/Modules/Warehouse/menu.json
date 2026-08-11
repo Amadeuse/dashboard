@@ -1,0 +1,10 @@
+{
+  "section": "nav.main",
+  "item": {
+    "label": "nav.warehouse", "icon": "bi-boxes",
+    "children": [
+      { "label": "nav.warehouse_add",  "url": "/warehouse#warehouse-form" },
+      { "label": "nav.warehouse_list", "url": "/warehouse" }
+    ]
+  }
+}

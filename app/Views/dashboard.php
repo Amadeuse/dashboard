@@ -14,6 +14,12 @@
   </div>
 </div>
 
+<?php if ($notice !== null): ?>
+  <div class="alert alert-warning fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i> <?= e($notice) ?>
+  </div>
+<?php endif; ?>
+
 <!-- Stat cards -->
 <div class="row g-3 mb-3">
   <?php foreach ($stats as $s):

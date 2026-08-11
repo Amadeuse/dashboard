@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
-use App\Models\ProductType;
 use App\Models\Unit;
 
 /**
- * product_types and units are both a bare id+name table, managed from a modal
- * on the products page (see products.php). Same shape, same two actions
- * (add / rename) — one generic handler for both instead of duplicating it.
+ * units is a bare id+name table, managed from a modal on the products page
+ * (see products.php). product_type_id's own equivalent lookup — same shape,
+ * same two actions (add / rename) — is App\Modules\Warehouse\Controllers\
+ * ProductTypeController, which reuses the identical ~15-line save() body
+ * rather than sharing a base class across the core/module boundary for it.
  *
  * Unlike CustomerController::store(), this responds with JSON and never
  * redirects: the modal must not blow away whatever the surrounding product
@@ -19,11 +20,6 @@ use App\Models\Unit;
  */
 final class LookupController extends Controller
 {
-    public function productTypes(): void
-    {
-        $this->save(ProductType::class, 'ptype.err_name_required');
-    }
-
     public function units(): void
     {
         $this->save(Unit::class, 'unit.err_name_required');
@@ -41,13 +37,13 @@ final class LookupController extends Controller
 
         if ($name === '') {
             http_response_code(422);
-            echo json_encode(['error' => t($requiredKey)], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['error' => terr($requiredKey)], JSON_UNESCAPED_UNICODE);
             return;
         }
 
         if (mb_strlen($name) > 255) {
             http_response_code(422);
-            echo json_encode(['error' => t('cust.err_too_long', 255)], JSON_UNESCAPED_UNICODE);
+            echo json_encode(['error' => terr('cust.err_too_long', 255)], JSON_UNESCAPED_UNICODE);
             return;
         }
 

@@ -13,6 +13,7 @@ final class DashboardController extends Controller
     {
         $this->view('dashboard', [
             'title'    => t('page.dashboard') . ' · ' . app_name(),
+            'notice'   => flash('notice'),
             'stats'    => Dashboard::stats(),
             'revenue'  => Dashboard::revenueSeries(),
             'traffic'  => Dashboard::traffic(),

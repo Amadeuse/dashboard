@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Core\Env;
 use App\Core\Lang;
+use App\Core\ModuleRegistry;
 use App\Core\Router;
 
 /** Read a value from .env, or $default when it is not set. */
@@ -27,6 +28,23 @@ function app_version(): string
 function t(string $key, ...$args): string
 {
     return Lang::get($key, $args);
+}
+
+/**
+ * Same as t(), but for a validation/failure message specifically — appends a
+ * short stable code, e.g. "პაროლი მინიმუმ 8 სიმბოლო უნდა იყოს. (#4821)".
+ * Derived from the lang key itself (crc32 mod 10000), so the same key always
+ * produces the same code with no registry to hand-maintain, and it works on
+ * every page for free the moment a validate()/error path uses terr() instead
+ * of t() — the point being a user can report "მივიღე შეცდომა #4821" and
+ * that number alone identifies exactly which check failed, no log-diving
+ * needed. Only for $errors[...]/JSON 'error' messages — regular UI copy
+ * keeps using plain t().
+ */
+function terr(string $key, ...$args): string
+{
+    $code = crc32($key) % 10000;
+    return t($key, ...$args) . sprintf(' (#%04d)', $code);
 }
 
 function ds_lang(): string
@@ -55,14 +73,39 @@ function ds_lang_url(string $code): string
  * Read on every request (so edits show on refresh); broken JSON throws instead of
  * silently rendering an empty nav.
  */
+/**
+ * Core menu.json, with each enabled module's own menu.json item merged into
+ * the section it names — same "read fresh, throw loudly on malformed JSON"
+ * contract as the core file. A module without a menu.json (most won't need
+ * one) is simply skipped.
+ */
 function ds_menu(): array
 {
-    return json_decode(
+    $menu = json_decode(
         file_get_contents(APP_PATH . '/config/menu.json'),
         true,
         512,
         JSON_THROW_ON_ERROR
     );
+
+    foreach (ModuleRegistry::enabledCodes() as $code) {
+        $file = APP_PATH . "/Modules/$code/menu.json";
+        if (!is_file($file)) {
+            continue;
+        }
+
+        $fragment = json_decode(file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+
+        foreach ($menu as &$section) {
+            if ($section['section'] === $fragment['section']) {
+                $section['items'][] = $fragment['item'];
+                break;
+            }
+        }
+        unset($section);
+    }
+
+    return $menu;
 }
 
 /** Is this the route currently being rendered? */
