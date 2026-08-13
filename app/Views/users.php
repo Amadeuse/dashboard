@@ -48,7 +48,7 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
 <?php endif; ?>
 
 <!-- ---- Add / edit ---- -->
-<details class="card ds-card mb-3" id="user-form" <?= $editing ? 'open' : '' ?>>
+<details class="card ds-card mb-3" id="user-form" open>
   <summary class="card-header bg-transparent d-flex align-items-center gap-2 py-3">
     <i class="bi bi-person-plus-fill text-primary"></i>
     <h2 class="h6 mb-0"><?= t('users.new_title') ?></h2>
@@ -60,7 +60,7 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
     <input type="hidden" name="user_id" id="user_id" value="<?= e((string) ($old['user_id'] ?? '')) ?>">
 
     <div class="row g-3">
-      <div class="col-md-2 d-flex justify-content-center align-items-start">
+      <div class="col-md-2 d-flex flex-column align-items-center">
         <div class="ds-product-thumb-wrap" style="width:88px;height:88px;">
           <label for="user_avatar" class="ds-product-thumb" style="width:88px;height:88px;border-radius:50%;" title="<?= t('profile.avatar') ?>">
             <img id="userAvatarPreview" src="" alt="" class="d-none">
@@ -72,7 +72,9 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
             </span>
           </label>
         </div>
-        <input type="file" class="d-none" id="user_avatar" name="avatar" accept=".jpg,.jpeg,.png,.webp">
+        <input type="file" class="d-none" id="user_avatar" name="avatar" accept=".jpg,.jpeg,.png,.webp"
+               data-max-bytes="2097152">
+        <div class="form-text text-center small mt-1"><?= t('users.avatar_hint') ?></div>
       </div>
 
       <div class="col-md-10">
@@ -193,10 +195,23 @@ $scripts = ds_table_script() . <<<'HTML'
 
 <script>
   document.getElementById('user_avatar').addEventListener('change', (event) => {
+    const input = event.target;
     const preview = document.getElementById('userAvatarPreview');
     const placeholder = document.getElementById('userAvatarPlaceholder');
-    const file = event.target.files[0];
+    const file = input.files[0];
     if (!file) return;
+
+    if (file.size > Number(input.dataset.maxBytes)) {
+      window.dsNotifyCode?.(4418); // app/config/notifications.php: prod.err_image_size
+      input.value = '';
+      return;
+    }
+    if (!/\.(jpe?g|png|webp)$/i.test(file.name)) {
+      window.dsNotifyCode?.(6817); // app/config/notifications.php: prod.err_image_type
+      input.value = '';
+      return;
+    }
+
     preview.src = URL.createObjectURL(file);
     preview.classList.remove('d-none');
     placeholder.classList.add('d-none');

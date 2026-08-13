@@ -1011,6 +1011,428 @@ submit `/customers`-ზე → flash-ში დაბრუნებულ HTML-
 შეცდომა #4821" და ეს ერთი რიცხვი ცალსახად ადგენს, რომელი წესი ჩაიშალა,
 log-ის გარეშე.
 
+### 4.24 `window.dsNotify` — გლობალური toast შეცდომებისთვის, submit-მდე
+
+`4.22`-ის ავატარის ატვირთვის ბაგის (ორფანი ფაილები) გამოსწორების შემდეგ
+მომხმარებელმა სთხოვა: თუ ფაილი უბრალოდ ზედმეტად დიდია, ეს **submit-ის
+გარეშე**, ფაილის არჩევისთანავე უნდა გამოჩნდეს — page reload-ის და
+`$errors`/flash-ის მთელი ციკლის დალოდება ამ შემთხვევაში ზედმეტია, რადგან
+ზომა/ფორმატი კლიენტზევე ცნობადია `File.size`/`file.name`-იდან.
+
+**`window.dsNotify(message, type = 'danger')`** (`public/assets/js/app.js`,
+`app.js`-ის IIFE-დან გატანილი, თორემ სხვა გვერდის inline script ვერ
+გამოიძახებდა) — ქმნის Bootstrap-ის `bootstrap.Toast` ინსტანციას `layout.php`-ში
+ერთხელ დამატებულ `#dsToastContainer`-ში (`position-fixed top-0 end-0`,
+ყველა გვერდზე არსებობს ჩატვირთვისთანავე, ცარიელია სანამ არაფერი გამოიძახებს).
+`autohide` default (6წმ) მოქმედებს, `hidden.bs.toast`-ზე თავად შლის თავის
+DOM-ს — არაფერი "გროვდება" გვერდზე. `message` ყოველთვის ჩვენივე
+`t()`/`terr()`-დანაა (არასდროს raw user input), ამიტომ პირდაპირ `innerHTML`-ში
+ჩასმა უსაფრთხოა.
+
+**`app/config/notifications.php`** — ხელით managed catalog, `code => ['type'
+=> ..., 'key' => ...]`, `type` ∈ `error`/`warning`/`success`. მომხმარებელს
+ჯერ შევთავაზე ავტომატური ალტერნატივა (`terr()`-ის მსგავსი, `window.dsLang`-ზე
+დაფუძნებული `dsNotifyKey(key)` — ერთი iteration ადრე ამ handoff-ში
+ცხოვრობდა), მაგრამ **განზრახ აირჩია ხელით ფაილი**: სურდა ერთ ადგილას
+ხედვადი ყველა toast-კოდი, `terr()`-ის "ავტომატური, არავინ ხედავს სიას"
+მიდგომის ნაცვლად. `4.23`-ის `terr()` **უცვლელი რჩება** — ეს ცალკე,
+პარალელური სისტემაა, მხოლოდ client-side toast-ებისთვის.
+
+```php
+return [
+    4418 => ['type' => 'error', 'key' => 'prod.err_image_size'],
+    6817 => ['type' => 'error', 'key' => 'prod.err_image_type'],
+];
+```
+⚠️ **კოდები ხელით არჩეულია, არა `crc32`-გამოთვლილი** — მაგრამ ეს ორი
+სპეციალურად **იმ ზუსტ რიცხვებზეა დაყენებული, რასაც `terr('prod.
+err_image_size')`/`terr('prod.err_image_type')` თავად გამოთვლიდა** — ასე
+inline ვალიდაციისა და toast-ის კოდი არასდროს დაშორდება ერთმანეთს იმავე
+წესისთვის. ახალი, `terr()`-ს არდაკავშირებული toast-ის დამატებისას თავისუფლად
+აირჩევა ნებისმიერი თავისუფალი 4-ციფრიანი კოდი.
+
+**`App\Core\Notifications::all()`** (`app/Core/Notifications.php`) — კითხულობს
+ამ ფაილს ერთხელ per-request (`??=`), analogously `ModuleRegistry`-ის caching-ის.
+
+**`layout.php`-ში ერთხელ** — კატალოგი გადადის JS-ში, ტექსტი უკვე
+**server-side resolved** მიმდინარე ენაზე (`t($n['key'])`), არა raw key:
+```php
+window.dsNotifications = <?= json_encode(array_map(
+    static fn(array $n) => ['type' => $n['type'], 'text' => t($n['key'])],
+    \App\Core\Notifications::all()
+), ...) ?>;
+```
+
+**`app.js`: `window.dsNotifyCode(code)`** — ერთადერთი public entry point:
+```js
+window.dsNotifyCode = (code) => {
+  const entry = window.dsNotifications?.[code];
+  if (!entry) { window.dsNotify(`#${code}`, 'danger'); return; } // დაურეგისტრირებელი კოდი — ხმაურიანად, არა ჩუმად
+  window.dsNotify(entry.text, { error: 'danger', warning: 'warning', success: 'success' }[entry.type] ?? 'danger');
+};
+```
+`error → danger` მეპინგი საჭიროა, რადგან Bootstrap-ის კონტექსტური კლასია
+`text-bg-danger`, არა `text-bg-error` — დანარჩენი ორი (`warning`/`success`)
+პირდაპირ ემთხვევა Bootstrap-ის საკუთარ სახელებს.
+
+**გამოყენება** (`app/Views/users.php`):
+```js
+if (file.size > Number(input.dataset.maxBytes)) {
+  window.dsNotifyCode?.(4418); // app/config/notifications.php: prod.err_image_size
+  input.value = '';
+  return;
+}
+```
+`?.` განზრახაა — თუ `app.js` ვერ ჩაიტვირთა, ჩუმად არაფერს აკეთებს submit-ის
+დაბლოკვის ნაცვლად; საბოლოო ვალიდაცია ისედაც სერვერზეა (`UserController::
+validateAvatar()`, `4.22`/`resolveAvatar`-ის split). ანუ toast არის **UX
+სისწრაფე**, არა ერთადერთი დაცვის ხაზი. ახალი toast-ის დამატება = ერთი
+ჩანაწერი `notifications.php`-ში + `dsNotifyCode(კოდი)`-ის გამოძახება — არც
+lang-key-ის ხელახლა წერა, არც `data-*` plumbing თითო ველზე.
+
+`users.avatar_hint` ველის ქვეშ (`jpg, png ან webp, მაქს. 2MB.`) — სტატიკური
+ჰინტი, `t()`-ზეა (არ არის ამ კატალოგის ნაწილი — არ არის error/warning/success).
+
+**გადამოწმებულია ცოცხლად** (`javascript_exec`): `window.dsNotifications[4418]`
+= `{type:'error', text:'სურათი მაქსიმუმ 2MB უნდა იყოს.'}`; 3MB ფაილი →
+toast `text-bg-danger`-ით, სწორი ტექსტი, კოდის გარეშე; დაურეგისტრირებელი
+კოდი (`dsNotifyCode(9999)`) → toast აჩვენებს `"#9999"`-ს ჩუმად წარუმატებლობის
+მაგივრად. `Lang::all()` წაიშალა (`app/Core/Lang.php`) — dsLang-ის მოცილების
+შემდეგ აღარავინ იძახებდა.
+
+### 4.25 ინვოისები (`/invoices`) — დამკვეთი + რამდენიმე პროდუქტი (line items)
+
+მომხმარებელმა სთხოვა ახალი გვერდი მარცხენა მენიუში, სადაც აირჩევა დამკვეთი
+და პროდუქტი(ები). Plan mode-ში `AskUserQuestion`-ით დადასტურდა: **რამდენიმე
+პროდუქტი** (line items — რაოდენობა × ფასი თითო სტრიქონზე), არა ერთი.
+Greenfield ფუნქციონალია — `Invoice`-მდე არაფერი არსებობდა.
+
+**სქემა** — ორი ცხრილი (`migrations/013`, `014`): `invoices`
+(`customer_id`, `issue_date`, `total`) + `invoice_items` (`product_id`,
+`quantity` DECIMAL(12,3), `unit_price`/`line_total` DECIMAL(12,2)).
+`unit_price`/`line_total` **სნეპშოთია** ინვოისის შენახვის მომენტში, არა live
+join `products.unit_price`-ზე — პროდუქტის ფასის მომავალმა ცვლილებამ ძველი
+ინვოისი არ უნდა შეცვალოს. FK: `invoice_items → invoices` არის `ON DELETE
+CASCADE` (სტრიქონი ინვოისის ნაწილია), დანარჩენი (`→ customers`/`products`)
+**default RESTRICT** — ვერ წაიშლება დამკვეთი/პროდუქტი, რომელზეც ინვოისია.
+
+⚠️ **`organization.invoice_prefix` პირველად რეალურად გამოიყენა** — ველი
+`migrations/011`-იდან არსებობდა, მაგრამ არავინ კითხულობდა. ინვოისის ნომერი
+**არ ინახება** ცალკე სვეტში — გამოითვლება ჩვენებისას ორივეგან (ფორმის
+success flash-შიც და სიაშიც): `sprintf('%s-%04d', $invoicePrefix, $id)` →
+`PH-0001`. ერთი ნაკლები სვეტი, სინქრონიზაციის საზრუნავი არ არის.
+
+**`Invoice::save()`** ტრანზაქციაშია (`Db::conn()->beginTransaction()`/
+`commit()`) — header UPDATE/INSERT, მერე **items მთლიანად იცვლება**
+(`DELETE FROM invoice_items WHERE invoice_id=?` + ახალი INSERT-ები), იგივე
+"replace, არა diff" მიდგომა, რაც `Organization::save()`-ს აქვს
+`bank_ibans`-ზე (`4.23`-ის მეზობელი პატერნი). `total` ყოველთვის server-ზე
+თავიდან ითვლება (`Σ qty×price`) — client-JS-ის ცოცხლი ჯამი მხოლოდ UX-ია.
+
+**Line items UI** — პირდაპირ `organization.php`-ის dynamic IBAN rows-ის
+გენერალიზაციაა: `#invoiceItems`-ში თითო სტრიქონი product `ds-select` +
+qty/price/readonly-total + წაშლის ღილაკი, ბოლო სტრიქონზე product-ის
+არჩევისთანავე ავტომატურად ემატება ახალი ცარიელი. **ერთი ახალი დეტალი**
+წინა IBAN-პატერნთან შედარებით: ds-select **დინამიურად დამატებულ** row-ებზე
+თავად არ ინიციალიზდება (`ds-select.js`-ს მხოლოდ ერთი `DOMContentLoaded`
+listener აქვს) — ამიტომ `addRow()` ხელით აკეთებს `select.dsSelect = new
+window.DsSelect(select)`-ს ახალი row-ის ჩასმის შემდეგ (`window.DsSelect`
+კლასი გლობალურადაა expose-ილი სპეციალურად ამისთვის, `ds-select.js`-ის
+საკუთარი დოკუმენტაციის მიხედვით).
+
+**Row-click → edit, items-ის ჩათვლით** — სიის თითო `<tr>`-ს აქვს
+`data-items="<json>"` (`Invoice::itemsByInvoice()`-ით ერთ query-ში
+აგებული, N+1 route-ის გარეშე). Click-ისას `container.innerHTML = ''` +
+`items.forEach(addRow)` + ერთი ბოლო ცარიელი — `customer_id` ds-select
+ჩვეულებრივად ივსება.
+
+**ვალიდაცია** (`Invoice::validate()`) — `terr()`-ით ყველგან (`4.23`-ის
+კონვენცია): `customer_id` აუცილებელი, `items`-ში მინიმუმ ერთი ვალიდური
+სტრიქონი (ცარიელი trailing row ჩუმად გამოტოვება, არა error). თითო
+არასწორი სტრიქონის error იკვრება `items_{i}`-ზე (იმავე ინდექს-კონვენციით,
+რაც `organization.php`-ის `bank_ibans_{i}`-ს ჰქონდა).
+
+**გადამოწმებულია ცოცხლად**: 2 line item-იანი ინვოისის შექმნა (`curl`) →
+სწორი `total` (81.00 = 30+51) DB-ში; ვალიდაციის ჩავარდნა (ცარიელი
+customer/items) → `terr()`-კოდები, ჩანაწერი **არ** შექმნილა; edit 2
+item-დან 1 item-მდე → items სწორად **მთლიანად ჩანაცვლდა** (ძველი წაიშალა,
+არა დაგროვდა), `total` ხელახლა გამოთვლილი; ბრაუზერში row-click → სრული
+აღდგენა header + items-ით; ახალი product არჩევისას ფასის ავტო-შევსება +
+ახალი row-ის ავტომატური დამატება + ცოცხლი ჯამის გამოთვლა — ყველა
+დადასტურებული.
+
+#### 4.25.1 თარიღის ველი მოიხსნა ფორმიდან — `issue_date` ყოველთვის დღეს
+
+მომხმარებელმა (screenshot-ით, print-გვერდის mockup) სთხოვა: "თარიღის
+არჩევის ელემენტი არაა საჭირო". `AskUserQuestion`-ს პასუხი არ მოჰყოლია, ამიტომ
+რეკომენდებული ვარიანტით გავაგრძელე (ეს ცალსახად აღვნიშნე პასუხში, რომ
+მომხმარებელს გადაესწორებინა საჭიროებისამებრ): **`issue_date` აღარ არის
+input ფორმაში საერთოდ** — ახალი ინვოისი ყოველთვის `date('Y-m-d')`-ით
+იქმნება (`Invoice::save()`-ში, PHP-ზე, არა DB default-ით), ხოლო edit-ისას
+`UPDATE`-ის სვეტების სიაში `issue_date` საერთოდ აღარ ფიგურირებს — თარიღი
+ერთხელ დაფიქსირდება შექმნისას და აღარასდროს იცვლება. `Invoice::validate()`-
+დანაც მთლიანად გაქრა (`inv.err_issue_date_required` key-ც წაიშალა ორივე
+lang-ფაილიდან — აღარავინ იძახებდა). სია და print-გვერდი კვლავ **აჩვენებენ**
+`issue_date`-ს (`ds_date()`-ით ფორმატირებულს) — უბრალოდ აღარ არის
+რედაქტირებადი.
+
+#### 4.25.2 `/invoices/view?id=N` — ბეჭდვადი ინვოისის დოკუმენტი
+
+Screenshot-ით მოთხოვნილი header-ის დიზაინი (ლოგო + ორგანიზაციის მისამართი,
+ინვოისის ნომერი + თარიღი ზემოთ) გადაიზარდა სრულ print-გვერდში — თავად
+header ცალკე არაფრის მომცემია ბეჭდვად დოკუმენტად, ამიტომ დაემატა
+bill-to/items/total/საბანკო-ინფოც.
+
+**Route** — `GET /invoices/view` (query-string `?id=N`, არა path-parameter:
+`Router`-ს დღემდე **არ აქვს** დინამიური სეგმენტების მხარდაჭერა, ბრტყელი
+`"VERB /path"` dictionary-ია — გადამოწმებულია `Router.php`-ის წაკითხვით,
+ეს პროექტის კონვენციასთან შესაბამისობაშია, არა ჩემი გამონაკლისი).
+
+**`InvoiceController::show()`** — `Invoice::find($id)` (ინვოისი +
+customer_* ველები join-ით, `Invoice::itemsFor($id)` (line items + product
+name). თუ id არ არსებობს → `ErrorController::notFound()`-ის იგივე view.
+⚠️ **პირველი ცდისას `http_response_code(404)` არ იყო დაყენებული** —
+`Router::dispatch()`-ს თავად აქვს ეს ლოგიკა **მხოლოდ genuinely-unmatched
+route-ისთვის** (`/invoices/view` route თავად matched-ია, id უბრალოდ არ
+არსებობს), ასე რომ status code ხელით უნდა დაყენდეს `ErrorController`-ისთვის
+გადაცემამდე — curl-ით 200 დაბრუნდა თავიდან (`id=99999`-ზე), აღმოჩენილი და
+გასწორებულია იმავე ტესტში.
+
+**`window.print()`, არა PDF ბიბლიოთეკა** — "PDF შენახვა" და "ბეჭდვა" ორივე
+`window.print()`-ს იძახებს. პროექტს არ აქვს PDF-გენერაციის ბიბლიოთეკა
+(no-Composer კონვენცია, `CLAUDE.md`) — ბრაუზერის print დიალოგის "Save as
+PDF" დანიშნულება ამ საჭიროებას fully covers-ს ახალი დამოკიდებულების
+გარეშე. `AskUserQuestion`-ს ეს ცალსახად შევთავაზე რეკომენდებულ ვარიანტად,
+პასუხი არ მოვიდა, ამიტომ ეს ვარიანტი გავაგრძელე.
+
+**`.no-print` + `@media print`** (`design-system.css`, ბოლოში) — გლობალური,
+ნებისმიერ გვერდს შეუძლია გამოიყენოს: `.ds-sidebar`/`.ds-topbar` (app chrome)
++ `.no-print` კლასის ნებისმიერი ელემენტი იმალება ბეჭდვისას, `.ds-main`/
+`.ds-content`-ის padding/margin ნულდება — ბეჭდვისას მხოლოდ `invoice-view.php`-ის
+დოკუმენტ-card რჩება გვერდზე.
+
+**გადამოწმებულია ცოცხლად**: `/invoices/view?id=N` → ლოგო/ხელმოწერა
+(`org.logo`/`org.signature`-დან) სწორად ჩანს, ორგანიზაციის სახელი+tax_id+
+მისამართი+ტელეფონი+email+website, დამკვეთის bill-to ბლოკი, ორივე line item
+სწორი რაოდენობა/ფასით, `total`, ორივე რეალური IBAN ანგარიში (`4.23`-ის
+ფუნქციონალიდან) სია-ს ბოლოში; `.no-print`/`.ds-sidebar`/`.ds-topbar`-ზე
+`@media print` წესის არსებობა JS-ით დადასტურებულია (`document.styleSheets`
+scan); არასწორი `id` → **404** (გასწორების შემდეგ).
+
+#### 4.25.3 სია `/invoices`-დან `/orders`-ზე გადავიდა — create/edit ცალკე, browse ცალკე
+
+მომხმარებელმა სთხოვა: (1) "ინვოისების სია" ცხრილი გადატანილიყო
+"შეკვეთები > ყველა შეკვეთა" მენიუში (ადრე მკვდარი `"#"` ბმული,
+`menu.json`-ის საწყისი mock-იდან), (2) "ახალი ინვოისი" card აღარ იყოს
+აკეცვადი (`<details>` → ჩვეულებრივი `<div class="card">`), (3) გვერდი
+გაყოფილიყო 3/4 (ფორმა) + 1/4 (ჯერჯერობით ცარიელი card) სვეტებად.
+
+**`/orders`** (`orders.php`, ახალი) — მხოლოდ სია, `InvoiceController::
+orders()`-იდან. Breadcrumb/H1 იყენებს `t('nav.orders_all')`-ს პირდაპირ
+(არა ცალკე `page.orders` key — მენიუს ლეიბლი და გვერდის სათაური ერთი და
+იგივეა, დუბლირება ზედმეტი იქნებოდა). `menu.json`-ში `nav.orders_all`-ის
+`url` `"#"`-დან `"/orders"`-ზე შეიცვალა — `nav.orders_pending`/
+`nav.orders_new` **უცვლელი დარჩა** (არ მოთხოვნილა).
+
+⚠️ **Row-click-to-edit აღარ არსებობს** — რადგან სია და ფორმა ცალკე
+გვერდებზეა, ძველი "დააკლიკე row-ს და ფორმა თავისით შეივსება" (JS,
+იმავე გვერდზე) ვეღარ მუშაობდა. ამის მაგივრად: `orders.php`-ის თითო
+მწკრივს ორი ცალკე ბმული აქვს — ✏️ (`/invoices?edit=N`) და 🖨️
+(`/invoices/view?id=N`, უცვლელი `4.25.2`-დან). **Row-ს აღარ აქვს
+`ds-row-editable`/`data-*` ატრიბუტები** — აღარაფერს აკეთებდა, "მოჩვენებით
+დაწკაპუნებადი" row უფრო შემცდარი იქნებოდა, ვიდრე ორი ცხადი ღილაკი.
+
+**`InvoiceController::index()`-ის ახალი `?edit=N` მექანიზმი** — ეს არის
+ის, რაც ჩაანაცვლა JS-ის ადგილზე-შევსება: `?edit=N` მოსვლისას (და მხოლოდ
+მაშინ, როცა **არც** flash error და **არც** flash old არსებობს — failed
+resubmit ყოველთვის იმარჯვებს) `Invoice::find($id)` + `Invoice::itemsFor($id)`
+იტვირთება და **აწყობს `$old`-ს ზუსტად ისე, როგორც ჩავარდნილი submit
+გააკეთებდა** (`invoice_id`, `customer_id`, `item_product_id[]`,
+`item_quantity[]`, `item_unit_price[]`). ეს ნიშნავს, რომ ფორმის მთელი
+რენდერის ლოგიკა (customer select, item rows, `4.25`-ის ნომერი/თარიღის
+ხაზი) **არაფერი შეცვლილა** — უბრალოდ `$old`-ის შევსების ახალი წყარო გაჩნდა.
+
+⚠️ **ბაგი, ნაპოვნი და გასწორებული ცოცხლი ტესტისას**: `$itemRows`-ის PHP-
+აგება (`$old['item_product_id']`-დან) აწყობდა მხოლოდ **რეალურ** item-ებს,
+ბოლოში ცარიელი "დასამატებელი" row აღარ ჰქონდა — ძველ დიზაინში ეს row
+JS-ის `addRow()`-ის დამატებითი, უპირობო გამოძახებით ემატებოდა
+(`items.forEach(addRow); addRow();`), რაც ახალ server-side მიდგომაში აღარ
+ხდება. **გასწორება**: იგივე "ბოლო row უცილობლად ცარიელი უნდა იყოს" წესი,
+რაც `organization.php`-ის IBAN-ებს აქვს (`4.24`-მდელი, `end($ibans) !==
+''`-ის კონვენცია) — `end($itemRows)['product_id'] !== ''` → ცარიელი row
+დაემატება. ამის გარეშე არსებული ინვოისის რედაქტირებისას ახალი პროდუქტის
+დამატება საერთოდ შეუძლებელი იქნებოდა.
+
+`Invoice::itemsByInvoice()` **წაშლილია** (`app/Models/Invoice.php`) — მხოლოდ
+ძველი, სია-ში embedded `data-items` JSON-ისთვის იყო საჭირო, რაც აღარ
+არსებობს; `orders.php`-ს არც სჭირდება (მხოლოდ `Invoice::all()`-ს
+იძახებს, item-ების join-ის გარეშე — სუფთა, უფრო სწრაფი query სიისთვის).
+
+**გადამოწმებულია ცოცხლად**: `/orders` სწორად აჩვენებს ორივე რეალურ
+ინვოისს (`PH-0003`, `PH-0005`) ✏️/🖨️ ბმულებით; `/invoices?edit=3` →
+customer/items/ნომერი/თარიღი ყველა სწორად ჩაიტვირთა, submit label
+"განახლება"; **row-count ბაგის გასწორების შემდეგ** — 1 რეალური item + 1
+ცარიელი trailing row (თავდაპირველად მხოლოდ 1 იყო, ბაგი); resubmit
+(`invoice_id=3`-ით) → სწორად UPDATE-ავს, `total` უცვლელი; ცარიელი
+`customer_id`-ით submit → `terr()`-კოდები (`#7867`/`#1044`) კვლავ
+სწორად ჩნდება ახალ 3/4+1/4 layout-ზეც; `.row.g-3 > col-lg-9/col-lg-3`
+სვეტები და `#invoice-form`-ის `<div>` (არა `<details>`) დადასტურებულია DOM-ით.
+
+#### 4.25.4 ნომერი/თარიღი — `card-header`-ში, `d.m.Y` ფორმატი
+
+ნომერი/თარიღის ხაზი (`4.25.3`-ში აღწერილი) გადავიდა `card-body`-დან
+`card-header`-ში (`justify-content-between` — სათაური მარცხნივ, ნომერი/
+თარიღი მარჯვნივ), და თარიღმა Georgian `ds_date()`-ის ("13 აგვ, 2026")
+მაგივრად მიიღო უბრალო `d.m.Y` ("13.08.2026") — **მხოლოდ ამ ერთ ადგილას**,
+`orders.php`-ის სია და `invoice-view.php`-ის print-გვერდი კვლავ
+`ds_date()`-ს იყენებენ, არ შეხებია. `$fmtDate = static fn(string $iso):
+string => date('d.m.Y', strtotime($iso));` — ახალი, ამ view-ს საკუთარი
+closure, არა გლობალური helper (ერთი გამოყენების ადგილისთვის ცალკე
+`App\Core`-ის ფუნქცია overkill იქნებოდა). JS-ის reset-handler-ის
+`data-today-formatted` ატრიბუტიც ამავე `$fmtDate`-ით ივსება, ასე რომ
+"გასუფთავებაზე" დაბრუნებაც კვლავ `d.m.Y`-ს აჩვენებს.
+
+#### 4.25.5 დამკვეთის სრული ინფორმაცია — `customer_id`-ის ქვემოთ, 3/4 card-ში
+
+არჩეული დამკვეთის **ბაზაში არსებული ყველა ველი** (`Customer::FIELDS`-იდან
+`customer_name`-ის გარდა: `customer_taxid`, `customer_contact`,
+`customer_phone`, `customer_email`, `customer_address`, `customer_info`)
+ცოცხლად ჩანს, `customer_id`-ის ცვლილებაზე.
+
+⚠️ **პირველი iteration-ი 1/4 card-ში (`col-lg-3`) იყო** (`4.25`-ის
+"ჯერჯერობით ცარიელი" placeholder-ის ადგილას) — მომხმარებელმა screenshot-ით
+სთხოვა გადატანა **"ახალი ინვოისი" card-ის შიგნით**, პირდაპირ `customer_id`
+select-ის ქვემოთ. `#customerInfoPanel`-ის `id`/`data-*` ატრიბუტები
+უცვლელი დარჩა ადგილის შეცვლისას — JS `getElementById`-ით მუშაობს, DOM-ში
+ფიზიკურ მდებარეობაზე დამოკიდებული არაფერია. 1/4 card დაუბრუნდა თავის
+თავდაპირველ, ნამდვილად ცარიელ მდგომარეობას. ვიზუალურადაც შეიცვალა
+screenshot-ის მიხედვით: `bg-primary-subtle rounded-3 p-3` ყუთი (არა
+ცალკე card), დამკვეთის სახელი `fw-bold text-primary`-ით ზემოთ, დანარჩენი
+ველები ერთ ხაზზე `"ლეიბლი: მნიშვნელობა"` ფორმატით (არა ცალ-ცალკე
+stacked label/value, რაც პირველ ვერსიაში იყო). ზემოთ დაემატა
+`<label class="form-label"><?= t('inv.customer_info') ?></label>` —
+იგივე პატერნი, რაც `inv.items`-ს აქვს `4.25`-ში.
+
+**მთლიანად JS-ით რენდერდება**, PHP მხოლოდ მონაცემებს აწვდის ორი
+`data-*` JSON-ით `#customerInfoPanel`-ზე — `data-customers`
+(`array_column($customers, null, 'id')`, id-keyed მთელი ცხრილი) და
+`data-field-labels` (`cust.taxid`/`cust.contact`/... უკვე თარგმნილი
+ტექსტები, `customers.php`-ის იგივე ლეიბლები, ახალი key არ დამატებულა).
+`renderCustomerInfo(id)` იძახება (ა) გვერდის ჩატვირთვისას ერთხელ
+(`?edit=N`/failed-resubmit-ის უკვე არჩეული customer-ისთვის — ცარიელი
+საწყისი state-ის ნაცვლად პირდაპირ სწორი ინფო ჩანს), (ბ) `customer_id`-ის
+`change`-ზე (ds-select-ის `pick()`-იც ნამდვილ `change` event-ს agზავნის,
+ასე რომ ეს მუშაობს search-dropdown-იდან არჩევისასაც), (გ) ფორმის
+`reset`-ზე (ცარიელ state-ს უბრუნდება).
+
+⚠️ **`customer_taxid === '0'` განზრახ იმალება** — `Customer.php`-ის
+დოკუბლოკის იგივე კონვენციაა ("import-ილ მონაცემებში '0' ნიშნავს 'no tax
+id'"), JS-ში ცალკე შემოწმდა, რადგან JS-ის ჩვეულებრივი falsy-check
+(`!value`) `"0"` სტრიქონს **ტრუთი**-დ თვლის (მხოლოდ ცარიელი `""` არის
+falsy) — ამის გარეშე ყველა "უცოდინარი" tax id-ის მქონე დამკვეთი
+პანელში "0"-ს აჩვენებდა.
+
+**გადამოწმებულია ცოცხლად**: საწყისი state → "აირჩიეთ დამკვეთი
+დეტალების სანახავად."; რეალურ დამკვეთზე (`customer_taxid='0'`) → სახელი +
+საკონტაქტო/ტელეფონი/ელფოსტა, tax id **არ ჩანს**; სხვა დამკვეთზე (რეალური
+tax id) → tax id **ჩანს**; deselect → უბრუნდება empty-state ტექსტს;
+`/invoices?edit=3` → panel სწორად ივსება **გვერდის პირველივე ჩატვირთვისას**,
+ცვლილების დალოდების გარეშე.
+
+#### 4.25.6 1/4 სვეტი — action-ღილაკები + სტატუსი + დამკვეთის ინვოისების ისტორია
+
+1/4 სვეტი ორ card-ად გაიყო: **(ა)** action-ღილაკები (შენახვა/PDF export/
+გადახედვა/მეილი/WhatsApp/ბმულის გაზიარება) + სტატუსის `<select>`
+(პირველადი/საბოლოო/გადასახდელი/გადახდილი) + ორი დამოუკიდებელი checkbox
+(ნულოვანი, განმეორებადი); **(ბ)** არჩეული დამკვეთის სხვა ინვოისების სია
+(ნომერი — თანხა), ცოცხლად `customer_id`-ის ცვლილებაზე, `renderCustomerInfo`-ს
+იგივე სამი hook-წერტილიდან (page load, `change`, `reset`) გამოძახებული.
+
+⚠️ **მომხმარებელმა ცალსახად თხოვა: "ღილაკების ფუნქციონალი არ გვინდა ჯერ"**
+— ყველა action-ღილაკი `type="button"`-ია, listener-ის გარეშე (click-ზე
+პირდაპირ არაფერი ხდება, გადამოწმებულია `location.href` უცვლელობით).
+სტატუსის `<select>`/checkbox-ებს აქვთ `name` ატრიბუტები (`status`,
+`is_zero`, `is_recurring`) მომავალი wiring-ისთვის მზადყოფნის მიზნით, მაგრამ
+**ამ ველების არც erთი არ არის ნამდვილ `<form>`-ის შიგნით** (1/4 card
+ცალკე, `<form>`-ის გარეთაა) — ანუ ისედაც ვერასდროს submit-დებოდნენ,
+დამატებითი დაცვის გარეშეც. `InvoiceController::store()`/`Invoice::
+validate()` არაფერი შეცვლილა, ეს ველები სერვერზე საერთოდ არ მოდის.
+
+**`invoicesByCustomer`** (`InvoiceController::index()`-ში აგებული) —
+`customer_id => [{number, total}]`, `Invoice::all()`-დან (index()-ს
+ეს query ხელახლა დაუბრუნდა, `4.25.3`-ში წაშლილი იყო — ახლა ორივე
+საჭიროებისთვის გამოიყენება). ნომრები **იგივე `$invoicePrefix`-ითაა
+გამოთვლილი**, რასაც view-ს დანარჩენი ყველა ადგილი იყენებს — გამოთვლა
+კონტროლერშია, არა view-ში, რომ ორჯერ არ დაწერილიყო იგივე `sprintf`-ლოგიკა.
+
+**გადამოწმებულია ცოცხლად**: ყველა ღილაკი/select/checkbox სწორი ტექსტით
+რენდერდება; "შენახვა"-ზე დაწკაპუნება **არაფერს** აკეთებს (URL/ფორმის
+მდგომარეობა უცვლელი); დამკვეთის არჩევისას (`TOXIGEN BOARD SHOP`) →
+`"PH-0003" / "25.00"` სწორად ჩნდება ისტორიის პანელში; დამკვეთის გარეშე →
+"ინვოისები არ მოიძებნა."
+
+⚠️ **4.25.7-ში `status`/`is_zero`/`is_recurring` ნამდვილად შეინახა** — ეს
+სექცია მანამდე დაიწერა, სანამ იმ ველების backend-wiring საერთოდ
+საჭირო გახდებოდა. `4.25.6`-ის "arc functionality yet" პრინციპი კვლავ
+ვრცელდება მხოლოდ **action-ღილაკებზე** (save/PDF/email/WhatsApp/share) —
+ის ცალკე, ჯერ არ არის სერვერზე დაკავშირებული.
+
+#### 4.25.7 ინვოისის ნომრის ახალი ფორმატი + status/type რეალურად ინახება
+
+**ნომრის ფორმატი შეიცვალა**: ძველი `PREFIX-0007` → ახალი `PREFIX YYYY-MM-DD
+0007` (მაგ. `PH 2026-08-14 0006`) — ერთი, ცენტრალური ადგილიდან:
+`App\Models\Invoice::number(array $row, string $prefix): string`. მანამდე
+ეს `sprintf` **5 ცალკე ადგილას** იყო გამეორებული (`invoices.php`,
+`orders.php`, `InvoiceController`-ის 3 მეთოდი) — ყველა შეიცვალა ამ ერთი
+static მეთოდის გამოძახებით. **ყველა ადგილას საჭიროა მთელი row** (`id` +
+`issue_date`), არა მარტო `id` — ეს არის მთავარი მიზეზი, რატომაც
+`$invoiceNumber`-ის closure-ის signature `(int $id)`-დან `(array $row)`-ზე
+შეიცვალა ყველგან.
+
+⚠️ **card-header-ის ცალკე თარიღის span-ი ახლა ხშირად ცარიელია** —
+რადგან ახალი ფორმატი თარიღს **უკვე შეიცავს**, `#invoiceFormDate`
+რჩება ცარიელი, როცა `#invoiceFormNumber` უკვე რეალურ (თარიღიან) ნომერს
+აჩვენებს (`editingInvoice !== null`); მხოლოდ "ახალი" (jერ არშენახული)
+ინვოისის შემთხვევაში აჩვენებს დღევანდელ თარიღს ცალკე, რადგან რეალური
+ნომერი ჯერ არ არსებობს. `4.25.4`-ის `d.m.Y`-ფორმატი (`$fmtDate`) **მთლიანად
+წაიშალა** — ახალი ნომრის ფორმატი თავად იყენებს ISO (`Y-m-d`) თარიღს, ორი
+სხვადასხვა ფორმატის თანაარსებობა ერთ გვერდზე დამაბნეველი იქნებოდა.
+
+**`status`/`is_zero`/`is_recurring` რეალურად ინახება** (`migrations/015`
+— `status ENUM('draft','final','due','paid') DEFAULT 'draft'`, ორივე flag
+`TINYINT(1) DEFAULT 0`). ეს **სცდება** `4.25.6`-ის "ჯერ ფუნქციონალი არ
+გვინდა" პრინციპს — მომხმარებელმა ცალსახად სთხოვა ეს ველები ორდერების
+სიაშიც ჩანდეს, რაც ავტომატურად ნიშნავს რეალურ შენახვას (ცხრილის სვეტს
+რეალური მონაცემი უნდა ჰქონდეს). Action-ღილაკები (save/PDF/email/...)
+**კვლავ უფუნქციოა** — ეს ცვლილება მხოლოდ status/type ველებს ეხება.
+
+⚠️ **სტატუსის/type-ის ველები ფიზიკურად 1/4 sidebar card-შია, `<form>`-ის
+გარეთ** (`4.25.6`-ის ლეიაუტი) — HTML5 `form="invoiceMainForm"` ატრიბუტით
+არიან დაკავშირებული მთავარ `<form id="invoiceMainForm">`-თან (`4.25.6`-
+ის sidebar card-ის `<form>`-ის გარეთ ყოფნა თავად აღარაფერს ცვლის
+submit-ის თვალსაზრისით — `form=""` ატრიბუტი ამ პრობლემას წყვეტს ნებისმიერ
+ადგილას მდებარე ველისთვის). გადამოწმებულია ნამდვილი ბრაუზერის
+`new FormData(form)`-ით (არა curl-ით) — `status`/`is_zero` სწორად
+ერთვის ფორმის მონაცემებს, მიუხედავად იმისა, რომ ფიზიკურად `<form>`-ის
+გარეთაა.
+
+`Invoice::validate()`-ში `status`-ის არასწორი/ცარიელი მნიშვნელობა **არ
+იწვევს ვალიდაციის შეცდომას** — ჩუმად `'draft'`-ზე fallback-დება
+(`in_array($status, self::STATUSES, true) ? $status : self::STATUSES[0]`)
+— ეს არ არის სავალდებულო "ბიზნეს-კრიტიკული" ველი, როგორც `customer_id`.
+
+**`orders.php`-ს დაემატა ორი სვეტი**: "სტატუსი" (badge, ფერი status-ის
+მიხედვით — `draft`=secondary, `final`=info, `due`=warning, `paid`=success)
+და "ტიპი" (`ნულოვანი`/`განმეორებადი` badge-ები, ან `—` თუ არცერთი).
+
+**გადამოწმებულია ცოცხლად**: `status=final`+`is_zero`-ით შექმნილი ინვოისი →
+სწორად შენახულია DB-ში; success flash/orders.php/customer-history panel
+ყველგან ახალი ფორმატით (`PH 2026-08-14 0006`); `?edit=N` → status select
++ orders.php badge-ები ორივე სწორად `bg-info-subtle`/`ნულოვანი`; `?edit=6`
+→ select/checkbox-ები სწორად პრეფილვდება (`status="final"`,
+`isZero=true`), `#invoiceFormDate` ცარიელია (რადგან ნომერში უკვე
+ჩანს თარიღი).
+
 ### 4.8 CSRF + flash + PRG — პირველი POST-ფორმა
 `bootstrap.php`-ში `session_start()` **`Lang::boot()`-მდე** (ორივე cookie-ს დგამს,
 გამოტანამდე უნდა მოხდეს). `helpers.php`: `csrf_field()` / `csrf_verify()` (არასწორი
@@ -1025,9 +1447,129 @@ POST → validate → **redirect** → GET (PRG): F5 ხელახლა ა�
 რიგია. `validate()` ახალ ჩანაწერს '0'-ს NULL-ად ინახავს; view-ც '0'-ს არარსებულად
 თვლის. ამის გარეშე დუბლიკატის შემოწმება 272-ე უს/კ-ო დამკვეთს დაბლოკავდა.
 
-⚠️ `customer_taxid`-ის დუბლიკატის შემოწმება **აპლიკაციაშია, არა ბაზაში** —
-სქრინშოტის `idx_customers_taxid` განზრახ არაა UNIQUE (ს/კ-ის გარეშე დამკვეთი
-ნებადართულია, ხოლო MySQL-ში მრავალი NULL UNIQUE-საც გაივლიდა).
+⚠️ **განახლება (`4.26`) — ეს აღარ არის მართალი**: `customer_taxid`-ს ახლა
+**რეალური UNIQUE ინდექსიც** აქვს ბაზაში (`migrations/017`), აპლიკაციური
+შემოწმების გვერდით, არა მის მაგივრად — იხილე `4.26`.
+
+### 4.26 მრავალ-მომხმარებლიანობა — რისი შემოწმება მოხდა და რა გასწორდა
+
+მომხმარებელმა სთხოვა: "პროექტი უნდა იყოს მულტი-მომხმარებლის... სხვადასხვა
+IP-დან ან ერთი და იგივე IP-დან ერთდროულად რამდენიმე მომხმარებელი". ეს
+ანალიზის/მიმოხილვის მოთხოვნა იყო, არა ერთი კონკრეტული ბაგის რეპორტი —
+შედეგად: **რაც უკვე უსაფრთხოა** + **ერთი რეალურად ნაპოვნი და გასწორებული
+ხარვეზი**.
+
+**რატომაა უსაფრთხო PHP-ის request-per-process მოდელით (default, უცვლელი)**:
+`Db::$pdo` (static singleton), `ModuleRegistry`-ის caching და ყველა სხვა
+static state **per-request-ია, არა per-process/per-server** — თითო HTTP
+request ახალი PHP execution-ია (`php -S`/PHP-FPM ორივეს ეს ეხება), ასე
+რომ ერთი მომხმარებლის request-ის განმავლობაში დაწერილი static state
+**ვერასდროს** გაჟონავს მეორე მომხმარებლის request-ში. სესია (`$_SESSION`,
+`Auth`, CSRF, flash) ცალკეა თითო ბრაუზერისთვის (`PHPSESSID` cookie-ით) —
+სხვადასხვა IP-დან თუ ერთი IP-დან (რამდენიმე ბრაუზერი/tab, NAT-ის უკან
+რამდენიმე მომხმარებელი) სესიები არ ერევა ერთმანეთში.
+
+⚠️ **ნაპოვნი რეალური ხარვეზი**: `Customer::taxIdTaken()` (`4.13`)
+check-then-insert პატერნია — ორ true-concurrent request-ს შორის, ორივეს
+შეუძლია გაიაროს pre-check ერთსა და იმავე ჯერ-არნახულ ს/კ-ზე, სანამ
+რომელიმეს INSERT ჩავარდება (classic TOCTOU race). ვამოწმე, უსაფრთხოა
+თუ არა ანალოგიური ველები: **`users.email`/`users.phone`/`users.google_id`
+უკვე რეალურ UNIQUE ინდექსზეა** (`migrations/007`/`009`) — იქ ხარვეზი
+არასდროს ყოფილა. `customer_taxid`-ს კი მხოლოდ non-unique index ჰქონდა.
+
+**გასწორება** (`migrations/016`, `017`): ჯერ `UPDATE customers SET
+customer_taxid = NULL WHERE customer_taxid = '0'` (269 legacy row-ს
+ჰქონდა სიტყვასიტყვითი `'0'` NULL-ის მაგივრად — ახალი UNIQUE ინდექსი
+მაშინვე ჩავარდებოდა ამ დუბლიკატებზე), მერე `ALTER TABLE customers ADD
+UNIQUE INDEX uq_customers_taxid (customer_taxid)`. MySQL-ის UNIQUE
+ინდექსი **ნებისმიერი რაოდენობის NULL-ს უშვებს** — ს/კ-ის გარეშე
+დამკვეთები (`4.13`-ის NULL-კონვენცია) არ ეჯახება ერთმანეთს.
+
+**`CustomerController::store()`-ს დაემატა try/catch** `PDOException`-ზე,
+`getCode() === '23000'` (MySQL-ის duplicate-key SQLSTATE) — აპლიკაციური
+pre-check კვლავ პირველი ხაზის დაცვაა (ჩვეულებრივი, non-race შემთხვევა
+ჩვეულებრივ `terr('cust.err_taxid_taken')`-ს აძლევს page-reload-ის გარეშეც
+დამატებითი round-trip-ის გარეშე), მაგრამ **DB-ის constraint არის ნამდვილი
+გარანტია** — თუ ორივე request მაინც გაუსწორდა race-ს, PHP აპლიკაცია აღარ
+აფუჭებს (`PDOException` → fatal 500) და ცოცხლდება იმავე მეგობრული
+შეცდომით, რასაც pre-check-იც აძლევდა.
+
+⚠️ **განახლება — optimistic locking მოგვიანებით მაინც დაემატა**, იხილე
+`4.27` — მომხმარებელმა ცალსახად სთხოვა კონკრეტულად ინვოისისთვის ("დიახ
+ჯობია რომ რამე დაცვა ქონდეს ამ კონკრეტული შემთხვევისთვის"), ქვემოთ
+აღწერილი "last-write-wins compromise" **მხოლოდ სხვა ცხრილებზე** (დამკვეთი/
+პროდუქტი/მომხმარებელი) რჩება ჯერჯერობით უცვლელი.
+
+**გადამოწმებულია ცოცხლად**: (ა) ჩვეულებრივი დუბლიკატი (pre-check გზით)
+კვლავ `#customer-form`-ზე ისევე მუშაობს, დუბლიკატი **არ** იქმნება; (ბ)
+**პირდაპირი race-სიმულაცია** — `Customer::create()` ორჯერ, იგივე
+ს/კ-ით, pre-check-ის გვერდის ავლით (სცენარი, რომელსაც ვერცერთი
+აპლიკაციური კოდი ვერ დაიჭერდა pre-check-ის გარეშე) — მეორე გამოძახებამ
+სწორად გამოისროლა `PDOException code=23000`; (გ) NULL ს/კ-ით ორი "walk-in"
+დამკვეთი ორივე წარმატებით შეიქმნა (constraint მათ არ ეხება).
+
+### 4.27 ინვოისების optimistic locking — `updated_at` token
+
+`4.26`-ში აღწერილი "last-write-wins" compromise მომხმარებელმა კონკრეტულად
+ინვოისისთვის აღარ მოისურვა: "დიახ ჯობია რომ რამე დაცვა ქონდეს ამ
+კონკრეტული შემთხვევისთვის" (ორი admin-ი, ან admin-ი და ქვე-მომხმარებელი,
+ერთსა და იმავე ინვოისზე ერთდროული რედაქტირება).
+
+**სქემა** (`migrations/018`): `invoices.updated_at TIMESTAMP ... ON UPDATE
+CURRENT_TIMESTAMP` — MySQL **ავტომატურად** ბუმავს ამ სვეტს ყოველ
+`UPDATE`-ზე, აპლიკაციას არაფრის ხელით დაწერა არ სჭირდება.
+
+**`Invoice::save(array $clean, ?int $editingId, ?string $expectedUpdatedAt =
+null): ?int`** — signature-ს დაემატა მესამე პარამეტრი, დაბრუნების ტიპი
+`int`-დან `?int`-ზე შეიცვალა (`null` = conflict, ტრანზაქცია rollback-ილია,
+**არაფერი** ჩაწერილა). ლოგიკა:
+```php
+$lock = $conn->prepare('SELECT updated_at FROM invoices WHERE id = ? FOR UPDATE');
+$lock->execute([$editingId]);
+$actualUpdatedAt = $lock->fetchColumn();
+
+if ($actualUpdatedAt === false || $actualUpdatedAt !== $expectedUpdatedAt) {
+    $conn->rollBack();
+    return null;
+}
+// ... UPDATE ...
+```
+⚠️ **`SELECT ... FOR UPDATE`, არა უბრალო `SELECT` + შემდეგ `UPDATE ... WHERE
+updated_at=?`** — განზრახ არჩევანი. `FOR UPDATE` InnoDB-ის row-lock-ს
+დებს ტრანზაქციის დარჩენილი ხნით — ორ true-concurrent request-ს შორის
+**ფიზიკურად ვერ** ჩაერევა ერთმანეთის SELECT-სა და UPDATE-ს შორის (ეს
+თავად კეთდება race-free, არა "დიდი ალბათობით უსაფრთხო"). `WHERE
+updated_at=?`-ზე დაფუძნებული ალტერნატივა თავს იჩენდა MySQL-ის ცნობილ
+თავისებურებასთან — `ON UPDATE CURRENT_TIMESTAMP` ზოგჯერ **არ** იბუმება,
+თუ ახალი მნიშვნელობები იდენტურია ძველთან (0 affected rows ≠ conflict იმ
+შემთხვევაში).
+
+**`InvoiceController`**: `store()`-ში ახალი `$expectedUpdatedAt =
+(string) ($_POST['updated_at'] ?? '')` (hidden ველიდან, `4.25`-ის
+`$old`-ის იგივე patern-ით ივსება `?edit=N`-ზე). `Invoice::save()`-ის
+`null` პასუხზე → `flash('errors', ['conflict' => terr('inv.err_conflict')])`
++ `redirect('/invoices?edit=' . $editingId . '#invoice-form')` — ეს
+**თავად** ხელახლა ტვირთავს ინვოისის **ახლანდელ** მდგომარეობას (`index()`-ის
+`?edit=` branch-ი ხელახლა ეშვება, რადგან `'old'` ამ conflict-flash-ში
+**არ** გადადის, მხოლოდ `'errors'` — `4.25.3`-ის ძველი
+`$errors === [] && $old === []` guard განზრახ შემცირდა მხოლოდ `$old ===
+[]`-მდე, რომ ეს ახალი re-load scenario არ დაბლოკოს).
+
+`Invoice::validate()`-ს `updated_at`-თან შეხება არ აქვს (ეს არ არის
+ბიზნეს-მონაცემი, concurrency-token-ია) — validation-ჩავარდნისას
+`store()`-ს თავად მოაქვს round-trip: `flash('old', $clean + [...,
+'updated_at' => $expectedUpdatedAt])`.
+
+**გადამოწმებულია ცოცხლად, სრული ორ-მომხმარებლიანი სცენარი**: A და B
+ორივემ `?edit=N` ჩატვირთეს (იგივე `updated_at`) → B-მ status="paid"
+შეინახა წარმატებით, `updated_at` ბუმდა → A-მ (ძველი `updated_at`-ით)
+ცადა status="final" → **დაიბლოკა**, DB-ში `status` **დარჩა "paid"**
+(B-ის მონაცემი ხელუხლებელია), A-ს გადმოეცა `#4386`-კოდიანი
+გაფრთხილება და ფორმა **ავტომატურად ხელახლა ჩაიტვირთა** B-ის ახლანდელი
+მონაცემებით (`select[value=paid] selected`); ჩვეულებრივი, non-conflict
+რედაქტირება (`status="due"`) ცალკე ტესტში კვლავ უნაკლოდ მუშაობს.
+
+## 5. კონვენციები
 
 ## 5. კონვენციები
 

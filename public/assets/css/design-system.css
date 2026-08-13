@@ -391,3 +391,12 @@ details.card { interpolate-size: allow-keywords; }
 [data-bs-theme="dark"] .ds-icon-moon { display: none; }
 [data-bs-theme="light"] .ds-icon-sun { display: none; }
 [data-bs-theme="light"] .ds-icon-moon { display: inline-block; }
+
+/* Printable pages (invoice-view.php etc.): chrome hides, the marked content
+   fills the page. `.no-print` is generic — any page can use it, not just
+   invoices. */
+@media print {
+  .ds-sidebar, .ds-topbar, .no-print { display: none !important; }
+  .ds-main { margin: 0 !important; }
+  .ds-content { padding: 0 !important; }
+}

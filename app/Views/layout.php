@@ -33,6 +33,14 @@
   </main>
 </div>
 
+<div class="toast-container position-fixed top-0 end-0 p-3" id="dsToastContainer" style="z-index:1080;"></div>
+
+<!-- Notification catalog (app/config/notifications.php), text pre-resolved in
+     the current locale — see app.js's dsNotifyCode(code). -->
+<script>window.dsNotifications = <?= json_encode(array_map(
+    static fn(array $n): array => ['type' => $n['type'], 'text' => t($n['key'])],
+    \App\Core\Notifications::all()
+), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/assets/js/app.js"></script>
 <script src="/vendor/floating-label/js/floating-label.js"></script>

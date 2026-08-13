@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Controllers\AuthController;
 use App\Controllers\CustomerController;
 use App\Controllers\DashboardController;
+use App\Controllers\InvoiceController;
 use App\Controllers\LookupController;
 use App\Controllers\ModuleController;
 use App\Controllers\OrganizationController;
@@ -37,6 +38,11 @@ $router->post('/customers', [CustomerController::class, 'store']);
 $router->get('/products', [ProductController::class, 'index']);
 $router->post('/products', [ProductController::class, 'store']);
 $router->post('/units', [LookupController::class, 'units']);
+
+$router->get('/invoices', [InvoiceController::class, 'index']);
+$router->post('/invoices', [InvoiceController::class, 'store']);
+$router->get('/invoices/view', [InvoiceController::class, 'show']);
+$router->get('/orders', [InvoiceController::class, 'orders']);
 
 $router->get('/settings/modules', [ModuleController::class, 'index']);
 $router->post('/settings/modules/install', [ModuleController::class, 'install']);

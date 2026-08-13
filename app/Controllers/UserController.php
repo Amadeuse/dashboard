@@ -48,14 +48,15 @@ final class UserController extends Controller
         [$clean, $errors] = User::validateSubUser($_POST, $editingId);
 
         $existingAvatar = $editingId !== null ? (string) (User::findById($editingId)['avatar'] ?? '') : '';
-        $avatar         = $this->resolveAvatar($errors, $existingAvatar);
-        $clean['avatar'] = $avatar ?? $existingAvatar;
+        $newAvatar      = $this->validateAvatar($errors);
 
         if ($errors) {
             flash('errors', $errors);
             flash('old', $clean + ['user_id' => $id]);
             redirect('/settings/users#user-form');
         }
+
+        $clean['avatar'] = $newAvatar !== null ? $this->storeAvatar($newAvatar, $existingAvatar) : $existingAvatar;
 
         if ($editingId !== null) {
             User::updateSubUser($editingId, $clean);
@@ -68,8 +69,15 @@ final class UserController extends Controller
         redirect('/settings/users');
     }
 
-    /** Same shape as Warehouse/Profile's own upload handling. */
-    private function resolveAvatar(array &$errors, string $existing): ?string
+    /**
+     * Checks the uploaded file's constraints without touching disk — name/email/
+     * phone/role/password can still reject the submission, and moving the file
+     * before that check was leaving orphaned uploads in UPLOAD_DIR with nothing
+     * in the DB pointing at them whenever some other field failed validation.
+     *
+     * @return array{tmp_name:string,ext:string}|null null if there's no new file to save
+     */
+    private function validateAvatar(array &$errors): ?array
     {
         $file = $_FILES['avatar'] ?? null;
         if ($file === null || $file['error'] === UPLOAD_ERR_NO_FILE) {
@@ -92,11 +100,17 @@ final class UserController extends Controller
             return null;
         }
 
+        return ['tmp_name' => $file['tmp_name'], 'ext' => $ext];
+    }
+
+    /** Only called once the whole submission is known-valid. */
+    private function storeAvatar(array $file, string $existing): string
+    {
         if (!is_dir(self::UPLOAD_DIR)) {
             mkdir(self::UPLOAD_DIR, 0755, true);
         }
 
-        $filename = bin2hex(random_bytes(16)) . '.' . $ext;
+        $filename = bin2hex(random_bytes(16)) . '.' . $file['ext'];
         move_uploaded_file($file['tmp_name'], self::UPLOAD_DIR . $filename);
 
         if ($existing !== '' && is_file(self::UPLOAD_DIR . $existing)) {

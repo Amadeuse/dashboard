@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\Customer;
+use PDOException;
 
 final class CustomerController extends Controller
 {
@@ -41,12 +42,28 @@ final class CustomerController extends Controller
             redirect('/customers#customer-form');
         }
 
-        if ($editingId !== null) {
-            Customer::update($editingId, $clean);
-            flash('updated', $clean['customer_name']);
-        } else {
-            Customer::create($clean);
-            flash('created', $clean['customer_name']);
+        try {
+            if ($editingId !== null) {
+                Customer::update($editingId, $clean);
+                flash('updated', $clean['customer_name']);
+            } else {
+                Customer::create($clean);
+                flash('created', $clean['customer_name']);
+            }
+        } catch (PDOException $e) {
+            // Customer::validate() already pre-checks taxIdTaken(), but that's a
+            // check-then-insert with a real race window under concurrent
+            // requests (see handoff.md's multi-user section) — two submits for
+            // the same never-before-used tax id, close enough together, could
+            // both pass the pre-check. The actual guarantee is the DB's own
+            // UNIQUE index (migrations/017); this just turns that constraint
+            // violation into the same friendly message instead of a fatal error.
+            if ($e->getCode() !== '23000') {
+                throw $e;
+            }
+            flash('errors', ['customer_taxid' => terr('cust.err_taxid_taken')]);
+            flash('old', $clean + ['customer_id' => $id]);
+            redirect('/customers#customer-form');
         }
 
         redirect('/customers');

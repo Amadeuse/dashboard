@@ -14,13 +14,14 @@
       {
         "label": "nav.orders", "icon": "bi-cart3",
         "children": [
-          { "label": "nav.orders_all",     "url": "#" },
+          { "label": "nav.orders_all",     "url": "/orders" },
           { "label": "nav.orders_pending", "url": "#" },
           { "label": "nav.orders_new",     "url": "#" }
         ]
       },
       { "label": "nav.customers", "icon": "bi-people-fill", "url": "/customers" },
-      { "label": "nav.products", "icon": "bi-box-seam", "url": "/products" }
+      { "label": "nav.products", "icon": "bi-box-seam", "url": "/products" },
+      { "label": "nav.invoices", "icon": "bi-receipt", "url": "/invoices" }
     ]
   },
   {
