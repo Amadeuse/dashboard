@@ -1,7 +1,9 @@
 <?php
 /**
- * @var array   $rows           every invoice, newest first, customer_name joined in
- *                               (status/is_zero/is_recurring come along for free — Invoice::all() is `SELECT i.*`)
+ * @var array   $rows           every invoice, newest first — customer_name/
+ *                               customer_taxid and the creator's name
+ *                               (creator_name, nullable) joined in by
+ *                               Invoice::all()
  * @var string  $invoicePrefix  organization.invoice_prefix, or "INV" if unset
  * @var int     $total          row count
  *
@@ -17,18 +19,12 @@
  */
 $invoiceNumber = static fn(array $row): string => \App\Models\Invoice::number($row, $invoicePrefix);
 
-$statusBadgeClass = [
-    'draft' => 'bg-secondary-subtle text-secondary-emphasis',
-    'final' => 'bg-info-subtle text-info-emphasis',
-    'due'   => 'bg-warning-subtle text-warning-emphasis',
-    'paid'  => 'bg-success-subtle text-success-emphasis',
-];
-$statusLabel = [
-    'draft' => t('inv.status_draft'),
-    'final' => t('inv.status_final'),
-    'due'   => t('inv.status_due'),
-    'paid'  => t('inv.status_paid'),
-];
+// '0' is how legacy/imported rows spell "no tax id" (see Customer.php's
+// docblock) — same treatment invoices.php's customer-info panel gives it.
+$taxId = static function (array $row): string {
+    $value = (string) ($row['customer_taxid'] ?? '');
+    return $value !== '' && $value !== '0' ? e($value) : '<span class="text-secondary">—</span>';
+};
 ?>
 
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
@@ -61,11 +57,10 @@ $statusLabel = [
           <tr class="text-secondary">
             <th><?= t('inv.number') ?></th>
             <th><?= t('inv.customer') ?></th>
-            <th><?= t('inv.issue_date') ?></th>
+            <th><?= t('cust.taxid') ?></th>
+            <th><?= t('inv.creator') ?></th>
             <th><?= t('inv.total') ?></th>
-            <th><?= t('inv.status_label') ?></th>
-            <th><?= t('inv.type_label') ?></th>
-            <th></th>
+            <th><?= t('inv.actions') ?></th>
           </tr>
         </thead>
         <tbody>
@@ -73,24 +68,9 @@ $statusLabel = [
           <tr>
             <td><?= e($invoiceNumber($inv)) ?></td>
             <td><?= e($inv['customer_name']) ?></td>
-            <td data-order="<?= e($inv['issue_date']) ?>"><?= e(ds_date($inv['issue_date'])) ?></td>
+            <td><?= $taxId($inv) ?></td>
+            <td><?= $inv['creator_name'] !== null ? e($inv['creator_name']) : '<span class="text-secondary">—</span>' ?></td>
             <td data-order="<?= (float) $inv['total'] ?>"><?= number_format((float) $inv['total'], 2) ?></td>
-            <td>
-              <span class="badge rounded-pill <?= $statusBadgeClass[$inv['status']] ?? $statusBadgeClass['draft'] ?>">
-                <?= e($statusLabel[$inv['status']] ?? $inv['status']) ?>
-              </span>
-            </td>
-            <td>
-              <?php if ((int) $inv['is_zero'] === 1): ?>
-                <span class="badge bg-dark-subtle text-dark-emphasis rounded-pill"><?= t('inv.flag_zero') ?></span>
-              <?php endif; ?>
-              <?php if ((int) $inv['is_recurring'] === 1): ?>
-                <span class="badge bg-primary-subtle text-primary rounded-pill"><?= t('inv.flag_recurring') ?></span>
-              <?php endif; ?>
-              <?php if ((int) $inv['is_zero'] !== 1 && (int) $inv['is_recurring'] !== 1): ?>
-                <span class="text-secondary">—</span>
-              <?php endif; ?>
-            </td>
             <td class="text-end">
               <a href="/invoices?edit=<?= (int) $inv['id'] ?>" class="btn btn-sm btn-outline-secondary" title="<?= t('cust.edit_hint') ?>">
                 <i class="bi bi-pencil"></i>

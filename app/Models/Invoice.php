@@ -26,15 +26,32 @@ final class Invoice
         return sprintf('%s %s %04d', $prefix, $row['issue_date'], (int) $row['id']);
     }
 
-    /** @return array<int, array<string, mixed>> newest first, with the customer's name joined in */
-    public static function all(): array
+    /**
+     * @param int|null $createdBy when given, only that user's own invoices
+     *   (orders.php's table — each user sees only what they created).
+     *   $invoicesByCustomer on /invoices stays unfiltered on purpose: a
+     *   customer's full invoice history is relevant there regardless of who
+     *   created each one.
+     * @return array<int, array<string, mixed>> newest first, with the customer's
+     *   name/tax id and the creator's name (orders.php's table) joined in.
+     *   creator_name is NULL for invoices predating created_by (migrations/021).
+     */
+    public static function all(?int $createdBy = null): array
     {
-        return Db::all(
-            'SELECT i.*, c.customer_name
-               FROM invoices i
-               JOIN customers c ON c.id = i.customer_id
-              ORDER BY i.id DESC'
-        );
+        $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, u.name AS creator_name
+                  FROM invoices i
+                  JOIN customers c ON c.id = i.customer_id
+                  LEFT JOIN users u ON u.id = i.created_by';
+        $args = [];
+
+        if ($createdBy !== null) {
+            $sql .= ' WHERE i.created_by = ?';
+            $args[] = $createdBy;
+        }
+
+        $sql .= ' ORDER BY i.id DESC';
+
+        return Db::all($sql, $args);
     }
 
     /** One invoice plus the customer fields the print/view page's "Bill To" needs, or null if it doesn't exist. */
@@ -66,7 +83,7 @@ final class Invoice
     }
 
     /**
-     * @param array{customer_id:string,status:string,is_zero:int,is_recurring:int,items:list<array{product_id:string,quantity:string,unit_price:string}>} $clean
+     * @param array{customer_id:string,status:string,is_zero:int,is_recurring:int,notes:string,items:list<array{product_id:string,quantity:string,unit_price:string}>} $clean
      * @param string|null $expectedUpdatedAt for an edit: the `updated_at` the
      *   form was loaded with (a hidden field — see invoices.php). Ignored
      *   when $editingId is null (a brand new row has nothing to conflict with).
@@ -80,8 +97,12 @@ final class Invoice
      * and editing one never moves that date (the UPDATE below simply
      * doesn't mention the column). No user-facing date picker means no way
      * to backdate/misdate an invoice by accident.
+     *
+     * @param int|null $createdBy the logged-in user at creation time (Auth::user()),
+     *   only ever written on INSERT — "who created this" doesn't change on edit,
+     *   so the UPDATE branch below never touches created_by.
      */
-    public static function save(array $clean, ?int $editingId, ?string $expectedUpdatedAt = null): ?int
+    public static function save(array $clean, ?int $editingId, ?string $expectedUpdatedAt = null, ?int $createdBy = null): ?int
     {
         $total = 0.0;
         foreach ($clean['items'] as $item) {
@@ -104,19 +125,19 @@ final class Invoice
                 return null;
             }
 
-            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, status = ?, is_zero = ?, is_recurring = ? WHERE id = ?')
+            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, status = ?, is_zero = ?, is_recurring = ?, notes = ? WHERE id = ?')
                 ->execute([
                     (int) $clean['customer_id'], $total, $clean['status'],
-                    $clean['is_zero'], $clean['is_recurring'], $editingId,
+                    $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $editingId,
                 ]);
             $conn->prepare('DELETE FROM invoice_items WHERE invoice_id = ?')->execute([$editingId]);
             $invoiceId = $editingId;
         } else {
             $conn->prepare(
-                'INSERT INTO invoices (customer_id, issue_date, total, status, is_zero, is_recurring) VALUES (?, ?, ?, ?, ?, ?)'
+                'INSERT INTO invoices (customer_id, issue_date, total, status, is_zero, is_recurring, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 (int) $clean['customer_id'], date('Y-m-d'), $total,
-                $clean['status'], $clean['is_zero'], $clean['is_recurring'],
+                $clean['status'], $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $createdBy,
             ]);
             $invoiceId = (int) $conn->lastInsertId();
         }
@@ -138,8 +159,9 @@ final class Invoice
 
     /**
      * @return array{0: array<string,mixed>, 1: array<string,string>} [clean, errors]
-     *   clean = ['customer_id','status','is_zero','is_recurring',
+     *   clean = ['customer_id','status','is_zero','is_recurring','notes',
      *            'items' => list of ['product_id','quantity','unit_price']]
+     *   notes is free text, no validation — an empty textarea just stores ''.
      */
     public static function validate(array $input): array
     {
@@ -152,6 +174,7 @@ final class Invoice
             'status'       => in_array($status, self::STATUSES, true) ? $status : self::STATUSES[0],
             'is_zero'      => isset($input['is_zero']) ? 1 : 0,
             'is_recurring' => isset($input['is_recurring']) ? 1 : 0,
+            'notes'        => trim((string) ($input['notes'] ?? '')),
         ];
         $errors = [];
 

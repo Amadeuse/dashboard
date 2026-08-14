@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Core\Controller;
+use App\Models\ProductType;
 use App\Models\Unit;
 
 /**
- * units is a bare id+name table, managed from a modal on the products page
- * (see products.php). product_type_id's own equivalent lookup — same shape,
- * same two actions (add / rename) — is App\Modules\Warehouse\Controllers\
- * ProductTypeController, which reuses the identical ~15-line save() body
- * rather than sharing a base class across the core/module boundary for it.
+ * units/product_types are both bare id+name tables, managed from a modal on
+ * the products page (see products.php). App\Modules\Warehouse\Controllers\
+ * ProductTypeController has its own near-identical productTypes() action for
+ * the same product_types table — duplicated rather than shared across the
+ * core/module boundary, same reasoning as handoff.md 4.19.
  *
  * Unlike CustomerController::store(), this responds with JSON and never
  * redirects: the modal must not blow away whatever the surrounding product
@@ -23,6 +24,11 @@ final class LookupController extends Controller
     public function units(): void
     {
         $this->save(Unit::class, 'unit.err_name_required');
+    }
+
+    public function productTypes(): void
+    {
+        $this->save(ProductType::class, 'ptype.err_name_required');
     }
 
     /** @param class-string $model must expose create(string):int and update(int,string):void */

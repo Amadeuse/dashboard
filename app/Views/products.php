@@ -1,16 +1,18 @@
 <?php
 /**
- * @var array   $rows    every product, newest first
- * @var array   $units   all units rows, for the select + its modal
- * @var int     $total   row count
- * @var array   $errors  field => message, from the failed POST
- * @var array   $old     field => value, so a rejected form comes back filled
- * @var ?string $created name of the product just added
- * @var ?string $updated name of the product just edited
+ * @var array   $rows         every product, newest first
+ * @var array   $units        all units rows, for the select + its modal
+ * @var array   $productTypes all product_types rows, for the select + its modal
+ * @var int     $total        row count
+ * @var array   $errors       field => message, from the failed POST
+ * @var array   $old          field => value, so a rejected form comes back filled
+ * @var ?string $created      name of the product just added
+ * @var ?string $updated      name of the product just edited
  *
- * Core only: name, unit, price. Type/quantity/image live on their own page
- * now (the Warehouse module's /warehouse, see app/Modules/Warehouse/) —
- * this view never mentions it.
+ * Core: name, type, unit, price. Quantity/image still live on their own page
+ * (the Warehouse module's /warehouse, see app/Modules/Warehouse/) — type
+ * came back here as a plain core field, independent of Warehouse being
+ * enabled (see handoff.md's product-type section for why).
  */
 $editing = ($old['product_id'] ?? '') !== '';
 
@@ -68,7 +70,24 @@ $selected = static fn(string $f, string $optionValue): string
         <?php if (isset($errors['name'])): ?><div class="invalid-feedback d-block"><?= e($errors['name']) ?></div><?php endif; ?>
       </div>
 
-      <div class="col-md-6">
+      <div class="col-md-4">
+        <div class="input-group">
+          <select class="form-select <?= $bad('product_type_id') ?>" id="product_type_id" name="product_type_id" required
+                  data-ds-select data-search-placeholder="<?= t('table.search') ?>"
+                  data-no-results="<?= t('table.empty') ?>" data-clear-label="<?= t('cust.clear_field') ?>">
+            <option value=""></option>
+            <?php foreach ($productTypes as $pt): ?>
+              <option value="<?= (int) $pt['id'] ?>" <?= $selected('product_type_id', (string) $pt['id']) ?>><?= e($pt['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+          <label for="product_type_id"><?= t('prod.type') ?> *</label>
+          <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal"
+                  data-bs-target="#ptypeModal" title="<?= t('prod.manage') ?>"><i class="bi bi-gear"></i></button>
+        </div>
+        <?php if (isset($errors['product_type_id'])): ?><div class="invalid-feedback d-block"><?= e($errors['product_type_id']) ?></div><?php endif; ?>
+      </div>
+
+      <div class="col-md-4">
         <div class="input-group">
           <select class="form-select <?= $bad('unit_id') ?>" id="unit_id" name="unit_id" required
                   data-ds-select data-search-placeholder="<?= t('table.search') ?>"
@@ -85,7 +104,7 @@ $selected = static fn(string $f, string $optionValue): string
         <?php if (isset($errors['unit_id'])): ?><div class="invalid-feedback d-block"><?= e($errors['unit_id']) ?></div><?php endif; ?>
       </div>
 
-      <div class="col-md-6">
+      <div class="col-md-4">
         <div class="form-floating">
           <input type="number" step="0.01" min="0" class="form-control <?= $bad('unit_price') ?>" id="unit_price"
                  name="unit_price" value="<?= $val('unit_price') ?>" placeholder=" " required>
@@ -126,6 +145,7 @@ $selected = static fn(string $f, string $optionValue): string
         <thead>
           <tr class="text-secondary">
             <th><?= t('prod.name') ?></th>
+            <th><?= t('prod.type') ?></th>
             <th><?= t('prod.unit') ?></th>
             <th><?= t('prod.price') ?></th>
           </tr>
@@ -135,9 +155,11 @@ $selected = static fn(string $f, string $optionValue): string
           <tr class="ds-row-editable" title="<?= t('prod.edit_hint') ?>"
               data-id="<?= (int) $p['id'] ?>"
               data-name="<?= e($p['name']) ?>"
+              data-type="<?= e((string) ($p['product_type_id'] ?? '')) ?>"
               data-unit="<?= (int) $p['unit_id'] ?>"
               data-price="<?= e((string) $p['unit_price']) ?>">
             <td><?= e($p['name']) ?></td>
+            <td class="text-secondary"><?= e($p['product_type_name'] ?? '—') ?></td>
             <td class="text-secondary"><?= e($p['unit_name']) ?></td>
             <td data-order="<?= (float) $p['unit_price'] ?>"><?= number_format((float) $p['unit_price'], 2) ?></td>
           </tr>
@@ -188,6 +210,8 @@ $lookupModal = static function (
 
 $lookupModal('unitModal', '/units', t('unit.modal_title'), t('unit.name'),
     t('unit.add'), t('unit.update'), t('unit.empty'), $units);
+$lookupModal('ptypeModal', '/product-types', t('ptype.modal_title'), t('ptype.name'),
+    t('ptype.add'), t('ptype.update'), t('ptype.empty'), $productTypes);
 ?>
 
 <?php
@@ -265,6 +289,7 @@ $scripts = ds_table_script() . <<<'HTML'
   }
 
   wireLookupModal('unitModal', 'unit_id');
+  wireLookupModal('ptypeModal', 'product_type_id');
 
   // Row click = start of an edit. One delegated listener on the table survives
   // ds-table.js re-sorting and re-paging the rows (see customers.php for the
@@ -282,6 +307,8 @@ $scripts = ds_table_script() . <<<'HTML'
       if (!row) return;
 
       document.getElementById('name').value = row.dataset.name || '';
+      document.getElementById('product_type_id').value = row.dataset.type || '';
+      document.getElementById('product_type_id').dsSelect?.refresh();
       document.getElementById('unit_id').value = row.dataset.unit || '';
       document.getElementById('unit_id').dsSelect?.refresh();
       document.getElementById('unit_price').value = row.dataset.price || '';
@@ -305,7 +332,10 @@ $scripts = ds_table_script() . <<<'HTML'
       // actually put the native <select>s back to their default value — a
       // refresh() called synchronously here still reads the pre-reset value.
       // One tick later, the reset has landed.
-      setTimeout(() => document.getElementById('unit_id').dsSelect?.refresh(), 0);
+      setTimeout(() => {
+        document.getElementById('unit_id').dsSelect?.refresh();
+        document.getElementById('product_type_id').dsSelect?.refresh();
+      }, 0);
     });
   })();
 </script>

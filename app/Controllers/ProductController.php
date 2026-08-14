@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Controller;
 use App\Models\Product;
+use App\Models\ProductType;
 use App\Models\Unit;
 
 final class ProductController extends Controller
@@ -18,6 +19,7 @@ final class ProductController extends Controller
             'title'   => t('page.products') . ' · ' . app_name(),
             'rows'    => $rows,
             'units'   => Unit::all(),
+            'productTypes' => ProductType::all(),
             'total'   => count($rows),
             'errors'  => flash('errors') ?? [],
             'old'     => flash('old') ?? [],

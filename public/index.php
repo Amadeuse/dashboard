@@ -2,8 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Core\Auth;
 use App\Core\ModuleRegistry;
 use App\Core\Router;
+
+/** Reachable without a session — every other path needs Auth::check(). */
+const PUBLIC_PATHS = [
+    '/login', '/login/otp/send', '/login/otp/verify', '/logout',
+    '/register', '/auth/google', '/auth/google/callback', '/auth/photo',
+    '/forgot-password', '/reset-password',
+];
 
 // `php -S` has no .htaccess: let it serve existing asset files itself.
 if (PHP_SAPI === 'cli-server') {
@@ -14,6 +22,16 @@ if (PHP_SAPI === 'cli-server') {
 }
 
 require __DIR__ . '/../app/bootstrap.php';
+
+// App-wide login gate. Same path-normalising rule as Router (trailing slash
+// stripped, empty -> "/") so this can never disagree with what actually gets
+// dispatched below. Auth::check() is per-session (one file per session-id
+// cookie) — concurrent users on different sessions never see each other's
+// login state, see Auth's docblock.
+$requestPath = rtrim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', '/') ?: '/';
+if (!Auth::check() && !in_array($requestPath, PUBLIC_PATHS, true)) {
+    redirect('/login');
+}
 
 $router = new Router();
 require APP_PATH . '/routes.php';   // registers core routes on $router

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -42,6 +43,7 @@ final class InvoiceController extends Controller
                     'status'          => (string) $invoice['status'],
                     'is_zero'         => $invoice['is_zero'] ? 1 : 0,
                     'is_recurring'    => $invoice['is_recurring'] ? 1 : 0,
+                    'notes'           => (string) ($invoice['notes'] ?? ''),
                     'updated_at'      => (string) $invoice['updated_at'],
                     'item_product_id' => array_column($items, 'product_id'),
                     'item_quantity'   => array_column($items, 'quantity'),
@@ -78,10 +80,15 @@ final class InvoiceController extends Controller
         ]);
     }
 
-    /** The invoice list, browsed from the sidebar's შეკვეთები > ყველა შეკვეთა — see orders.php. */
+    /**
+     * The invoice list, browsed from the sidebar's შეკვეთები > ყველა შეკვეთა
+     * — see orders.php. Scoped to the logged-in user's own invoices (each
+     * user sees only what they created), not every invoice in the system.
+     */
     public function orders(): void
     {
-        $rows = Invoice::all();
+        $user = Auth::user();
+        $rows = Invoice::all($user['id'] ?? null);
         $org  = Organization::get();
 
         $this->view('orders', [
@@ -111,7 +118,8 @@ final class InvoiceController extends Controller
             redirect('/invoices#invoice-form');
         }
 
-        $invoiceId = Invoice::save($clean, $editingId, $expectedUpdatedAt);
+        $currentUser = Auth::user();
+        $invoiceId   = Invoice::save($clean, $editingId, $expectedUpdatedAt, $currentUser['id'] ?? null);
 
         if ($invoiceId === null) {
             // Someone else saved this invoice after the form was loaded (or

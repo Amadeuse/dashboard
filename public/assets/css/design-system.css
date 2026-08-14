@@ -400,3 +400,10 @@ details.card { interpolate-size: allow-keywords; }
   .ds-main { margin: 0 !important; }
   .ds-content { padding: 0 !important; }
 }
+
+/* Invoice item rows (invoices.php): the product ds-select sits label-less,
+   right next to plain .form-control qty/price inputs — vendor/ds-select's
+   own min-height (2.9rem) is sized for its floating-label mode and reads
+   visibly taller than a plain input here. Drop back to the same
+   padding+line-height-driven height .form-control already uses. */
+#invoiceItems .ds-select-trigger { min-height: 0; }

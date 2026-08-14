@@ -9,24 +9,26 @@ use App\Core\Db;
 /**
  * `products` table (see migrations/004_create_products.sql, relaxed by 006).
  *
- * Core only: name, unit, price. product_type_id/remaining_qty/image used to
- * live here too — they moved to the Warehouse module's own `product_warehouse`
- * table (see app/Modules/Warehouse/). ProductController::index() enriches
- * `all()`'s rows with that data via the `product.list.loaded` hook when
- * Warehouse is enabled; this model has no knowledge of it either way.
+ * Core: name, type, unit, price. `product_type_id` (migrations/019) is a
+ * plain core field again — independent of whether the Warehouse module
+ * (its own `remaining_qty`/`image` on `product_warehouse`) is enabled.
+ * `LEFT JOIN` in all() because rows that existed before migrations/019 have
+ * no type yet (NULL) — Product::validate() requires it going forward, but
+ * nothing backfills the old rows automatically.
  */
 final class Product
 {
     /** Editable columns, in form order. Everything else is DB-managed. */
-    public const FIELDS = ['name', 'unit_id', 'unit_price'];
+    public const FIELDS = ['name', 'unit_id', 'product_type_id', 'unit_price'];
 
     /** @return array<int, array<string, mixed>> */
     public static function all(): array
     {
         return Db::all(
-            'SELECT p.*, u.name AS unit_name
+            'SELECT p.*, u.name AS unit_name, pt.name AS product_type_name
                FROM products p
                JOIN units u ON u.id = p.unit_id
+               LEFT JOIN product_types pt ON pt.id = p.product_type_id
               ORDER BY p.id DESC'
         );
     }
@@ -56,9 +58,10 @@ final class Product
     public static function validate(array $input): array
     {
         $clean = [
-            'name'       => trim((string) ($input['name'] ?? '')),
-            'unit_id'    => trim((string) ($input['unit_id'] ?? '')),
-            'unit_price' => trim((string) ($input['unit_price'] ?? '')),
+            'name'            => trim((string) ($input['name'] ?? '')),
+            'unit_id'         => trim((string) ($input['unit_id'] ?? '')),
+            'product_type_id' => trim((string) ($input['product_type_id'] ?? '')),
+            'unit_price'      => trim((string) ($input['unit_price'] ?? '')),
         ];
 
         $errors = [];
@@ -71,6 +74,10 @@ final class Product
 
         if (!ctype_digit($clean['unit_id']) || self::lookupMissing('units', (int) $clean['unit_id'])) {
             $errors['unit_id'] = terr('prod.err_unit_required');
+        }
+
+        if (!ctype_digit($clean['product_type_id']) || self::lookupMissing('product_types', (int) $clean['product_type_id'])) {
+            $errors['product_type_id'] = terr('prod.err_type_required');
         }
 
         if (!is_numeric($clean['unit_price']) || (float) $clean['unit_price'] < 0) {
@@ -91,6 +98,7 @@ final class Product
         return [
             $data['name'],
             (int) $data['unit_id'],
+            (int) $data['product_type_id'],
             (float) $data['unit_price'],
         ];
     }

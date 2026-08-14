@@ -16,12 +16,11 @@
         "children": [
           { "label": "nav.orders_all",     "url": "/orders" },
           { "label": "nav.orders_pending", "url": "#" },
-          { "label": "nav.orders_new",     "url": "#" }
+          { "label": "nav.orders_new",     "url": "/invoices" }
         ]
       },
       { "label": "nav.customers", "icon": "bi-people-fill", "url": "/customers" },
-      { "label": "nav.products", "icon": "bi-box-seam", "url": "/products" },
-      { "label": "nav.invoices", "icon": "bi-receipt", "url": "/invoices" }
+      { "label": "nav.products", "icon": "bi-box-seam", "url": "/products" }
     ]
   },
   {

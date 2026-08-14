@@ -68,7 +68,7 @@ if ($itemRows === [] || end($itemRows)['product_id'] !== '') {
 $itemRow = static function (int $i, array $row, ?string $err) use ($products): void {
     $productId = $row['product_id']; ?>
   <div class="row g-2 mb-2 align-items-center" data-item-row>
-    <div class="col-md-5">
+    <div class="col">
       <select class="form-select <?= $err ? 'is-invalid' : '' ?>" name="item_product_id[]"
               data-ds-select data-search-placeholder="<?= t('table.search') ?>"
               data-no-results="<?= t('table.empty') ?>" data-clear-label="<?= t('cust.clear_field') ?>"
@@ -89,10 +89,10 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
              name="item_unit_price[]" value="<?= e($row['unit_price']) ?>" data-item-price>
     </div>
     <div class="col-md-2">
-      <input type="text" class="form-control-plaintext text-end fw-semibold" readonly tabindex="-1"
+      <input type="text" class="form-control text-end fw-semibold" readonly tabindex="-1"
              value="0.00" data-item-line-total>
     </div>
-    <div class="col-md-1 text-end">
+    <div class="col-auto">
       <button type="button" class="btn btn-outline-secondary btn-sm invoice-item-remove" tabindex="-1">
         <i class="bi bi-x-lg"></i>
       </button>
@@ -179,17 +179,16 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
           </div>
 
           <div class="col-12">
-            <label class="form-label"><?= t('inv.items') ?></label>
             <?php if (isset($errors['items'])): ?>
               <div class="alert alert-danger py-2 small"><?= e($errors['items']) ?></div>
             <?php endif; ?>
 
             <div class="row g-2 text-secondary small mb-1 d-none d-md-flex">
-              <div class="col-md-5"><?= t('inv.product') ?></div>
+              <div class="col"><?= t('inv.product') ?></div>
               <div class="col-md-2"><?= t('inv.quantity') ?></div>
               <div class="col-md-2"><?= t('inv.unit_price') ?></div>
               <div class="col-md-2"><?= t('inv.line_total') ?></div>
-              <div class="col-md-1"></div>
+              <div class="col-auto"></div>
             </div>
 
             <div id="invoiceItems"
@@ -202,19 +201,31 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
                  data-clear-label="<?= e(t('cust.clear_field')) ?>">
               <?php foreach ($itemRows as $i => $row): $itemRow($i, $row, $errors['items_' . $i] ?? null); endforeach; ?>
             </div>
-
-            <div class="d-flex justify-content-end fw-semibold mt-2">
-              <?= t('inv.total') ?>: <span id="invoiceGrandTotal" class="ms-2">0.00</span>
+<hr>
+            <div class="row g-3 mt-1">
+              <div class="col-md-8">
+                <textarea class="form-control" name="notes" rows="4"
+                          placeholder="<?= e(t('inv.notes')) ?>"><?= $val('notes') ?></textarea>
+              </div>
+              <div class="col-md-4">
+                <div class="d-flex justify-content-between text-secondary small pb-2 border-bottom">
+                  <span><?= t('inv.vat') ?> (18%):</span>
+                  <span id="invoiceVat">0.00</span>
+                </div>
+                <div class="d-flex justify-content-between fw-semibold pt-2">
+                  <span><?= t('inv.grand_total') ?>:</span>
+                  <span id="invoiceGrandTotal">0.00</span>
+                </div>
+                <div class="d-flex justify-content-end gap-2 mt-3">
+                  <button type="reset" class="btn btn-outline-secondary"><?= t('inv.reset') ?></button>
+                  <button type="submit" class="btn btn-primary" id="invoiceSubmitBtn"
+                          data-label-add="<?= e(t('inv.save')) ?>" data-label-update="<?= e(t('inv.update')) ?>">
+                    <i class="bi bi-plus-lg me-1"></i><span id="invoiceSubmitLabel"><?= $editing ? t('inv.update') : t('inv.save') ?></span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div class="d-flex justify-content-end gap-2 mt-3">
-          <button type="reset" class="btn btn-outline-secondary"><?= t('inv.reset') ?></button>
-          <button type="submit" class="btn btn-primary" id="invoiceSubmitBtn"
-                  data-label-add="<?= e(t('inv.save')) ?>" data-label-update="<?= e(t('inv.update')) ?>">
-            <i class="bi bi-plus-lg me-1"></i><span id="invoiceSubmitLabel"><?= $editing ? t('inv.update') : t('inv.save') ?></span>
-          </button>
         </div>
       </form>
     </div>
@@ -274,6 +285,7 @@ $scripts = <<<'HTML'
 (() => {
   const container   = document.getElementById('invoiceItems');
   const grandTotalEl = document.getElementById('invoiceGrandTotal');
+  const vatEl        = document.getElementById('invoiceVat');
   const products    = JSON.parse(container.dataset.products);
   const searchPh    = container.dataset.searchPlaceholder;
   const noResults   = container.dataset.noResults;
@@ -333,7 +345,7 @@ $scripts = <<<'HTML'
   function rowHtml() {
     return `
       <div class="row g-2 mb-2 align-items-center" data-item-row>
-        <div class="col-md-5">
+        <div class="col">
           <select class="form-select" name="item_product_id[]" data-ds-select
                   data-search-placeholder="${searchPh}" data-no-results="${noResults}"
                   data-clear-label="${clearLabel}" data-item-product>
@@ -347,9 +359,9 @@ $scripts = <<<'HTML'
           <input type="number" step="0.01" min="0" class="form-control" name="item_unit_price[]" data-item-price>
         </div>
         <div class="col-md-2">
-          <input type="text" class="form-control-plaintext text-end fw-semibold" readonly tabindex="-1" value="0.00" data-item-line-total>
+          <input type="text" class="form-control text-end fw-semibold" readonly tabindex="-1" value="0.00" data-item-line-total>
         </div>
-        <div class="col-md-1 text-end">
+        <div class="col-auto">
           <button type="button" class="btn btn-outline-secondary btn-sm invoice-item-remove" tabindex="-1"><i class="bi bi-x-lg"></i></button>
         </div>
       </div>`;
@@ -367,6 +379,7 @@ $scripts = <<<'HTML'
     container.querySelectorAll('[data-item-row]').forEach((row) => {
       sum += parseFloat(row.querySelector('[data-item-line-total]').value) || 0;
     });
+    vatEl.textContent = (sum * 0.18).toFixed(2);
     grandTotalEl.textContent = sum.toFixed(2);
   }
 

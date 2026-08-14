@@ -38,6 +38,7 @@ $router->post('/customers', [CustomerController::class, 'store']);
 $router->get('/products', [ProductController::class, 'index']);
 $router->post('/products', [ProductController::class, 'store']);
 $router->post('/units', [LookupController::class, 'units']);
+$router->post('/product-types', [LookupController::class, 'productTypes']);
 
 $router->get('/invoices', [InvoiceController::class, 'index']);
 $router->post('/invoices', [InvoiceController::class, 'store']);
