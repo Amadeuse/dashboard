@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Models\ProductType;
 use App\Models\Unit;
@@ -18,6 +19,12 @@ use App\Models\Unit;
  * Unlike CustomerController::store(), this responds with JSON and never
  * redirects: the modal must not blow away whatever the surrounding product
  * form already has typed into it.
+ *
+ * productTypes() no longer shares save()'s generic body with units() —
+ * product_types is multi-tenant (migrations/023, ruler = Auth::tenantId()),
+ * units isn't, so ProductType::create()/update() need an extra argument
+ * units' Unit::create()/update() don't. Small duplication, same call as
+ * ProductType.php's own docblock (handoff.md 4.19's reasoning again).
  */
 final class LookupController extends Controller
 {
@@ -28,7 +35,33 @@ final class LookupController extends Controller
 
     public function productTypes(): void
     {
-        $this->save(ProductType::class, 'ptype.err_name_required');
+        csrf_verify();
+        header('Content-Type: application/json; charset=utf-8');
+
+        $ruler     = Auth::tenantId();
+        $id        = trim((string) ($_POST['id'] ?? ''));
+        $name      = trim((string) ($_POST['name'] ?? ''));
+        $editingId = ctype_digit($id) ? (int) $id : null;
+
+        if ($name === '') {
+            http_response_code(422);
+            echo json_encode(['error' => terr('ptype.err_name_required')], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+
+        if (mb_strlen($name) > 255) {
+            http_response_code(422);
+            echo json_encode(['error' => terr('cust.err_too_long', 255)], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+
+        if ($editingId !== null) {
+            ProductType::update($editingId, $name, $ruler);
+        } else {
+            $editingId = ProductType::create($name, $ruler);
+        }
+
+        echo json_encode(['id' => $editingId, 'name' => $name], JSON_UNESCAPED_UNICODE);
     }
 
     /** @param class-string $model must expose create(string):int and update(int,string):void */

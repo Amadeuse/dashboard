@@ -5,6 +5,7 @@
  *                               (creator_name, nullable) joined in by
  *                               Invoice::all()
  * @var string  $invoicePrefix  organization.invoice_prefix, or "INV" if unset
+ * @var string  $currency       organization.currency ('GEL' or 'USD')
  * @var int     $total          row count
  *
  * The list half of what used to be one /invoices page (see 4.25 in
@@ -40,6 +41,11 @@ $taxId = static function (array $row): string {
       <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
     </h1>
   </div>
+  <?php if ($rows !== []): ?>
+    <a href="/orders/export-pdf" class="btn btn-outline-secondary">
+      <i class="bi bi-file-earmark-pdf me-1"></i> <?= t('orders.export_pdf') ?>
+    </a>
+  <?php endif; ?>
 </div>
 
 <div class="card ds-card">
@@ -59,7 +65,7 @@ $taxId = static function (array $row): string {
             <th><?= t('inv.customer') ?></th>
             <th><?= t('cust.taxid') ?></th>
             <th><?= t('inv.creator') ?></th>
-            <th><?= t('inv.total') ?></th>
+            <th><?= t('inv.total') ?> (<?= e(currency_symbol($currency)) ?>)</th>
             <th><?= t('inv.actions') ?></th>
           </tr>
         </thead>
@@ -77,6 +83,9 @@ $taxId = static function (array $row): string {
               </a>
               <a href="/invoices/view?id=<?= (int) $inv['id'] ?>" class="btn btn-sm btn-outline-secondary" title="<?= t('inv.print') ?>">
                 <i class="bi bi-printer"></i>
+              </a>
+              <a href="/invoices/export-pdf?id=<?= (int) $inv['id'] ?>" class="btn btn-sm btn-outline-secondary" title="<?= t('orders.export_pdf') ?>">
+                <i class="bi bi-file-earmark-pdf"></i>
               </a>
             </td>
           </tr>

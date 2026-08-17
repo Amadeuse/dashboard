@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
+use App\Models\Organization;
 use App\Models\Product;
 use App\Models\ProductType;
 use App\Models\Unit;
@@ -13,13 +15,15 @@ final class ProductController extends Controller
 {
     public function index(): void
     {
-        $rows = Product::all();
+        $ruler = Auth::tenantId();
+        $rows  = Product::all($ruler);
 
         $this->view('products', [
             'title'   => t('page.products') . ' · ' . app_name(),
             'rows'    => $rows,
             'units'   => Unit::all(),
-            'productTypes' => ProductType::all(),
+            'productTypes' => ProductType::all($ruler),
+            'currency' => (string) Organization::get($ruler)['currency'],
             'total'   => count($rows),
             'errors'  => flash('errors') ?? [],
             'old'     => flash('old') ?? [],
@@ -32,10 +36,12 @@ final class ProductController extends Controller
     {
         csrf_verify();
 
+        $ruler = Auth::tenantId();
+
         $id        = trim((string) ($_POST['product_id'] ?? ''));
         $editingId = ctype_digit($id) ? (int) $id : null;
 
-        [$clean, $errors] = Product::validate($_POST);
+        [$clean, $errors] = Product::validate($_POST, $ruler);
 
         if ($errors) {
             flash('errors', $errors);
@@ -44,10 +50,10 @@ final class ProductController extends Controller
         }
 
         if ($editingId !== null) {
-            Product::update($editingId, $clean);
+            Product::update($editingId, $clean, $ruler);
             flash('updated', $clean['name']);
         } else {
-            Product::create($clean);
+            Product::create($clean, $ruler);
             flash('created', $clean['name']);
         }
 

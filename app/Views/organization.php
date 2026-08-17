@@ -5,8 +5,10 @@
  * @var array  $old      field => value, so a rejected form comes back filled
  * @var ?bool  $updated  true right after a successful save
  */
-$val = static fn(string $f): string => e((string) ($old[$f] ?? $org[$f] ?? ''));
-$bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
+$val      = static fn(string $f): string => e((string) ($old[$f] ?? $org[$f] ?? ''));
+$bad      = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
+$selected = static fn(string $f, string $optionValue): string
+    => ((string) ($old[$f] ?? $org[$f] ?? 'GEL')) === $optionValue ? 'selected' : '';
 $uploadUrl = '/assets/uploads/organization/';
 ?>
 
@@ -125,6 +127,25 @@ $uploadUrl = '/assets/uploads/organization/';
           <?php else: ?>
             <div class="form-text"><?= t('org.invoice_prefix_hint') ?></div>
           <?php endif; ?>
+        </div>
+
+        <div class="col-md-6">
+          <div class="form-floating">
+            <input type="number" step="0.01" min="0" max="100" class="form-control <?= $bad('vat_rate') ?>" id="org_vat_rate" name="vat_rate" value="<?= $val('vat_rate') ?>" placeholder=" ">
+            <label for="org_vat_rate"><?= t('org.vat_rate') ?></label>
+            <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
+          </div>
+          <?php if (isset($errors['vat_rate'])): ?><div class="invalid-feedback d-block"><?= e($errors['vat_rate']) ?></div><?php endif; ?>
+        </div>
+        <div class="col-md-6">
+          <div class="form-floating">
+            <select class="form-select <?= $bad('currency') ?>" id="org_currency" name="currency">
+              <option value="GEL" <?= $selected('currency', 'GEL') ?>><?= t('org.currency_gel') ?></option>
+              <option value="USD" <?= $selected('currency', 'USD') ?>><?= t('org.currency_usd') ?></option>
+            </select>
+            <label for="org_currency"><?= t('org.currency') ?></label>
+          </div>
+          <?php if (isset($errors['currency'])): ?><div class="invalid-feedback d-block"><?= e($errors['currency']) ?></div><?php endif; ?>
         </div>
 
         <div class="col-md-12">

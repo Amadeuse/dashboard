@@ -1490,6 +1490,13 @@ UNIQUE INDEX uq_customers_taxid (customer_taxid)`. MySQL-ის UNIQUE
 ინდექსი **ნებისმიერი რაოდენობის NULL-ს უშვებს** — ს/კ-ის გარეშე
 დამკვეთები (`4.13`-ის NULL-კონვენცია) არ ეჯახება ერთმანეთს.
 
+⚠️ **განახლება — ეს ინდექსი აღარ არის ერთსვეტიანი**: `4.31`-ის
+მულტი-tenant ცვლილებამ (`migrations/025`) `uq_customers_taxid`
+შეცვალა კომპოზიციური `uq_customers_ruler_taxid (ruler, customer_taxid)`-ით
+— ს/კ-ის უნიკალურობა ახლა tenant-ის ფარგლებშია, არა გლობალურად
+(ორ სხვადასხვა tenant-ს შეუძლია ჰყავდეთ ცალ-ცალკე დამკვეთი ერთი და
+იმავე რეალური ს/კ-ით).
+
 **`CustomerController::store()`-ს დაემატა try/catch** `PDOException`-ზე,
 `getCode() === '23000'` (MySQL-ის duplicate-key SQLSTATE) — აპლიკაციური
 pre-check კვლავ პირველი ხაზის დაცვაა (ჩვეულებრივი, non-race შემთხვევა
@@ -1800,6 +1807,909 @@ request-ის შემდეგ `last_activity` ხელახლა გა�
 თავისას (`PH 2026-08-13 0003`); არცერთს არ უჩანს მეორის ან მესამე
 user-ის ინვოისი. ტესტ-სესიები წაშლილია.
 
+### 4.31 Multi-tenant: `ruler` ხუთ ცხრილში + `Auth::tenantId()`
+
+მომხმარებელმა მოითხოვა: `customers` ცხრილის სრული გასუფთავება (1538
+რეალური რიგი — **დადასტურებულია ცალსახად**, "სატესტო SQL backup-ი
+მაქვს, არაა პრობლემა") და 5-10 სატესტო ჩანაწერის შექმნა თითოეული
+უნიკალური მომხმარებლისთვის, ხუთივე ცხრილში: `customers`, `products`,
+`product_type`, `product_warehouse`, `organization`. მეორე კითხვაზე
+("რამდენ ცხრილზე?") — **ყველა ხუთივე, `organization`-ის ჩათვლით**:
+"organization-ს აქ უნდა იყოს ყველა მომხმარებლის ინფორმაცია... სისტემა
+არის multi vendor".
+
+**"tenant" ≠ ყოველი `users` row** — `AskUserQuestion`-ის შემდეგ
+გამოძიებით დადგინდა: `users.created_by` (`migrations/010`) უკვე
+აკავშირებდა sub-user-ებს (`/settings/users`-ით დამატებულს) მათ
+შემქმნელ admin-თან — `User::all()`-ის საკუთარი docblock-იც ამბობდა
+"Every user in the (single) organization". რეალურ მონაცემებში:
+user `id=1` (admin) შექმნა user `13`/`24` (manager-ები); `31`/`32`
+(`test1`/`test2`) დამოუკიდებელი admin-ებია. ანუ **3 უნიკალური tenant**,
+არა 5 — sub-user-ები იზიარებენ შემქმნელი admin-ის მონაცემებს, არა
+საკუთარ ცალკე ცარიელ სეტს (რეალური multi-vendor SaaS-ის სტანდარტული
+მოდელი: ვენდორის ანგარიში + გუნდის წევრები, არა თითო თანამშრომელი =
+თითო ცალკე მაღაზია).
+
+**`Auth::tenantId(): int`** (`Core/Auth.php`) — `$user['created_by']
+?? $user['id']`, `self::requireUser()`-ზე დაფუძნებული (non-nullable,
+redirect-ით თუ როგორმე მაინც არაა login — თუმცა გლობალური gate
+(`4.30`) ამას პრაქტიკულად არასდროს უშვებს). ეს არის THE scoping
+მნიშვნელობა ყველა ქვემოთ ჩამოთვლილი ცხრილისთვის.
+
+**სქემა** (`migrations/022`-`025`, + `Warehouse/migrations/004`):
+`products.ruler`/`product_types.ruler`/`product_warehouse.ruler` —
+`INT UNSIGNED NULL` + non-unique index, ზუსტად `customers.ruler`-ის
+(`migrations/001`) არსებული პატერნით — **რეალური FK არ აქვს არცერთს**
+(არც `customers.ruler`-ს ჰქონდა; `users`-ზე მიმართვის თავიდან აცილება
+განზრახაა, რომ `users`-ის წაშლა/რესტრუქტურიზაცია არასდროს დაბლოკოს
+ბიზნეს-მონაცემებით). `organization` კი **სტრუქტურულად შეიცვალა**:
+`id` გახდა ნამდვილი `AUTO_INCREMENT` (ადრე ყოველთვის ხელით `id=1`
+იყო ვარაუდი), `ruler` კი **UNIQUE** — ერთ tenant-ს ზუსტად ერთი
+org-ჩანაწერი აქვს, არა 5-10 (ბიზნეს-ლოგიკურად: ერთ ვენდორს ერთი
+კომპანიის პროფილი აქვს — `invoice_prefix`/IBAN/ლოგო ერთია, არა
+სია). `customers`-ის `uq_customers_taxid` (`4.26`) გახდა
+კომპოზიციური `uq_customers_ruler_taxid (ruler, customer_taxid)`
+(`migrations/025`) — ს/კ-ის უნიკალურობა ახლა tenant-ის ფარგლებშია.
+
+**მოდელები** — `Customer`/`Product`/`ProductType`/`Organization`-ის
+`all()`/`create()`/`update()`/`get()`/`save()` ყველამ მიიღო `int
+$ruler` პარამეტრი. **`update()`-ებმა `WHERE ... AND ruler = ?`
+მიიღეს, არა მხოლოდ `all()`-ის ფილტრმა** — ეს არ არის მხოლოდ
+UI-დონის დაფარვა: ყალბი `customer_id`/`product_id`-ით POST-ი სხვა
+tenant-ის ჩანაწერს ვერაფერს დააკლებს, `UPDATE` 0 row-ს შეეხება.
+`Product::validate()`-ს `product_type_id`-ის `lookupMissing()`-იც
+`ruler`-ზეა ჩაკეტილი — ერთი tenant ვერასდროს მიუთითებს მეორის
+ტიპზე. `units` **განზრახ დარჩა გლობალური/საზიარო** — user-ის
+ხუთეულში არ იყო, ცალკე არ ითხოვდა scoping-ს.
+
+**`Organization::get(int $ruler)` — get-or-create**: თუ tenant-ს
+ჯერ არ აქვს org-row (ახალი admin-ი, ან migration-მდელი), ცარიელი
+row-ი ავტომატურად იქმნება პირველივე წაკითხვაზე — ყველა caller-ს
+(`InvoiceController`, `OrganizationController`) კვლავ უბრალო
+`array` უბრუნდება, `null`-შემოწმება არასდროს სჭირდება.
+
+**`InvoiceController::show()`** (print-view) **გამონაკლისია**:
+org-ი უნდა იყოს **ინვოისის გამომცემელი tenant-ის**, არა ვინც
+ბეჭდვის გვერდს უყურებს — `ownerTenant(array $invoice): ?int`
+პრივატული მეთოდი `invoice.created_by`-დან პოულობს შემქმნელს და
+**იმისი** `created_by ?? id`-ს იყენებს (`null`-ია, fallback-ის
+გარეშე, თუ creator ვერ მოიძებნა).
+
+⚠️ **განახლება — access-check-ის ხარვეზი დაიხურა, იხილე `4.32`**:
+ეს სექცია თავდაპირველად აღწერდა, რომ `show()`-ს არ ჰქონდა
+access-check (ნებისმიერ ლოგინირებულ user-ს შეეძლო ნებისმიერი
+ინვოისის ნახვა id-ის გამოცნობით) — მომხმარებელმა პირდაპირ სთხოვა
+ამის დახურვა + share-token მექანიზმი, `4.32`-ში აღწერილია.
+
+**`Warehouse` მოდული (გამორთულია)** — `WarehouseController::index()`-ის
+`Product::all()` გამოძახებას დაემატა `Auth::tenantId()` (წინააღმდეგ
+შემთხვევაში fatal იქნებოდა მოდულის ჩართვისთანავე), მაგრამ მოდულის
+**საკუთარი** `ProductWarehouse::all()`/`upsert()` და საკუთარი
+დუბლირებული `ProductType` მოდელი **დარჩა უცვლელი/unscoped** — მოდული
+ამჟამად გამორთულია (`enabled=0`), ეს კოდი არსად არ სრულდება ცოცხლად;
+სრული ruler-გატარება მოდულის საკუთარ კონტროლერებში ცალკე,
+დამატებითი scope იქნებოდა.
+
+**სატესტო მონაცემები** — 3 tenant (`1`, `31`, `32`):
+- **tenant `1`** (რეალური, გივი ბერძენიშვილი) — არსებული რეალური
+  `organization` row (`id=1`, "შპს ბეჭდვითი სახლი") და 2 რეალური
+  `product`/`product_type` **არ დუბლირებულა**, უბრალოდ `ruler=1`
+  მიენიჭა. ზემოდან დაემატა 4 სატესტო ტიპი, 5 სატესტო პროდუქტი (სულ
+  6 ტიპი/7 პროდუქტი), 8 სატესტო დამკვეთი, 5 `product_warehouse` row.
+  **`customers`-ის სრული გასუფთავებისას 3 რეალური რიგი გადარჩა**
+  (`id` 1465/1536/1537) — `fk_invoices_customer` (`RESTRICT`) არ
+  უშვებდა მათ წაშლას, სანამ 3 რეალურ ინვოისს (`id` 3/5/11, ყველა
+  `created_by`-ით tenant 1-ს ეკუთვნის) მიუთითებდნენ — ინვოისების
+  წაშლა **არასდროს ყოფილა დადასტურებული**, მხოლოდ `customers`-ის.
+  ეს 3 row გადარჩა და `ruler=1` მიენიჭა (სულ tenant 1: 11 დამკვეთი).
+- **tenant `31`/`32`** (`test1`/`test2`) — მთლიანად ახალი, სუფთა
+  სატესტო მონაცემები: 1 org, 4 ტიპი, 5 პროდუქტი, 8 დამკვეთი, 5
+  `product_warehouse` row თითოეულს.
+- sub-user `13`/`24` ცალკე მონაცემი **არ დასჭირდა** — ავტომატურად
+  ხედავენ tenant 1-ის მონაცემებს `Auth::tenantId()`-ის მეშვეობით.
+
+**გადამოწმებულია ცოცხლად** (სამი user-ის სესიით, `curl -b
+PHPSESSID`): (1) `/customers` badge — tenant 1: 11, tenant 31: 8,
+ცალ-ცალკე; (2) `/products` badge — tenant 1: 7, tenant 31: 5; (3)
+`/settings/organization` — tenant 1 აჩვენებს "შპს ბეჭდვითი სახლი"/PH,
+tenant 31 — "შპს ტესტ ვან"/TS1; (4) sub-user `13` (tenant 1-ის) ხედავს
+tenant 1-ის იმავე 11 დამკვეთს (არა ცალკე ცარიელი სია); (5) **security
+boundary**: tenant 31-ის დამკვეთის (`id=1569`) რედაქტირების მცდელობა
+ყალბი `customer_id`-ით tenant 1-ის სესიიდან — redirect **success-ის
+მსგავსად** მოვიდა, მაგრამ DB-ში row **უცვლელი დარჩა** (`UPDATE ...
+WHERE id=? AND ruler=?` 0 row-ს შეეხო); (6) იგივე ტესტი products-ზე
+— tenant 31-მა ვერ შექმნა პროდუქტი tenant 1-ის `product_type_id=1`-ით
+(`terr()`-კოდიანი ვალიდაციის შეცდომა, DB row არ შექმნილა). ყველა
+ტესტ-მონაცემი/სესია წაშლილია.
+
+### 4.32 ინვოისის ბეჭდვადი გვერდის access-control + share-token
+
+`4.31`-ის ბოლოს ცალკე დავაფიქსირე, რომ `InvoiceController::show()`-ს
+(`/invoices/view?id=N`) access-check საერთოდ არ ჰქონდა — ნებისმიერი
+ლოგინირებული user-ი ხედავდა ნებისმიერ ინვოისს id-ის გამოცნობით,
+tenant-ის მიუხედავად. მომხმარებელმა პირდაპირ მოითხოვა ამის დახურვა —
+**ორმაგი პირობით**: (1) ნახვა მხოლოდ ავტორიზებულ, საკუთარი tenant-ის
+ინვოისებისთვის, **და** (2) ცალკე, ტოკენით დაცული გზა — ვენდორმა რომ
+შეძლოს ინვოისის ბმულის გაზიარება დამკვეთთან, რომელსაც ამ საიტზე
+ანგარიში საერთოდ არ აქვს.
+
+**`invoices.view_token`** (`migrations/026`, `VARCHAR(64) UNIQUE`) —
+შემთხვევითი `bin2hex(random_bytes(32))`, გენერირდება **მხოლოდ
+`INSERT`-ზე** (`Invoice::save()`), არასდროს იცვლება — იგივე
+"set-once" პატერნი, რაც `created_by`-ს აქვს (`4.25.7`). 3 არსებული
+რეალური ინვოისისთვის (`id` 3/5/11) ცალკე ერთჯერადი backfill-სკრიპტით
+შეივსო.
+
+**`InvoiceController::show()`-ის ახალი წესი** (ორი გზა შესვლისთვის):
+```php
+$sharedLinkValid = $token !== '' && hash_equals((string) $invoice['view_token'], $token);
+$ownerTenant     = $this->ownerTenant($invoice);   // null = ვერ დადგინდა (legacy)
+$viewerTenant    = null;
+
+if (!$sharedLinkValid) {
+    Auth::requireUser();                    // არაა login-ი → /login
+    $viewerTenant = Auth::tenantId();
+    if ($ownerTenant !== $viewerTenant) {   // სხვა tenant-ია → 404
+        http_response_code(404);
+        (new ErrorController())->notFound();
+        return;
+    }
+}
+```
+- **`hash_equals()`**, არა `===` — token-შედარება timing-attack-ისგან
+  დაცული უნდა იყოს (security-relevant შედარება, `===`-ს string-ის
+  სიგრძეზე/პრეფიქსზე დამოკიდებული timing leak-ი აქვს).
+- **404, არა 403** wrong-tenant-ის შემთხვევაში — არ ადასტურებს
+  probe-ერისთვის, რომ ეს id საერთოდ არსებობს, უბრალო "ვერ მოიძებნა".
+- **`$ownerTenant === null` ვერასდროს ემთხვევა namdvil `$viewerTenant`-ს**
+  (`null !== int`) — legacy ინვოისი (`created_by`-ის გარეშე) ან
+  წაშლილი creator-ი login-გზით **დაბლოკილია ყველასთვის**, არა
+  ჩუმად "გატარებული" — ეს იყო ერთადერთი წუნი წინა ვერსიაში
+  (`4.31`-ის `tenantOf()`-ს ჰქონდა `?? Auth::tenantId()` fallback,
+  რომელიც ამ edge-case-ს ავტომატურად "წარმატებულად" აჩვენებდა
+  ნებისმიერი ლოგინირებული user-ისთვის — თავად access-check ჯერ
+  არ არსებობდა მაშინ, მხოლოდ org-ის ჩვენებისთვის იყო).
+- **org-ის resolve-ი token-გზაზე არასდროს იძახებს `Auth::tenantId()`-ს**
+  — `$ownerTenant ?? $viewerTenant ?? 0`, არა `?? Auth::tenantId()`.
+  მიზეზი: `Auth::tenantId()` საკუთარ თავში `requireUser()`-ს იძახებს
+  (redirect `/login`-ზე, თუ სესია არაა) — token-მფლობელი, ანონიმური
+  viewer-ისთვის ეს გაანადგურებდა მთელი ფუნქციონალის აზრს (redirect
+  login-ზე ზუსტად იმ ადამიანისთვის, ვისაც login საერთოდ არ სჭირდება).
+
+**gate-ის გამონაკლისი** (`public/index.php`): `/invoices/view`
+დაემატა `PUBLIC_PATHS`-ს — **არა** იმიტომ, რომ გვერდი სრულად
+საჯაროა, არამედ რომ გლობალურმა blanket-redirect-მა არ დაბლოკოს
+token-მფლობელი ანონიმური მოთხოვნა, სანამ კონტროლერს საკუთარი,
+ნამდვილი წესის გატარების საშუალება მიეცემა. თავად access-გადაწყვეტილება
+კვლავ `show()`-შია, არა gate-ში.
+
+**გადამოწმებულია ცოცხლად** (curl, cookie-ის და token-ის ყველა
+კომბინაცია): (1) ანონიმური + სწორი token → `200`, რეალური invoice
+number-ით title-ში; (2) ანონიმური, token-ის გარეშე → `302 /login`;
+(3) ანონიმური, არასწორი token → `302 /login`; (4) tenant 1-ის
+login-ით, საკუთარი ინვოისი, token-ის გარეშე → `200`; (5) tenant
+31-ის login-ით, tenant 1-ის ინვოისი, token-ის გარეშე → `404`; (6)
+tenant 31-ის login-ით, tenant 1-ის ინვოისი, **სწორი** token-ით →
+`200` (token გვერდს უვლის tenant-შემოწმებას, განზრახ — სწორედ ეს
+არის გაზიარების აზრი). ტესტ-სესიები წაშლილია.
+
+⚠️ **ჯერ არ არის**: ფორმაზე ("ახალი ინვოისი") არსებული "ბმულის
+გაზიარება"/"მეილზე გაგზავნა" ღილაკები (`4.25.6`-დან, ჯერ კიდევ
+ფუნქციონალის გარეშე) ჯერ **არ არის მიბმული** ამ ახალი token-ზე —
+ანუ token მექანიზმი მზადაა და მუშაობს, მაგრამ ჯერ არ არსებობს UI,
+საიდანაც ვენდორს პირდაპირ შეეძლება `?id=N&token=...` ბმულის
+დაკოპირება. მომხმარებელს არ მოუთხოვია ეს ამ ეტაპზე.
+
+### 4.33 Auth გვერდები — clear button + password show/hide
+
+`login.php`/`register.php`/`forgot-password.php`-ის ველებს დაემატა
+სტანდარტული `.btn-clear` (memory-ში დაფიქსირებული standing rule,
+`cust.clear_field` key-ით — არა ახალი). password ველებს (login-ის,
+register-ის ორივე) დამატებით `.btn-toggle-password` (თვალის აიკონი,
+`bi-eye`/`bi-eye-slash`) — მარკერ-კლასი `form-floating--password`
+`.form-floating`-ზე რეზერვს უკეთებს ორივე ღილაკისთვის საკმარის
+`padding-right`-ს.
+
+⚠️ **წინაპირობის ბაგი, ამ ამოცანის ფარგლებში აღმოჩენილი და
+გასწორებული**: `app/Views/auth/_layout.php`-ს ჰქონდა
+`floating-label.css` (link), მაგრამ **არა** `floating-label.js`
+(script) — CSS-ით clear button ჩანდა, მაგრამ დაწკაპუნებაზე
+არაფერი ხდებოდა (delegated listener საერთოდ არ იყო ჩატვირთული ამ
+layout-ზე). დამატებულია.
+
+`floating-label.js`-ს დაემატა მეორე დელეგირებული click-listener
+(`.btn-toggle-password`) — input-ის `type`-ს `password`↔`text`-ს
+შორის ცვლის, აიკონსა და `aria-label`-ს (`auth.show_password`/
+`auth.hide_password`, ახალი keys) `data-show-label`/`data-hide-label`
+attribute-ებიდან სვამს.
+
+**scope**: მხოლოდ ეს სამი გვერდი, ზუსტად როგორც მოთხოვნილი იყო.
+`reset-password.php` (ცალკე გვერდი — "ახალი პაროლის დაყენება", არა
+"პაროლის შეხსენება"), `profile-settings.php`, `users.php`-ის password
+ველები **არ შეხებია** — ღია საკითხია, თუ მომავალში იქაც დასჭირდებათ.
+
+**გადამოწმებულია ცოცხლად** (ბრაუზერში, click-ივენთებით):
+სამივე გვერდზე clear button ცარიელებს ველს; password toggle
+login-ზე და register-ის ორივე password ველზე `type`-ს სწორად
+ცვლის, აიკონი/`aria-label` ერთად იცვლება. ⚠️ შენიშვნა
+`getComputedStyle().paddingRight`-ის შესახებ: ამ ბრაუზერ-tool-ში
+ეს property არასანდოდ იკითხება (**თვითონ უკვე დამტკიცებული**
+`.btn-clear`-ონли ველზეც იგივე "არასწორ" მნიშვნელობას აბრუნებდა) —
+რეალური გეომეტრია (`getBoundingClientRect`, ღილაკების ურთიერთგადაფარვა)
+და click-behavior სანდო წყაროდ ვიხმარე, არა ეს კონკრეტული property.
+
+### 4.34 SuperUser — cross-tenant წვდომა + `.env` credential + impersonation
+
+`4.26`-ის multi-tenant (`ruler`) სქემის პირდაპირი გაგრძელება: user-მა
+მოითხოვა ერთი ანგარიში, ვისაც ყველა tenant-ის ნახვა შეუძლია. Scope-ი
+დაზუსტდა `AskUserQuestion`-ით — **მხოლოდ** მომხმარებლების სია + "browse
+as this tenant" (არა ცალკე cross-tenant dashboard ყველა ცხრილისთვის
+ერთდროულად).
+
+**კრედენშიალი — `.env`, `users`-ის `password_hash`-ის მაგივრად** (user-ის
+საკუთარი წინადადება, დადასტურებული): `SUPERUSER_EMAIL`/
+`SUPERUSER_PASSWORD` (`.env.example`-შიც, ცარიელი default-ით — ცარიელი
+პაროლი არასდროს ემთხვევა submitted ცარიელს, ანუ ფუნქცია გამორთულია
+სანამ არ დააყენებ). `Auth::attemptSuperuser()` (`attempt()`-ის შიგნით,
+პირველი შემოწმდება) `hash_equals()`-ით ადარებს **პირდაპირ .env-ის
+მნიშვნელობებს** — არა DB-ს `password_hash`-ს. წარმატებაზე
+`User::ensureSuperuser()` INSERT...ON DUPLICATE KEY-ით ქმნის/ანახლებს
+რეალურ `users` row-ს (`role='superadmin'`, ახალი hash ყოველ successful
+login-ზე ხელახლა გამოთვლილი .env-ის მიმდინარე პაროლიდან) — ეს row
+**არასდროს** არის რეალური auth-წყარო, მხოლოდ "მასალიზებულია" რომ
+`Auth::user()`/სესია/topbar/idle-timeout ყველამ ჩვეულებრივად იმუშაოს,
+ცალკე კოდის გარეშე. **რატომ .env, არა მხოლოდ DB**: DB-ის მარტო
+გატეხვა (backup leak, SQL injection) ვერ იძლევა მუშა SuperUser
+კრედენშიალს — საჭიროა `.env`-იც, რომელიც ისედაც `DB_PASS`/
+`MAIL_PASSWORD`-ს იმავე plaintext დონეზე იცავს.
+
+**`users.role` ENUM-ს დაემატა `'superadmin'`** (`migrations/027`) —
+**განზრახ არასდროს ჩანს** `User::roles()`-ში (`/settings/users`-ის
+role-picker-ს მხოლოდ admin/manager/viewer აქვს) — ჩვეულებრივი admin
+ვერასდროს შექმნის/დააწინაურებს ვინმეს superadmin-მდე ამ ფორმით,
+`User::validateSubUser()`-ის role-შემოწმება ავტომატურად უარყოფს
+ნებისმიერ ყალბ `role=superadmin` POST-საც.
+
+**Impersonation** (`Auth::impersonate()`/`stopImpersonating()`/
+`impersonating()`, `$_SESSION['impersonating_tenant']`) — SuperUser
+საკუთარ tenant-ს **არასდროს** ფლობს (customers/products/org არც
+ერთი მათგანი). `Auth::tenantId()`-ს დაემატა superadmin-ტოტი:
+impersonation არჩეული არაა → redirect `/superuser`-ზე (**ყველა**
+უკვე არსებული controller, რომელიც `tenantId()`-ს იძახებს
+— customers/products/organization/invoices — ეს დაცვა **უფასოდ**
+მიიღო, არცერთი მათგანი არ შეხებია). არჩეულია → უბრალოდ აბრუნებს
+იმ tenant id-ს, და **იგივე, უცვლელი** customers.php/products.php/
+settings/organization/invoices.php გვერდები მუშაობს — ცალკე
+"admin-panel" ვერსია არცერთი ცხრილისთვის არ დაწერილა (ეს იყო
+`AskUserQuestion`-ის რეკომენდებული, არჩეული ვარიანტი).
+
+⚠️ **`impersonate()`-ის target-ვალიდაცია მნიშვნელოვანია**:
+`SuperUserController::impersonate()` **უარყოფს** ნებისმიერ
+`tenant_id`-ს, რომელსაც `created_by !== NULL` აქვს (ე.ი. sub-user
+id-ია, არა root tenant) ან `role === 'superadmin'` — რადგან
+`Auth::tenantId()`-ის impersonation-ტოტი ამ მნიშვნელობას **პირდაპირ,
+ხელახლა-რეზოლუციის გარეშე** იყენებს (ჩვეულებრივი, არა-impersonating
+sub-user-ისგან განსხვავებით, სადაც `created_by ?? id` ყოველ ჯერზე
+თვლის). ცოცხლად გადამოწმებულია: sub-user id-ის (13) გაგზავნა
+`/superuser/impersonate`-ზე უარყოფილია, impersonation state **არ**
+დამყარებულა.
+
+⚠️ **`Auth::requireAdmin()`-ს დასჭირდა თავისი გასწორება** — თავდაპირველად
+`role === 'admin'`-ს ამოწმებდა, რაც superadmin-ს **ვერასდროს**
+გაატარებდა (მათი საკუთარი role `'superadmin'`-ია, არა `'admin'`),
+თუნდაც impersonation-ის დროს — `/settings/organization`/`/settings/users`
+(ორივე `requireAdmin()`-ს იძახებს **`tenantId()`-მდე**) 403-ავდა
+SuperUser-საც კი, active impersonation-ის დროსაც. გასწორებულია:
+`role === 'admin' OR (role === 'superadmin' AND impersonating() !== null)`
+— სწორია, რადგან `impersonate()`-ის ვალიდაცია უკვე უზრუნველყოფს, რომ
+ნებისმიერი impersonation target **ყოველთვის** არის root tenant, და
+root tenant ამ სქემაში **ყოველთვის** `role='admin'`-ია.
+
+⚠️ **ცალკე ნაპოვნი, ამ ცვლილებამდელი უსაფრთხოების ხარვეზი, გასწორებული
+ამავე დროს**: `User::all()` (`/settings/users`-ის სია) **საერთოდ არ
+იყო tenant-სკოუპილი** — ნებისმიერ admin-ს შეეძლო ეხილა **ყველა**
+tenant-ის ყველა sub-user, და `User::updateSubUser()`-საც (`WHERE id
+= ?`, `created_by`-ის შემოწმების გარეშე) შეეძლო **ჩაეწერა** სხვა
+tenant-ის sub-user-ის პაროლიც კი, id-ის გამოცნობით/პოვნით. ორივე
+გასწორდა (`WHERE created_by = ?`/`AND created_by = ?`) — იგივე
+"ownership WHERE"-პატერნი, რაც `Customer::update()`-ს აქვს `4.26`-დან.
+ეს იყო `4.26`-ის დროს გამოტოვებული ცხრილი (`users` არასდროს
+შევეხე მაშინ) — ახლა დახურულია.
+
+**UI**: sidebar-ს `menu.json`-ის გარეთ დაემატა role-პირობითი ბმული
+(`/superuser`, მხოლოდ `role==='superadmin'`-ისთვის) — `menu.json`-ს
+საერთოდ არ აქვს role-visibility კონცეფცია, ერთი ბმულისთვის ამის
+დამატება მეტი მანქანერიაა, ვიდრე ეს ერთჯერადი special-case
+`sidebar.php`-ში. `layout.php`-ს დაემატა banner (`.alert-warning`,
+topbar-ის ქვემოთ) — ჩანს **ყველა** გვერდზე, სანამ impersonation
+აქტიურია, "SuperUser — ხედავ როგორც: {name}" + "გამოსვლა" ღილაკი.
+
+**გადამოწმებულია ცოცხლად** (რეალური login-ფორმით, `.env`-ის test
+კრედენშიალით): login → `users` row შეიქმნა (`role=superadmin`);
+`/customers` (impersonation-ის გარეშე) → `302 /superuser`; `/superuser`
+სწორად აჩვენებს 3 tenant-ს (`badge: 3`) + sub-user badge-ებს tenant
+1-ის ქვეშ; impersonate tenant 31 → banner ჩნდება, `/customers`
+აჩვენებს tenant 31-ის 8 დამკვეთს, `/settings/organization` — tenant
+31-ის org-ს ("შპს ტესტ ვან"/TS1); `stop` → ისევ `302 /superuser`
+ნებისმიერ tenant-სკოუპილ გვერდზე; sub-user id-ის (13) impersonation
+მცდელობა უარყოფილია; ჩვეულებრივი admin (`role=admin`, id=31) `/superuser`-ზე
+`302 /`-ით იბლოკება; tenant 1-ის ნამდვილი admin-ის `/settings/users`
+აჩვენებს ზუსტად მის 2 sub-user-ს (`badge: 2`), არც სხვა tenant-ის
+წევრებს, არც SuperUser-ს. ტესტ-სესიები წაშლილია.
+
+### 4.35 სამუშაო მაგიდა — რეალური, tenant-სკოუპილი მონაცემები
+
+`Models/Dashboard.php` მთლიანად იყო hardcoded sample data (საკუთარი
+docblock ამბობდა ამას პირდაპირ) — user-მა მოითხოვა რეალური რიცხვები.
+ყველა მეთოდი ახლა იღებს `$ruler`-ს (`Auth::tenantId()`) და პასუხობს
+DB-დან.
+
+**4 stat-ბარათი**: დამკვეთების/პროდუქტების/ინვოისების რაოდენობა
+(`customers`/`products` `WHERE ruler = ?`) + ჯამური შემოსავალი
+(`SUM(invoices.total)`). ინვოისებს `ruler` სვეტი **არ** აქვთ
+(scoped `created_by`-ით, ცალკე user, არა tenant) — `Dashboard::
+tenantUserIds($ruler)` აბრუნებს `[tenant admin-ის id, ...sub-user
+id-ები]`-ს (`WHERE id = ? OR created_by = ?`), და ინვოისის queries
+`WHERE created_by IN (...)`-ს იყენებენ ამ სიით. ძველი fake "trend"
+ისრები/პროცენტები (`+12.4%` და ა.შ.) **მოცილებულია** — რეალური
+"წინა პერიოდთან შედარება" არ დამითვლია, გამოგონილი დელტა
+რეალურზე უარესი იქნებოდა.
+
+**Chart.js stacked bar — "შემოსავლის დინამიკა"**: ბოლო 6 კალენდარული
+თვე X-ღერძზე, **ერთი დაწკაპული სვეტი თვეში, ერთი ფერადი სეგმენტი
+თითო tenant-წევრზე** (admin + ყოველი sub-user, `Dashboard::
+revenueByUser()`) — user-ის მოთხოვნა "ერთად, გამოყოფილი ფერით"
+ზუსტად ამას ნიშნავდა, არა ცალკე გრაფიკები თითო user-ზე. თვის key-ები
+(`'YYYY-MM'`) მოდელიდან **გაუთარგმნელად** გამოდის (არსებული
+`Dashboard::activity()`-ის კონვენციის იგივე პატერნი — model არასდროს
+თარგმნის) — view თარგმნის `t('month.' . (int) $m)`-ით (უკვე
+არსებული, `ds_date()`-ის იგივე key-ები). ფერების palette
+ხელით არჩეული 8 hex-კოდისგან შედგება (`#4f46e5`, `#22c55e`, ...),
+`$i % count($palette)` round-robin — 8-ზე მეტი წევრისთვის ფერები
+გამეორდება (`ponytail:` შენიშვნა კოდში არ დამიმატებია, რადგან 8+
+sub-user ერთ tenant-ზე ამ პროექტში ჯერ არ ყოფილა რეალისტური).
+
+**ძველი fake სექციები მოცილებულია, არა repurpose-ილი**: "ტრეფიკის
+წყაროები" (doughnut chart), "გუნდის აქტივობა" (fake activity feed),
+"თვის მიზანი" (fake progress bar) — არცერთ მათგანს არ ჰქონდა
+შესაბამისი რეალური მონაცემი აპლიკაციაში (არც "traffic source",
+არც "activity log", არც "goal" კონცეფცია არსად არსებობს) — wire-ის
+მაგივრად, რომ ცარიელი/ყოველთვის-0 გამოსულიყო, სექციები საერთოდ
+წაშლილია. ცხრილი "ბოლო შეკვეთები" **repurpose-ილია** "ბოლო
+ინვოისებად" — რეალური `Dashboard::recentInvoices()`, ნამდვილი
+ინვოისის ნომრით (`Invoice::number()`), დამკვეთით, შემქმნელით,
+თარიღით, თანხით, სტატუსით (`4.30`-ის `inv.creator`/status
+badge-ების იმავე პატერნით).
+
+**Dead lang keys წაშლილია**: `traffic.*`, `activity.*`, `goal.*`,
+`range.*`, `chart.weekdays`, `stat.active_users`, `stat.orders`,
+`stat.conversion`, `orders.product` — არცერთი აღარსად გამოიყენებოდა
+(`status.paid`/`pending`/`rejected`/`cancelled` **დარჩა**, style-guide.php
+მაინც იყენებს badge-მაგალითებისთვის).
+
+⚠️ **გვერდითი ეფექტი**: dashboard-მა ახლა იძახებს `Auth::tenantId()`-ს
+(ადრე საერთოდ არ სჭირდებოდა tenant, hardcoded data იყო) — ანუ
+SuperUser, რომელსაც არცერთი tenant არჩეული არა აქვს, `/`-ზეც კი
+`302 /superuser`-ს იღებს ახლა (ადრე `/` მისთვის უბრალოდ `200`-ს
+აბრუნებდა, ცარიელი/mock სტატისტიკით). ეს სწორია — SuperUser-ს
+საკუთარი customers/products/invoices არასდროს არ ჰქონია.
+
+**გადამოწმებულია ცოცხლად**: tenant 1-ის dashboard — `11`/`7`/`3`/
+`155.00` (customers/products/invoices/revenue), ზუსტად ემთხვევა
+DB-ს (`SUM(total)` ხელით გადამოწმებული); chart-ის JSON — 3 dataset
+("გივი ბერძენიშვილი"/"პავლე პეტრიაშვილი"/"პეტრე პავლიაშვილი",
+თითო ცალკე ფერით), ბოლო თვის (აგვისტო) მონაცემები ზუსტად `50`/`25`/
+`80` — სამივე რეალური ინვოისის `total`-ს ემთხვევა; "ბოლო ინვოისები"
+ცხრილი სამივეს სწორად აჩვენებს (ნომერი/დამკვეთი/შემქმნელი/თარიღი/
+თანხა). tenant 31 (test1) — იზოლირებული: `8`/`5`/`0`/`0.00`. SuperUser
+(impersonation-ის გარეშე) — `/` → `302 /superuser`. ტესტ-სესიები
+წაშლილია.
+
+### 4.36 `/orders`-ის scope შეუთანხმდა dashboard-თან — მთელი tenant
+
+user-მა ცოცხლად აღმოაჩინა შეუსაბამობა: ქვემომხმარებლის მიერ
+გამოწერილი ინვოისი ჩანდა dashboard-ზე (`4.35`, tenant-სკოუპილი —
+admin + ყველა sub-user ერთად), მაგრამ **არ** ჩანდა "შეკვეთები >
+ყველა შეკვეთა"-ში, რადგან `InvoiceController::orders()` მანამდე
+`Invoice::all($user['id'])`-ს იძახებდა — **მხოლოდ ამჟამად
+შესული კონკრეტული user-ის** `created_by`-ით (ეს იყო თავად user-ის
+ადრინდელი, პირდაპირი მოთხოვნა ამ სესიაშივე). ორი scope ერთმანეთს
+ეწინააღმდეგებოდა. `AskUserQuestion`-ით დადასტურდა გადაწყვეტა:
+`/orders`-იც გახდეს tenant-ის მასშტაბის, dashboard-ის იგივე
+პრინციპით.
+
+**`User::tenantMemberIds(int $ruler): array`** — ახალი public
+მეთოდი (`WHERE id = ? OR created_by = ?`, ანუ admin + ყველა
+sub-user), გატანილი `Dashboard::tenantUserIds()`-ის (`4.35`-ის
+private დუბლიკატი) მაგივრად — ახლა ორივე `Dashboard.php` და
+`InvoiceController::orders()` ერთსა და იმავე, საერთო წყაროს
+იყენებენ, აღარ არსებობს ორი დამოუკიდებელი "ვინ არის ამ tenant-ის
+წევრი" logic, რომ მომავალშიც არ დაცილდნენ ისევ.
+
+**`Invoice::all()`-ის სიგნატურა შეიცვალა**: `?int $createdBy` →
+`?list<int> $createdByIds` (`WHERE created_by = ?` → `WHERE
+created_by IN (...)`). `/invoices`-ის `$invoicesByCustomer` panel-ის
+გამოძახება (`Invoice::all()`, არგუმენტის გარეშე) **უცვლელია** —
+კვლავ სრულად unscoped, განზრახ (დამკვეთის სრული ისტორია, ყველა
+tenant-იდან — `4.25.7`-ის კონვენცია ხელუხლებელია).
+
+**გადამოწმებულია ცოცხლად**: tenant 1-ის admin-ი (id=1) და მისი
+sub-user-ი (id=24) **ორივე** ხედავენ ერთსა და იმავე 3 ინვოისს
+`/orders`-ზე (badge: 3) — მათ შორის ისეთსაც, რაც არც ერთმა მათგანმა
+პირადად არ შექმნა (მესამე sub-user, id=13, შექმნილი). tenant 31
+(test1) კვლავ იზოლირებულია — `0`. ტესტ-სესიები წაშლილია.
+
+**4.35-ის chart-ი შეიცვალა**: user-მა სურათი მოგვცა (grouped bars,
+სრული კალენდარული წელი) და მოითხოვა ამის მიხედვით შეცვლა. Stacked →
+grouped (`options.scales`-იდან `stacked: true` მოცილებულია ორივე
+ღერძზე — Chart.js-ის default bar-behavior უკვე grouped-ია). ბოლო
+6 თვის მოძრავი window → მიმდინარე კალენდარული წელი, იან-დეკ,
+`Dashboard::currentYearMonths()` (ყოფილი `lastMonths(6)`-ის
+მაგივრად) — SQL-საც დაემატა `AND YEAR(issue_date) = YEAR(CURDATE())`.
+Month label-ებს წლის რიცხვი მოეხსნა (`"აგვ 2026"` → `"აგვ"`) —
+ერთი წლის ფარგლებში ზედმეტია. **ცოცხლად გადამოწმებულია**: labels
+ზუსტად `["იან"..."დეკ"]`, აგვისტოს (index 7) მონაცემები ისევ `50`/
+`25`/`80`-ს ემთხვევა, `stacked` აღარსად ჩანს გენერირებულ JSON-ში.
+
+**"ბოლო ინვოისები" გახდა სტანდარტული `ds-table`** — user-მა მოითხოვა
+ვიზუალური კონსისტენცია customers.php/products.php/orders.php-სთან
+(ძებნა, pagination). იგივე wrapper-პატერნი გადმოტანილია
+სიტყვასიტყვით (`card-body` > `.ds-table[data-ds-table]` >
+`.table-responsive` > `table`), `$scripts`-ს დაემატა
+`ds_table_script()` (Chart.js-ის `<script>`-თან შეერთებული
+`.`-ით — `users.php`-ის იგივე კონკატენაციის პატერნი). თარიღისა და
+თანხის სვეტებს დაემატა `data-order` (ISO თარიღი/`float`) სწორი
+დახარისხებისთვის — იგივე, რაც `orders.php`-ს აქვს.
+
+`Dashboard::recentInvoices()`-ის ნაგულისხმევი `$limit`
+(`DashboardController`-დან გამოძახებისას) `6`-დან `20`-ზე გავიდა —
+ცხრილს ახლა აქვს ნამდვილი ძებნა/გვერდები, საკმარისი მწკრივები
+სჭირდება რომ ეს აზრიანი იყოს; მაინც "ბოლო" (არა სრული ისტორია —
+ამისთვის "ყველას ნახვა"-ს ბმული `/orders`-ზე უკვე არსებობს).
+
+**გადამოწმებულია ცოცხლად** (SuperUser-ის საშუალებით, tenant 1-ის
+impersonation-ით): `.ds-table`, `input[type="search"]`
+(placeholder "ძებნა..."), pagination — სამივე რეალურად DOM-შია
+(არა მხოლოდ static markup); ძებნა "TOXIGEN"-ზე 3 მწკრივიდან 1-მდე
+სწორად filter-ავს (`ds-table.js`-ის 120ms debounce-ის გათვალისწინებით
+— პირველი ტესტი ნაადრევად შემოწმდა და "ვერ მუშაობს" გამოჩნდა, სინამდვილეში
+უბრალოდ დრო არ ჰქონდა debounce timer-ს გასულიყო).
+
+### 4.37 PDF ექსპორტი (`/orders/export-pdf`) — პროექტის პირველი Composer დამოკიდებულება
+
+user-მა კონკრეტულად `mpdf/mpdf` მოითხოვა. ეს არის **პირველი
+Composer-ის დამოკიდებულება მთელს პროექტში** — ყველაფერი დანარჩენი
+(`public/vendor/*`) ხელით კოპირებული JS/CSS ფაილებია, არა Composer/npm
+(`CLAUDE.md`). `composer require mpdf/mpdf` → `composer.json`/
+`composer.lock` **committed**, `vendor/` **`.gitignore`-ში** ახალი
+`/vendor/` წესით (`composer install` ხელახლა აგენერირებს ნებისმიერ
+checkout-ზე). `app/bootstrap.php`-ს დაემატა `require ROOT_PATH .
+'/vendor/autoload.php';` — ერთადერთი ადგილი, სადაც Composer-ის
+autoloader სჭირდება, საკუთარი `App\`-ის PSR-4-ish autoloader-ის
+გვერდით (ორივე თანაარსებობს პრობლემის გარეშე).
+
+⚠️ **ქართული ტექსტი mPDF-ში — საჭირო იყო ცალკე ფონტი**: mPDF-ის
+ჩაშენებული ფონტები (DejaVu-ოჯახი) ქართულ Unicode-ბლოკს (U+10A0–U+10FF)
+**არ** ფარავენ — ტექსტი ცარიელ კვადრატებად („tofu") გამოჩნდებოდა
+ამის გარეშე. `app/Core/fonts/NotoSansGeorgian.ttf` (OFL-ლიცენზირებული,
+Google-ის საჯარო `google/fonts` repo-დან ჩამოტვირთული, `github.com/
+google/fonts/raw/main/ofl/notosansgeorgian/`) რეგისტრირებულია, როგორც
+**default font** ყველა PDF-ისთვის (`App\Core\Pdf::make()`-ის
+`fontDir`/`fontdata`/`default_font` კონფიგი). Google-ის საკუთარი
+web-ფონტების repo-დან წამოღება, არა `fonts.gstatic.com`-ის
+`.woff`-დან — mPDF-ს TTF სჭირდება, არა WOFF.
+
+**`App\Core\Pdf`** — თხელი wrapper `mpdf/mpdf`-ზე: `make(): Mpdf`
+(კონფიგურირებული instance) და `download(string $html, string
+$filename): void` (render + `Content-Disposition: attachment`
+headers). `Controller`-ს დაემატა ახალი `renderToString(string $view,
+array $data): string` მეთოდი — იგივეა, რაც `view()`, უბრალოდ **layout
+გარეშე** და `echo`-ს მაგივრად string-ს აბრუნებს (mPDF-ის CSS support
+Bootstrap-ის grid/flex-ს არ ფარავს — PDF-ის view-ებს თავისი, plain
+HTML/CSS სჭირდება, `app/Views/pdf/orders.php`).
+
+**`InvoiceController::exportOrdersPdf()`** — ზუსტად იგივე tenant
+scope, რაც `orders()`-ს აქვს `4.36`-დან (`Invoice::all(User::
+tenantMemberIds($ruler))`) — ექსპორტი ვერასდროს გამოიტანს სხვა
+tenant-ის მონაცემებს, რადგან იგივე query-ს იყენებს, რასაც screen-ის
+ცხრილიც. `/orders`-ის ღილაკი ("ექსპორტი PDF") ჩანს მხოლოდ როცა
+`$rows !== []`.
+
+**გადამოწმებულია ცოცხლად**: PDF რეალურად ჩამოიტვირთა (`Content-Type:
+application/pdf`, `X-Generator: mPDF 8.3.1`, ვალიდური `%PDF-1.4`
+header), Read tool-ით გავხსენი — ქართული ტექსტი (კომპანიის სახელი,
+დამკვეთების სახელები, სტატუსები) **სწორად** მოჩანს, `tofu`-ს გარეშე;
+სულ (`155.00`) ემთხვევა 3 რეალური ინვოისის ჯამს. ტესტ-ფაილები/სესია
+წაშლილია.
+
+**თითო-ინვოისის PDF ექსპორტიც** (`/invoices/export-pdf?id=N`) —
+`/orders`-ის მოქმედების სვეტს დაემატა მესამე აიკონი (pencil/printer-ის
+გვერდით). `app/Views/pdf/invoice.php` — იმავე შემადგენლობის, რაც
+`invoice-view.php`-ს (ბრაუზერის print-გვერდს) აქვს: ლოგო/org header,
+"გადამხდელი"/bill-to, სტრიქონები, ჯამი, საბანკო ანგარიშები — უბრალოდ
+plain, mPDF-uსაფე HTML/CSS Bootstrap-ის მაგივრად, და სურათები
+(ლოგო) ფაილურ path-ს იყენებენ (`ROOT_PATH . '/public/assets/uploads/
+organization/...'`) URL-ის მაგივრად — mPDF ლოკალურ ფაილს პირდაპირ
+კითხულობს, HTTP-round-trip არ სჭირდება.
+
+⚠️ **`text-transform: uppercase` ქართულ ტექსტზე — გადამოწმებული,
+თავიდან აცილებული**: პირველი ცდისას label-ებს (`.section-label`)
+ჰქონდათ `text-transform: uppercase`, ვებ-გვერდების common
+convention-ის მიხედვით — შედეგად Mtavruli Unicode-ბლოკზე (U+1C90–
+U+1CBF) გადავიდნენ ("გადამხდელი" → "ᲒᲐᲓᲐᲛᲮᲓᲔᲚᲘ"). ეს **არ იყო
+tofu/broken** (ფონტს რეალურად აქვს ეს glyph-ები), უბრალოდ ვიზუალურად
+შეუსაბამო, სხვა წონის script იყო დანარჩენ (ჩვეულებრივ Mkhedruli)
+ტექსტთან შედარებით. ვებ-აპლიკაცია ამ ეფექტს **განზრახ**, ცალკე
+ფონტით აკეთებს სადაც სჭირდება (`bpg-arial-caps`, `4.2`-ის მსგავსი
+თემა) — PDF-ისთვის უბრალოდ `text-transform` მოვაცილე, არა ცალკე
+ფონტის მოყვანა ერთი label-სტილისთვის.
+
+**access-control** — იგივე, რაც `show()`-ის no-token branch-ს აქვს
+(`ownerTenant() === Auth::tenantId()`, სხვაგვარად `404`) — token-ის
+ალტერნატივა აქ არ სჭირდება, ეს ღილაკი მხოლოდ login-გეითის მიღმაა
+მისაწვდომი. **გადამოწმებულია ცოცხლად**: tenant 1-ის admin-მა
+წარმატებით ჩამოტვირთა საკუთარი ინვოისის PDF (ლოგო/org header/
+line-items/ჯამი/IBAN-ები ყველა სწორად, ლეიბლების text-transform
+fix-ის შემდეგ); tenant 31-ის (test1) მცდელობამ ამავე ინვოისის
+ექსპორტზე — `404`. ტესტ-ფაილები/სესიები წაშლილია.
+
+**Header-ის რედიზაინი** — user-მა კონკრეტული სქრინშოტი მოგვცა.
+ახალი განლაგება: ლოგო (მარცხნივ) + თარიღი/ინვოისის ნომრის ორი
+stat-ბლოკი (ნაცრისფერი label, ლურჯი value, მარჯვნივ) → თხელი
+გამყოფი ხაზი → ერთი light-blue `.info-box` (`#eef4fc`,
+`border-radius`), ორსვეტიანი: ჩვენი (org) და დამკვეთის დეტალები
+გვერდიგვერდ. **`Invoice::find()`-ს დაემატა `creator_name`**
+(`LEFT JOIN users`) — ორგანიზაციის სვეტის "საკონტაქტო" არის **ამ
+კონკრეტული ინვოისის შემქმნელი** (`invoices.created_by`-დან), არა
+ორგანიზაციის რომელიმე ცალკე ველი (ასეთი არც არსებობს `organization`
+ცხრილში) — თითოეულ PDF-ს თავისი, ნამდვილი "ვინ გამოწერა" გამოაქვს.
+დამკვეთის მხარეს "საკონტაქტო" კი უკვე არსებული `customer_contact`
+ველია. ორივე label ("საიდენტიფიკაციო"/"საკონტაქტო") **ახალი,
+კომპაქტური lang key-ებია** (`inv.pdf_taxid`/`inv.pdf_contact`) —
+განზრახ არა `cust.taxid`/`cust.contact`-ის თავიდან გამოყენება,
+რადგან user-ის სქრინშოტი უფრო მოკლე ტექსტს აჩვენებდა ("საიდენტიფიკაციო"
+ისე, "კოდი"-ს გარეშე). ყველა ველი (taxid/address/contact/phone/
+email, ორივე მხარეს) **პირობითია** — ცარიელი უბრალოდ არ ეთარგმნება,
+იგივე კონვენცია, რაც `invoice-view.php`-ის bill-to ბლოკს აქვს.
+
+**გადამოწმებულია ცოცხლად** (ორი სხვადასხვა ინვოისით): id=5-ზე
+ორგანიზაციის "საკონტაქტო" სწორად აჩვენებს "გივი ბერძენიშვილი"
+(`created_by=1`); id=3-ზე — "პავლე პეტრიაშვილი" (`created_by=24`)
+— ორივეჯერ სწორად ემთხვევა თითოეული ინვოისის რეალურ შემქმნელს.
+დამკვეთის taxid-ის პირობითობაც გადამოწმებულია: TOXIGEN BOARD SHOP-ს
+(taxid არ აქვს) "საიდენტიფიკაციო"-ს ხაზი საერთოდ არ გამოაქვს.
+ტესტ-ფაილები/სესია წაშლილია.
+
+**პირველი polish-ს რაუნდი** — user-მა ცოცხლად შექმნილი PDF-ის
+სქრინშოტით 4 კონკრეტული შესწორება მოითხოვა:
+1. თარიღი/ინვოისის ნომერი (`.stat-value`) აღარ არის bold.
+2. `.info-field`-ის (org/customer ტექსტის) სტრიქონებს შორის
+   მანძილი გაიზარდა (`margin-bottom: 1px` → `5px`).
+3. **"დამატებითი ინფორმაცია" (`invoices.notes`) საერთოდ არ ჩანდა
+   PDF-ში** — ახალი `.notes` სექცია დაემატა (items-ის/ჯამის შემდეგ,
+   IBAN-ების წინ), `nl2br()`-ით მრავალხაზიანი ტექსტისთვის.
+4. `.items th` (product/quantity/price/total header) აღარ არის
+   bold — mPDF/ბრაუზერის default `<th>` bold-ს (user-agent
+   stylesheet-იდან) `font-weight: normal` გადააჭარბა; ცისფერი
+   fill-ის მაგივრად თხელი ლურჯი underline (user-ის მოცემული მეორე
+   სქრინშოტის სტილი).
+
+⚠️ **ამავე დროს გასწორებული, თავად ვერ შემენიშნა ადრე**: `.section-label`
+CSS class (`org.bank_details`-ის header-ისთვის) წაშლილი აღმოჩნდა
+`4.37`-ის text-transform fix-ის დროს, ახალი style-ის დამატების
+გარეშე — "საბანკო ანგარიშები" უსტილო ტექსტად ჩანდა. აღდგენილია
+(იმავე patern-ით, რასაც ახლა `.notes`-იც იყენებს).
+
+**გადამოწმებულია ცოცხლად**: ახალი ტესტ-ინვოისი (id=13, ორხაზიანი
+notes-ით) — PDF-ში ოთხივე ცვლილება სწორად ჩანს, "დამატებითი
+ინფორმაცია" სექცია სწორ ადგილას, ორივე ხაზით. ტესტ-ინვოისი
+წაშლილია (id=12 კი, user-ის საკუთარი, ცოცხლად შექმნილი რეალური
+ტესტ-ინვოისი ამ polish-ის დროს — **ხელუხლებელი დარჩა**, არ
+შემხებია).
+
+### 4.38 mPDF-ის ფონტი გადავიდა `app/Core/fonts/`-იდან `public/assets/fonts/`-ში
+
+`NotoSansGeorgian.ttf` თავიდან `app/Core/fonts/`-ში აღმოჩნდა
+(mPDF wrapper-ის გვერდით, `4.37`-ის სისწრაფის გამო) — user-მა
+სწორად შენიშნა, რომ ეს პროექტის დამკვიდრებულ კონვენციას არ
+შეესაბამება: ყველა დანარჩენი ფონტი (`bpg-arial-caps`, `gb`) `public/
+assets/fonts/<font-name>/fonts/<file>` სტრუქტურითაა. ფაილი გადავიდა
+`public/assets/fonts/noto-sans-georgian/fonts/NotoSansGeorgian.ttf`-ში,
+ცარიელი `app/Core/fonts/` წაშლილია. `App\Core\Pdf::FONT_DIR` განახლდა
+`ROOT_PATH`-ზე დაფუძნებულ absolute path-ზე (`__DIR__`-ის მაგივრად —
+ფონტი აღარაა `Pdf.php`-ის საკუთარი დირექტორიის ქვეშ). `public/`-ის
+ქვეშ ყოფნა ამ ფაილს ვებზე არ "აქცევს ხელმისაწვდომს" რაიმე ახლებურად —
+mPDF მას ისედაც ფაილურ სისტემაზე პირდაპირ კითხულობდა (არა HTTP-ით),
+იგივეა, რასაც `bpg-arial-caps`-ის `.ttf` აკეთებს თავისი `@font-face`
+CSS-ის გვერდით.
+
+**გადამოწმებულია ცოცხლად**: SuperUser-ით tenant 31-ის (test1)
+იმპერსონაცია → არსებული ინვოისის (id=12) PDF ექსპორტი
+(`/invoices/export-pdf?id=12`) → `200`, `X-Generator: mPDF 8.3.1`,
+472KB ვალიდური PDF. Read tool-ით გავხსენი — ქართული ტექსტი
+(ორგანიზაცია/დამკვეთის დეტალები, "საკონტაქტო", პროდუქტის სახელი)
+ახალი ფონტის ადგილიდან **სწორად** მოჩანს, `tofu`-ს გარეშე. ტესტ-ფაილი
+და სესია წაშლილია.
+
+**`.info-name`-ს დაემატა BPG Arial Caps + spacer-div ტექნიკა margin/padding-ის
+მაგივრად**: user-მა მოითხოვა org/customer სახელის ხაზისთვის (`.info-name`)
+`BPG Arial Caps` font-ის გამოყენება (ვებ-გვერდზე უკვე გამოყენებული
+Mtavruli-სტილის ფონტი, `layout.php`-ის `<link>`) და შენიშნა, რომ
+`margin-bottom: 4px` ეფექტს არ იძლეოდა. **პირველი ცდა
+(`padding-bottom: 6px`) ასევე ვერ დაეხმარა** — user-მა live-ზე
+გადაამოწმა და კვლავ არ ჩანდა. mPDF-ს block-level `<div>`-ებზე
+(border/background-ის გარეშე) მარგინიც და padding-იც არასაიმედოდ
+აისახება. საბოლოო ფიქსი: **პროექტში უკვე დამტკიცებული ტექნიკის**
+გამეორება — `.top-rule`-ს (`4.37`-ის header-რედიზაინიდან) იგივე
+პრობლემა ჰქონდა და გადაჭრილი იყო ცარიელი box-ის მაგივრად რეალური
+content-იანი (`&nbsp;`) spacer-ელემენტით და ცხადი `line-height`-ით
+— ეს იმუშავა, რადგან mPDF ტექსტის line-box-ს (და არა margin/padding-ს)
+ყოველთვის სანდოდ ითვლის. `.info-name-gap` (`font-size:6px;
+line-height:6px;`) კლასის ახალი `<div>&nbsp;</div>` დაემატა თითო
+`.info-name`-ის შემდეგ, ორივე (org/customer) სვეტში.
+
+ახალი font `App\Core\Pdf::make()`-ს დაემატა მეორე registered
+font-ად (`bpgarialcaps` → `public/assets/fonts/bpg-arial-caps/fonts/
+bpg-arial-caps-webfont.ttf`, უკვე არსებული `.ttf` ვარიანტი იმავე
+საქაღალდეში, საიდანაც ვებ-გვერდის `@font-face`-იც იღებს ფაილს) —
+`fontDir`-ს ორივე (Noto Sans Georgian + BPG Arial Caps) დირექტორია
+ემატება, `default_font` კვლავ `notosansgeorgian` რჩება.
+
+**გადამოწმებულია ცოცხლად** (სამივე ვერსია, ცალ-ცალკე ცოცხლად
+გენერირებული PDF-ით): margin-bottom-იანი ვერსია, padding-bottom-იანი
+ვერსია, და საბოლოო spacer-div ვერსია — ვიზუალურად სამივეს Read
+tool-ით ვათვალიერებდი და გამოსახული სივრცე დამაჯერებლად არ
+განსხვავდებოდა ამ კონკრეტულ PDF-რენდერერში საკმარისად ცხადად, რომ
+padding-ის ჩავარდნის მიზეზი დარწმუნებით დამედასტურებინა მხოლოდ
+ჩემი დათვალიერებით — ამიტომ საბოლოო არჩევანი დაეყრდნო **პროექტში
+უკვე დამოწმებულ, არა ვარაუდისეულ** ტექნიკას (`.top-rule`), და
+user-ს პირდაპირ სთხოვე დაადასტუროს რეალურ PDF viewer-ში/ბეჭდვისას.
+ტესტ-ფაილები და სესია წაშლილია.
+
+### 4.39 ორგანიზაციის დღგ (`vat_rate`) + ფულის ერთეული (`currency`)
+
+`migrations/028_add_org_vat_currency.sql`: `organization`-ს დაემატა
+`vat_rate` (`DECIMAL(5,2) DEFAULT 18.00`) და `currency`
+(`ENUM('GEL','USD') DEFAULT 'GEL'`) — /settings/organization-ში ახალი
+ორი ველი (`Organization::validate()`/`save()` განახლდა შესაბამისად,
+`org.vat_rate`/`org.currency`/`org.currency_gel`/`org.currency_usd`
+lang-key-ები).
+
+⚠️ **დღგ არის მხოლოდ ვიზუალური, არა გამომთვლელი** — user-მა პირდაპირ
+დაადასტურა (`AskUserQuestion`-ით): ინვოისში ყველა ფასი უკვე დღგ-ს
+ჩათვლით შეაქვთ, ასე რომ დღგ-ს ჩვენება **არაფერს არ ცვლის** ჯამში
+— `invoices.php`-ის ფორმაში ადრე hardcoded `18%`/`0.18` იყო, ეხლა
+`$org['vat_rate']`-დან იკითხება (`data-vat-rate` → JS), მაგრამ
+`Invoice::save()`/`invoices.total`/PDF-ის ჯამი **ისევე** არ
+შეიცავს დღგ-ს დამატებით — მხოლოდ საინფორმაციო რიცხვი იცვლება, არა
+თვითონ ანგარიში. სხვადასხვა tenant-ს შეიძლება სხვადასხვა დღგ ჰქონდეს
+(მაგ. 18 ან 20) — ამიტომ ორგანიზაციის დონეზეა, არა გლობალური კონსტანტა.
+
+**ფულის ერთეული** — ახალი `currency_symbol()`/`money()` helper-ები
+(`app/Core/helpers.php`): `₾` GEL-ისთვის (თანხის შემდეგ, ქართული
+კონვენციით), `$` USD-ისთვის (თანხის წინ). ჩვენება დაემატა ყველგან,
+სადაც თანხაა: `products.php` (ცხრილის header + ფასის ველის
+input-group addon), `invoices.php` (header-ები + VAT/ჯამის label-ები
++ JS), `orders.php` (header), `dashboard.php` (revenue stat card +
+ბოლო ინვოისების ცხრილი), `invoice-view.php`/`pdf/invoice.php`/
+`pdf/orders.php` (თითოეული თანხა `money()`-ით). ყველა კონტროლერს
+(`ProductController`, `InvoiceController::orders()`,
+`DashboardController`) დასჭირდა `Organization::get($ruler)`-ის
+დამატება/გადაცემა view-სთვის, თუ ჯერ არ ჰქონდა.
+
+⚠️ **mPDF-ის `₾` (U+20BE) glyph-ის რისკი გადამოწმებულია — მუშაობს**:
+Noto Sans Georgian-ს ეჭვი იყო, USD/GEL Currency Symbols ბლოკს
+(U+20A0–20CF, არა ქართული Unicode-ბლოკი) რომ არ ფარავდეს — ცოცხლად
+გენერირებული PDF-ით (`165.60 ₾`, `1,656.00 ₾`) დადასტურდა, რომ
+სწორად რენდერდება, `tofu` არ არის.
+
+⚠️ **ტესტირებისას შემთხვევით დაზიანებული tenant 31 (test1) org-მონაცემები,
+აღდგენილია**: bash-ის საშუალებით ორგანიზაციის სახელის ცვლადში
+გადატანისას (`grep`/`sed`-ით ცვლადში ჩაწერა, მერე `curl`-ით უკან
+გაგზავნა) ქართული UTF-8 ტექსტი დაზიანდა (`???`-ებად აჩვენა), და
+ცალკე POST-მა, რომელმაც მხოლოდ `vat_rate`/`currency` სცადა
+შეეცვალა, ცარიელი სტრიქონებით გადააწერა `tax_id`/`email`/`phone`/
+`address` (`Organization::save()` ყველა ველს ერთად წერს, ნაწილობრივი
+update არ არსებობს). ორივე აღდგენილია პირდაპირ `App\Models\Organization`-ის
+გამოძახებით (არა HTTP/bash ცვლადის გავლით) — სახელი, `tax_id`
+(`400111222`), `email` (`info@test1.test`), `phone`
+(`+995555000031`), `address` (`თბილისი, ვაჟა-ფშაველას გამზ. 10`),
+ყველა ამ სესიის საკუთარი ადრინდელი PDF-რენდერებიდან ამოღებული ცნობილი
+ორიგინალი მნიშვნელობებით. **Lesson**: ქართული/multi-byte ტექსტის
+შემცველი bash ცვლადები POST-ისთვის საშიშია — `curl --data-urlencode`
+ცვლადში წაკითხულ-ჩაწერილი ტექსტით, არა პირდაპირ PHP მოდელით,
+აღარასდროს გამოვიყენო ნამდვილი/test tenant-ის ტექსტური ველებისთვის.
+
+**გადამოწმებულია ცოცხლად** — tenant 31-ზე: `/settings/organization`
+ფორმა სწორად აჩვენებს/ინახავს ორივე ახალ ველს (`vat_rate=20`→`USD`
+→ მერე `vat_rate=18`→`GEL` საცდელად), `/products`/`/invoices`/
+`/orders`/dashboard header-ები და input-ები სწორად გადართულან `$`-ზე
+და უკან `₾`-ზე, `/invoices/export-pdf?id=12` და `/orders/export-pdf`
+ორივე ვალუტით სწორად რენდერდება, `/invoices/view?id=12`
+(ბრაუზერის print-გვერდი) იგივე. ტესტ-ფაილები და სესია წაშლილია.
+
+⚠️ **პირველი ვერსია საერთოდ არ აჩვენებდა დღგ-ს PDF-ში** — user-მა
+სქრინშოტით მიუთითა: `app/Views/pdf/invoice.php`-ს (ცალკე, `invoices.php`-
+ისგან დამოუკიდებელი template) დღგ-ს row საერთოდ არ ჰქონდა. დამატებულია
+`tfoot`-ში, `.total`-ის ზემოთ (`.muted`, თხელი, უბოლდო) — ცალკე
+`tfoot tr.total-row` კლასით გამოყოფილი bold/border-top, **არა**
+`tfoot tr:last-child` pseudo-selector-ით (mPDF-ის CSS support-ის
+საეჭვოობის გამო, `4.38`-ის padding/margin-quirk-ის იგივე მიზეზით).
+
+⚠️ **VAT-ის ფორმულა გასწორდა ორივე ადგილას** — user-ის სქრინშოტში
+ნაჩვენები რიცხვი (114.00 ჯამზე 17.39 დღგ, 18%-ზე) ამხელდა, რომ სწორი
+ფორმულა არის **VAT-ჩათვლილი ჯამიდან გამოთხოვნა** (`total × rate /
+(100 + rate)`), არა უბრალო დამატება (`total × rate / 100`, რაც
+`invoices.php`-ს JS-ში აქამდე იდო, `4.39`-ის ადრინდელ ვერსიაშიც კი —
+შემთხვევით შენარჩუნებული ძველი, არასწორი ფორმულა). ორივე ადგილას
+(`invoices.php`-ს JS და ახალი `pdf/invoice.php`-ს PHP) ერთიდაიგივე
+სწორი ფორმულაა ეხლა, რომ ერთი და იმავე ინვოისისთვის ორივე გვერდი
+ერთსა და იმავე დღგ-ს რიცხვს აჩვენებდეს.
+
+**გადამოწმებულია ცოცხლად**: id=12-ის PDF ხელახლა გენერირებულია —
+`1,656.00 ₾` ჯამზე `დღგ (18%)` `252.61 ₾` სწორად გამოთვლილი
+(`1656 × 18 / 118`), ცხადად გამოყოფილი (არა-bold, თხელი) `სულ`-ის
+row-ისგან, რომელიც კვლავ bold + სქელი ხაზით რჩება. ტესტ-ფაილი და
+სესია წაშლილია. `invoice-view.php`-ს (ბრაუზერის print-გვერდს) დღგ-ს
+row ჯერ არ დამატებია — user-მა მხოლოდ PDF შაბლონზე მიუთითა.
+
+**შემდეგ user-მა იმავე სქრინშოტით მთლიანი დიზაინი მოითხოვა** (არა
+მხოლოდ დღგ-ს ჩვენება) — `items` ცხრილს დაემატა `#` (row number)
+სვეტი, სვეტების თანმიმდევრობა შეიცვალა (ფასი რაოდენობის წინ,
+`inv.unit_price`→`inv.quantity`, ადრინდელი `quantity`→`unit_price`
+რიგის ნაცვლად), და `tfoot`-ში ჩასმული VAT/სულ row-ები **მთლიანად
+ამოვარდა ცხრილიდან** ცალკე, ცხრილის ქვემოთ, მარჯვნივ-გასწორებულ
+(`align="right"`, არა CSS `margin`/`float` — `4.38`-ის padding/margin
+quirk-ის იგივე მიზეზით ავირჩიე ეს ძველი, დაზუსტებით მუშა HTML
+ატრიბუტი) ორ ცალკე `<table>`-ად: პირველი — უბრალო `დღგ:` label/value
+წყვილი (`.summary-table`, `.summary-value` ლურჯი bold), მეორე —
+`ჯამი:` მთლიანად შევსებული indigo ყუთში (`#6366f1`, თეთრი bold
+ტექსტი, `.total-table`), ზუსტად სქრინშოტის მიხედვით.
+
+**გადამოწმებულია ცოცხლად**: id=12-ის PDF-ით — `#`/სვეტების ახალი
+თანმიმდევრობა სწორია, `დღგ: 252.61 ₾` და `ჯამი: 1,656.00 ₾` (indigo
+ყუთში) სწორად და ვიზუალურად სქრინშოტთან ახლოს გამოისახა, `align="right"`
+mPDF-ში სწორად მუშაობს (მომდევნო `.notes`/`.bank` სექციები ნორმალურად,
+float-ის „გადაცდომის" ეფექტის გარეშე, გრძელდება). ტესტ-ფაილი და
+სესია წაშლილია.
+
+**შემდეგ**: user-მა სქრინშოტით შენიშნა, რომ ვერტიკალურ ხაზზე არ
+ეწყობა თანხების მარჯვენა კიდე (line-total/VAT/grand-total) — მიზეზი
+იყო სამივეს **სხვადასხვა right-padding** (`.items td.amount` 8px,
+`.summary-table td` 0, `.total-table td` 14px), ცალკე table-ების
+ერთი და იმავე `align="right"`/სიგანის მიუხედავად. სამივეს
+right-padding გაუთანაბრდა 8px-ზე (`.total-table`-ს მარცხენა padding
+14px-ზე დარჩა, ვიზუალურ „ჰაერს" ყუთის შიგნით რომ არ დაუკარგოს).
+**გადამოწმებულია ცოცხლად** — id=12-ის PDF-ით სამივე რიცხვის (`₾`
+სიმბოლოთი ერთად) მარჯვენა კიდე ეხლა ერთ ვერტიკალურ ხაზზეა. ტესტ-ფაილი
+და სესია წაშლილია.
+
+**შემდეგ**: user-მა ახალი სქრინშოტით მარცხენა კიდის იგივე პრობლემა
+აჩვენა — `ჯამი:`-ის indigo ყუთი `დღგ:`-ის ტექსტზე უფრო მარცხნივ
+იწყებოდა, ორივე table-ს `width:260px` მიუხედავად. მიზეზი: **`table-
+layout: fixed`-ის გარეშე mPDF თითო ცხრილს საკუთარ row-ის content-ზე
+დაყრდნობით auto-sizing-ავს**, არა დეკლარირებულ 260px-ზე — მოკლე
+"დღგ:" ტექსტიანი ცხრილი ერთ სიგანემდე იკუმშება, bold/მსხვილი
+"ჯამი:" ცხრილი კი — სხვამდე, და `align="right"`-ის შემდეგ ორივეს
+**რეალური** (განსხვავებული) სიგანე სხვადასხვა მარცხენა კიდეს
+წარმოშობს. ორივე ცხრილს დაემატა `table-layout: fixed` + ცხადი
+სვეტების პროცენტული სიგანე (`45%`/`55%`, ახალი `.total-label` კლასი
+`.summary-label`-ის დასაწყვილებლად) — ეხლა ორივეს რეალური სიგანე
+ზუსტად 260px-ია, ამიტომ მარცხენა კიდეც ემთხვევა.
+
+**გადამოწმებულია ცოცხლად** — id=12-ის PDF-ით `დღგ:` და `ჯამი:`
+(ყუთის ჩათვლით) მარცხენა კიდე ეხლა ერთ ხაზზეა. ტესტ-ფაილი და
+სესია წაშლილია.
+
+**შემდეგ**: user-მა (ამჯერად საკუთარი, რეალური ინვოისის სქრინშოტით)
+შენიშნა, რომ ორგანიზაცია/დამკვეთის ინფო-ბოქსის მარჯვენა კიდე `.items`
+ცხრილის მარჯვენა კიდეს (`ჯამი` სვეტს) არ ემთხვევა. მიზეზი იმავე
+ოჯახის mPDF quirk-ია, რაც `4.39`/`4.40`-ში უკვე რამდენჯერმე
+დადასტურდა: **padded `<div>`-ს (`.info-box`) mPDF-ში არასაიმედოდ
+აქვს იგივე რეალური სიგანე, რაც სიბლინგ `width:100%` table-ს** — box
+ოდნავ ვიწროვდებოდა padding-ის გამო, `.items`-ს კი არა. ფიქსი:
+`.info-box` აღარაა `<div>` — გადაკეთდა `<table class="info-box-outer">`
+→ ერთი `<td class="info-box">` (background/border-radius/padding
+ამ td-ზეა, არა div-ზე) — იგივე "table > td padding სანდოა, div
+padding არა" პრინციპი, რაც `.total-table`/`.summary-table`-საც
+უკვე იყენებს.
+
+**გადამოწმებულია ცოცხლად** — id=12-ის PDF-ით info-ბოქსის მარჯვენა
+კიდე ეხლა ზუსტად ემთხვევა `.items` ცხრილის (და `ჯამი` სვეტის)
+მარჯვენა კიდეს. ტესტ-ფაილი და სესია წაშლილია.
+
+⚠️ **ეს არასწორი წაკითხვა იყო** — user-მა დააზუსტა: `<table>`-ზე
+გადაყვანა (ზემოთ) ზედმეტი აღმოჩნდა, საკითხი საერთოდ ბოქსის სიგანე
+არ ყოფილა, არამედ **დამკვეთის სვეტის ტექსტის `text-align: right`**
+— იმავე მიმართულებით, რაც `.items`-ის `ჯამი` სვეტს აქვს. დამატებულია
+`text-align:right` დამკვეთის `<td>`-ზე (org-ის მხარე კვლავ
+მარცხნივაა). `<table>`-ზე გადაყვანა (`.info-box-outer`/`td.info-box`)
+თავისთავად უვნებელია, დარჩა — მაგრამ ორიგინალური საჩივარი ამით არ
+გადაწყვეტილა, ტექსტის align-ით გადაწყდა.
+
+**გადამოწმებულია ცოცხლად** — id=12-ის PDF-ით დამკვეთის სვეტის
+ტექსტი (სახელი/საიდენტიფიკაციო/მისამართი/საკონტაქტო/ტელეფონი/email)
+ეხლა მარჯვნივაა გასწორებული, ვიზუალურად `ჯამი` სვეტის ციფრების
+იმავე მარჯვენა ხაზზე. ტესტ-ფაილი და სესია წაშლილია.
+
+**შემდეგ**: user-მა PDF-ის ფუტერში მოითხოვა "დაგენერირებულია
+{APP_NAME}" ტექსტი, სადაც `{APP_NAME}` `.env`-იდანაა და ბმულია
+`APP_URL`-ზე. `.env`-ს **`APP_URL` პირველად დაემატა** ამ მოთხოვნით
+(user-ის მიერ, `www.nova.local`) — არსად სხვაგან არ გამოიყენებოდა
+აქამდე, ამიტომ `.env.example`-საც დაემატა დოკუმენტირებული ჩანაწერი
+(ყოველი სხვა env-key-ის კონვენციის მიხედვით). სქემა `www.nova.local`-
+ისებურია, სქემის გარეშე — PHP-ში `https://` ემატება, თუ უკვე
+`http(s)://`-ით არ იწყება. ახალი `inv.pdf_generated_by` lang-key
+(`%s` placeholder, raw HTML link-ისთვის — იგივე non-escaping
+პატერნი, რასაც `t('prod.created', e($created))` იყენებს, უბრალოდ
+escaping წინასწარაა გაკეთებული `<a href>`-ის აწყობისას).
+
+**გადამოწმებულია ცოცხლად** — id=12-ის PDF-ის ფუტერში "დაგენერირებულია
+Nova DS" გამოჩნდა, "Nova DS" ლურჯი ბმულია `https://www.nova.local`-ზე.
+ტესტ-ფაილი და სესია წაშლილია.
+
+**შემდეგ**: user-მა დააზუსტა — ფუტერი გვერდის ფურცლის ქვემო კიდიდან
+15mm-ით უნდა იყოს დაცილებული (header-ის ზედა კიდიდან დაცილების,
+16mm, დაახლოებით იგივე). **ადრინდელი ფუტერი უბრალოდ `<div>` იყო
+body-ს ბოლოში** — ანუ page-ზე მიმაგრებული კი არა, დოკუმენტის flow-ის
+ბოლოში, page break-ის შემდეგაც კი აღარ გამეორდებოდა და ბოლო
+გვერდის content-ის სიგრძეზე იყო დამოკიდებული. გადავიდა mPDF-ის
+**რეალურ page footer**-ზე (`Mpdf::SetHTMLFooter()`), page margin
+კონფიგით (`margin_footer: 15`, `margin_bottom: 25` — ბოლო
+საკმარისი space, footer-ი body-ს content-ს რომ არ გადაეფაროს).
+
+**`App\Core\Pdf`-ის API შეიცვალა**: `make(array $config = [])` ეხლა
+extra Mpdf constructor options-საც იღებს (`$config + [...defaults]`),
+`download()`-ს დაემატა ახალი, **optional** მესამე პარამეტრი
+`?string $footerHtml` — `null`-ის შემთხვევაში (`/orders/export-pdf`-ის
+ამჟამინდელი behavior) არაფერი იცვლება, default margins ხელუხლებელია.
+Footer HTML აშენებულია **ცალკე, controller-ში**
+(`InvoiceController::pdfFooterHtml()`), არა `pdf/invoice.php`-ის
+view-ში — mPDF footer-ს **საკუთარი, body-სგან იზოლირებული HTML
+კონტექსტი აქვს** (არაფერი იზიარებს `<style>`-დან), ამიტომ inline
+style ატრიბუტებით აშენდა, არა CSS კლასით.
+
+**გადამოწმებულია ცოცხლად**: id=12-ის ინვოისის PDF-ში ფუტერი ეხლა
+რეალურად გვერდის ბოლოში ჩანს (ფურცლის ქვემო კიდესთან ახლოს, არა
+content-ის ბოლოსთან პირდაპირ მიდებული); `/orders/export-pdf`
+(footer-ის გარეშე) **ხელუხლებელია** — default margins, ისეთივე
+გამოსახულებით, როგორც ადრე. ტესტ-ფაილები და სესია წაშლილია.
+
+**შემდეგ**: user-მა ორი მცირე დამატება მოითხოვა —
+1. ფუტერს აკლდა ზედა გამყოფი ხაზი (`border-top`) — დაემატა
+   `InvoiceController::pdfFooterHtml()`-ის inline style-ში.
+2. ხელმოწერის (`organization.signature`) სურათი footer-ის ზემოთ,
+   მარჯვენა კუთხეში — `pdf/invoice.php`-ს ბოლოში დაემატა, იმავე
+   `is_file()`-შემოწმებით, რასაც ლოგოც იყენებს.
+
+⚠️ **`align="right"` ცალკე (auto-width) table-ზე აქაც ვერ იმუშავა**
+(პირველი ცდა) — სურათი მარცხნივ დარჩა. იგივე root cause, რაც
+`.summary-table`/`.total-table`-ს ჰქონდა `table-layout:fixed`-ის
+გარეშე: mPDF-ს განცხადებული სიგანე სჭირდება, საიდანაც გაზომოს
+"მარჯვნივ" რა არის. ფიქსი: `align="right"`-ის მაგივრად
+`width:100%` table + `text-align:right` თვითონ `<td>`-ზე — იგივე
+პატერნი, რასაც `.top-row` უკვე იყენებდა თარიღი/ინვოისის ნომრის
+stat-წყვილისთვის.
+
+**გადამოწმებულია ცოცხლად**: id=12-ის PDF-ში ფუტერს ეხლა ზედა ხაზი
+აქვს; ხელმოწერის სურათი ჩანს footer-ის ზემოთ, მარჯვენა კუთხეში
+(ორივე ცდა — მარცხნივ-ჩავარდნილი და საბოლოო, გასწორებული ვერსია —
+ცოცხლად გენერირებული PDF-ებით შედარებულია). ტესტ-ფაილები და
+სესია წაშლილია.
+
+**შემდეგ**: user-მა ფუტერში, გამყოფი ხაზის **ზემოთ**, დამატებით
+წითელი, პატარა ტექსტი მოითხოვა — "გთხოვთ დროულად დაფაროთ
+დავალიანება" (ახალი `inv.pdf_debt_notice` lang-key).
+`InvoiceController::pdfFooterHtml()` ეხლა ორ ხაზს აგებს ერთ
+გარე `<div>`-ში: წითელი (`#dc2626`, `font-size:8px`) შეტყობინება
+ბორდერის გარეშე, მერე `border-top`-იანი "დაგენერირებულია"-ხაზი —
+ორივეს შორის `margin-top:4px`.
+
+**გადამოწმებულია ცოცხლად**: id=12-ის PDF-ის ფუტერში წითელი
+"გთხოვთ დროულად დაფაროთ დავალიანება" ჩანს ზედა ხაზის ზემოთ,
+"დაგენერირებულია Nova DS" კვლავ ხაზის ქვემოთ. ტესტ-ფაილი და
+სესია წაშლილია.
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.
@@ -1858,7 +2768,11 @@ $router->add('DELETE', '/path', [...]);   // სხვა ზმნები
    ცხრილი `customers` შექმნილია). დარჩა: `Models/Dashboard.php`-ის მეთოდების სხეულების
    ჩანაცვლება მოთხოვნებით — view-ებს არ შეეხება.
    ⚠️ `customers.ruler`-ს **რეალური FK არ აქვს** — `ruler` ცხრილი ჯერ არ არსებობს;
-   მხოლოდ ინდექსი + კომენტარია (როგორც სქრინშოტზე).
+   მხოლოდ ინდექსი + კომენტარია (როგორც სქრინშოტზე). **განახლება**: `ruler`
+   აღარაა გამოუყენებელი — `4.31`-ში გახდა მთელი აპლიკაციის multi-tenant
+   scoping-ის საფუძველი (`App\Core\Auth::tenantId()`). FK კვლავ არ აქვს
+   (`users`-ზე მიმართვა შეგნებულადაა თავიდან აცილებული, იხ. `4.31`), მაგრამ
+   ეს ველი ახლა რეალურად წაკითხულია/ჩაწერილია ყველგან.
 4. Sidebar-ის collapse ამჟამად **სრულად მალავს** მენიუს. თუ ვიწრო აიკონების ზოლი გინდა —
    `ponytail:` კომენტარია `design-system.css`-ში.
 5. Style-guide-ის რეფერენს-სქრინშოტზე იყო ჩამოსაშლელი ქვესექციები (`Color >`) — არ გაკეთებულა.

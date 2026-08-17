@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Models\Customer;
 use PDOException;
@@ -12,7 +13,7 @@ final class CustomerController extends Controller
 {
     public function index(): void
     {
-        $rows = Customer::all();
+        $rows = Customer::all(Auth::tenantId());
 
         $this->view('customers', [
             'title'   => t('page.customers') . ' · ' . app_name(),
@@ -29,12 +30,14 @@ final class CustomerController extends Controller
     {
         csrf_verify();
 
+        $ruler = Auth::tenantId();
+
         // Row-click editing (customers.php) fills this hidden field from the table;
         // its absence is what tells an ordinary submit apart from an edit.
         $id         = trim((string) ($_POST['customer_id'] ?? ''));
         $editingId  = ctype_digit($id) ? (int) $id : null;
 
-        [$clean, $errors] = Customer::validate($_POST, $editingId);
+        [$clean, $errors] = Customer::validate($_POST, $ruler, $editingId);
 
         if ($errors) {
             flash('errors', $errors);
@@ -44,10 +47,10 @@ final class CustomerController extends Controller
 
         try {
             if ($editingId !== null) {
-                Customer::update($editingId, $clean);
+                Customer::update($editingId, $clean, $ruler);
                 flash('updated', $clean['customer_name']);
             } else {
-                Customer::create($clean);
+                Customer::create($clean, $ruler);
                 flash('created', $clean['customer_name']);
             }
         } catch (PDOException $e) {
@@ -56,7 +59,7 @@ final class CustomerController extends Controller
             // requests (see handoff.md's multi-user section) — two submits for
             // the same never-before-used tax id, close enough together, could
             // both pass the pre-check. The actual guarantee is the DB's own
-            // UNIQUE index (migrations/017); this just turns that constraint
+            // UNIQUE index (migrations/025); this just turns that constraint
             // violation into the same friendly message instead of a fatal error.
             if ($e->getCode() !== '23000') {
                 throw $e;

@@ -27,6 +27,23 @@ abstract class Controller
         $this->render(APP_PATH . '/Views/' . $view . '.php', $data, APP_PATH . '/Views/auth/_layout.php');
     }
 
+    /**
+     * Same view-rendering as view(), but with no layout at all and returned
+     * as a string instead of echoed — for content meant to go somewhere
+     * other than the browser's own page, e.g. App\Core\Pdf::download()'s
+     * HTML-to-PDF input (mPDF's CSS support doesn't cover Bootstrap's grid/
+     * flex either way, so these views are always their own plain markup).
+     */
+    protected function renderToString(string $view, array $data = []): string
+    {
+        extract($data, EXTR_SKIP);
+
+        ob_start();
+        require APP_PATH . '/Views/' . $view . '.php';
+
+        return ob_get_clean();
+    }
+
     private function render(string $file, array $data, string $layout): void
     {
         extract($data, EXTR_SKIP);

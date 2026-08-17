@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Warehouse\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\Db;
 use App\Models\Product;
@@ -23,7 +24,7 @@ final class WarehouseController extends Controller
         $this->viewAt(__DIR__ . '/../Views/warehouse.php', [
             'title'        => t('page.warehouse') . ' · ' . app_name(),
             'rows'         => $rows,
-            'products'     => Product::all(),
+            'products'     => Product::all(Auth::tenantId()),
             'productTypes' => ProductType::all(),
             'total'        => count($rows),
             'errors'       => flash('errors') ?? [],

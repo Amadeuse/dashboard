@@ -28,6 +28,17 @@
 
 <div class="ds-main">
   <?php require APP_PATH . '/Views/partials/topbar.php'; ?>
+  <?php $impersonatingId = \App\Core\Auth::impersonating(); ?>
+  <?php if ($impersonatingId !== null): ?>
+    <?php $impersonatedTenant = \App\Models\User::findById($impersonatingId); ?>
+    <div class="alert alert-warning rounded-0 mb-0 py-2 px-3 d-flex align-items-center justify-content-between small">
+      <span><i class="bi bi-eye-fill me-2"></i><?= t('superuser.impersonating_banner', e($impersonatedTenant['name'] ?? '?')) ?></span>
+      <form method="post" action="/superuser/stop" class="mb-0">
+        <?= csrf_field() ?>
+        <button type="submit" class="btn btn-sm btn-outline-dark"><?= t('superuser.stop_impersonating') ?></button>
+      </form>
+    </div>
+  <?php endif; ?>
   <main class="ds-content">
     <?= $content ?>
   </main>

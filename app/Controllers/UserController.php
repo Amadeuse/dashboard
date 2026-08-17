@@ -23,7 +23,7 @@ final class UserController extends Controller
     public function index(): void
     {
         Auth::requireAdmin();
-        $rows = User::all();
+        $rows = User::all(Auth::tenantId());
 
         $this->view('users', [
             'title'   => t('users.title') . ' · ' . app_name(),
@@ -42,6 +42,8 @@ final class UserController extends Controller
         Auth::requireAdmin();
         csrf_verify();
 
+        $ruler = Auth::tenantId();
+
         $id        = trim((string) ($_POST['user_id'] ?? ''));
         $editingId = ctype_digit($id) ? (int) $id : null;
 
@@ -59,10 +61,10 @@ final class UserController extends Controller
         $clean['avatar'] = $newAvatar !== null ? $this->storeAvatar($newAvatar, $existingAvatar) : $existingAvatar;
 
         if ($editingId !== null) {
-            User::updateSubUser($editingId, $clean);
+            User::updateSubUser($editingId, $clean, $ruler);
             flash('updated', $clean['name']);
         } else {
-            User::createSubUser($clean, (int) Auth::user()['id']);
+            User::createSubUser($clean, $ruler);
             flash('created', $clean['name']);
         }
 

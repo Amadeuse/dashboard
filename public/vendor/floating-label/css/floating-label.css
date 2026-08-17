@@ -12,6 +12,20 @@
        <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
      </div>
    The clear button is optional; its visibility is pure CSS (see the bottom).
+
+   Password fields can additionally show/hide their value — add the
+   "form-floating--password" marker class to the wrapper and a second button:
+     <div class="form-floating form-floating--password">
+       <input type="password" class="form-control" id="x" placeholder=" ">
+       <label for="x">Password</label>
+       <button type="button" class="btn-close btn-clear" aria-label="Clear"></button>
+       <button type="button" class="btn-toggle-password" aria-label="Show password"
+               data-show-label="Show password" data-hide-label="Hide password">
+         <i class="bi bi-eye"></i>
+       </button>
+     </div>
+   Both buttons are optional independently of each other (the marker class
+   only widens the input's padding to fit whichever ones are present).
    ========================================================================== */
 
 :root {
@@ -119,6 +133,37 @@
 /* Visibility is CSS, not JS: an empty input shows its placeholder, a filled one
    does not. The original kept this in script.js with two extra listeners. */
 .form-floating > .form-control:not(:placeholder-shown) ~ .btn-clear { display: block; }
+
+/* ---- Password show/hide toggle ----
+   Sits left of .btn-clear when both are present on the same field — a marker
+   class on .form-floating itself (not a [type="password"] selector) keeps the
+   extra padding stable while JS flips the input between password and text.
+   Chained with .form-floating (not just .form-floating--password alone) so
+   this has strictly higher specificity than the plain .form-floating rule
+   above (equal specificity would otherwise leave the winner to source order,
+   which is easy to accidentally invalidate later by reordering this file). */
+.form-floating.form-floating--password > .form-control:not(:placeholder-shown) { padding-right: 4.75rem; }
+
+.btn-toggle-password {
+  position: absolute;
+  right: 2.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 6;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--bs-secondary-color);
+  cursor: pointer;
+}
+.btn-toggle-password:hover { color: var(--fl-primary-color); }
+
+.form-floating.form-floating--password > .form-control:not(:placeholder-shown) ~ .btn-toggle-password { display: flex; }
 
 @media (prefers-reduced-motion: reduce) {
   .form-floating > label,

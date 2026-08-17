@@ -6,11 +6,19 @@ use App\Core\Auth;
 use App\Core\ModuleRegistry;
 use App\Core\Router;
 
-/** Reachable without a session — every other path needs Auth::check(). */
+/**
+ * Reachable without a session — every other path needs Auth::check().
+ * `/invoices/view` is here for one reason only: a vendor sharing a link
+ * (?id=N&token=...) with their customer, who has no account here at all.
+ * That doesn't make the path itself public — InvoiceController::show()
+ * still requires either a matching token or a logged-in, same-tenant
+ * viewer; this list only decides whether the *blanket* redirect-to-/login
+ * fires before the controller gets a chance to make that real decision.
+ */
 const PUBLIC_PATHS = [
     '/login', '/login/otp/send', '/login/otp/verify', '/logout',
     '/register', '/auth/google', '/auth/google/callback', '/auth/photo',
-    '/forgot-password', '/reset-password',
+    '/forgot-password', '/reset-password', '/invoices/view',
 ];
 
 // `php -S` has no .htaccess: let it serve existing asset files itself.

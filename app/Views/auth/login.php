@@ -50,12 +50,18 @@ $val = static fn(string $f): string => e((string) ($old[$f] ?? ''));
     <div class="form-floating">
       <input id="li-email" name="email" type="email" class="form-control <?= isset($errors['email']) ? 'is-invalid' : '' ?>" value="<?= $val('email') ?>" placeholder=" " autocomplete="email" required>
       <label for="li-email"><?= t('auth.email') ?></label>
+      <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
     </div>
     <?php if (isset($errors['email'])): ?><div class="invalid-feedback d-block"><?= e($errors['email']) ?></div><?php endif; ?>
 
-    <div class="form-floating">
+    <div class="form-floating form-floating--password">
       <input id="li-password" name="password" type="password" class="form-control <?= isset($errors['password']) ? 'is-invalid' : '' ?>" placeholder=" " autocomplete="current-password" required>
       <label for="li-password"><?= t('auth.password') ?></label>
+      <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
+      <button type="button" class="btn-toggle-password" aria-label="<?= t('auth.show_password') ?>"
+              data-show-label="<?= t('auth.show_password') ?>" data-hide-label="<?= t('auth.hide_password') ?>">
+        <i class="bi bi-eye"></i>
+      </button>
     </div>
     <?php if (isset($errors['password'])): ?><div class="invalid-feedback d-block"><?= e($errors['password']) ?></div><?php endif; ?>
 
@@ -90,10 +96,12 @@ $val = static fn(string $f): string => e((string) ($old[$f] ?? ''));
     <div class="form-floating" data-channel-field="email">
       <input id="otp-email" type="email" class="form-control" placeholder=" " autocomplete="email">
       <label for="otp-email"><?= t('auth.email') ?></label>
+      <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
     </div>
     <div class="form-floating" data-channel-field="sms" hidden>
       <input id="otp-phone" type="tel" class="form-control" placeholder=" " autocomplete="tel">
       <label for="otp-phone"><?= t('auth.phone') ?></label>
+      <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
     </div>
 
     <button class="btn btn-outline-primary" type="button" id="otp-send"><?= t('auth.otp.sendCode') ?></button>

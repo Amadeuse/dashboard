@@ -25,7 +25,7 @@ final class OrganizationController extends Controller
     {
         Auth::requireAdmin();
 
-        $org   = Organization::get();
+        $org   = Organization::get(Auth::tenantId());
         $old   = flash('old') ?? [];
         $ibans = $old['bank_ibans'] ?? Organization::bankIbans($org);
         if ($ibans === [] || end($ibans) !== '') {
@@ -57,10 +57,12 @@ final class OrganizationController extends Controller
         Auth::requireAdmin();
         csrf_verify();
 
+        $ruler = Auth::tenantId();
+
         [$clean, $errors] = Organization::validate($_POST);
 
-        $logo      = $this->resolveImage('logo', $errors);
-        $signature = $this->resolveImage('signature', $errors);
+        $logo      = $this->resolveImage('logo', $ruler, $errors);
+        $signature = $this->resolveImage('signature', $ruler, $errors);
 
         if ($errors) {
             flash('errors', $errors);
@@ -68,12 +70,12 @@ final class OrganizationController extends Controller
             redirect('/settings/organization');
         }
 
-        Organization::save($clean);
+        Organization::save($clean, $ruler);
         if ($logo !== null) {
-            Organization::updateLogo($logo);
+            Organization::updateLogo($logo, $ruler);
         }
         if ($signature !== null) {
-            Organization::updateSignature($signature);
+            Organization::updateSignature($signature, $ruler);
         }
 
         flash('updated', true);
@@ -81,7 +83,7 @@ final class OrganizationController extends Controller
     }
 
     /** Same shape as Warehouse/Profile/User's own upload handling — one of two independent image fields. */
-    private function resolveImage(string $field, array &$errors): ?string
+    private function resolveImage(string $field, int $ruler, array &$errors): ?string
     {
         $file = $_FILES[$field] ?? null;
         if ($file === null || $file['error'] === UPLOAD_ERR_NO_FILE) {
@@ -108,7 +110,7 @@ final class OrganizationController extends Controller
             mkdir(self::UPLOAD_DIR, 0755, true);
         }
 
-        $existing = (string) (Organization::get()[$field] ?? '');
+        $existing = (string) (Organization::get($ruler)[$field] ?? '');
         $filename = bin2hex(random_bytes(16)) . '.' . $ext;
         move_uploaded_file($file['tmp_name'], self::UPLOAD_DIR . $filename);
 

@@ -9,11 +9,16 @@ use App\Core\Db;
 /**
  * `customers` table (see migrations/001_create_customers.sql).
  *
+ * Multi-tenant (migrations/025): every row belongs to one tenant via `ruler`
+ * (App\Core\Auth::tenantId()) — all()/create()/update()/taxIdTaken() all take
+ * it, and update() folds `ruler = ?` into its WHERE so a forged customer_id
+ * from another tenant can never be edited, not just hidden from the list.
+ *
  * Invoicing context: customer_taxid is the field that ends up printed on every
  * invoice, so it is validated harder than the rest and checked for duplicates —
- * two customer rows sharing a tax id means invoices that cannot be reconciled.
- * The DB index on it is deliberately non-unique (a walk-in customer may have
- * none), so the guard lives here.
+ * two customer rows sharing a tax id (within the same tenant) means invoices
+ * that cannot be reconciled. The DB index on it is deliberately non-unique (a
+ * walk-in customer may have none), so the guard lives here.
  */
 final class Customer
 {
@@ -24,39 +29,43 @@ final class Customer
     ];
 
     /**
-     * Every customer, newest first. Searching, sorting and paging happen in the
-     * browser (assets/js/ds-table.js), so the page ships the whole list once.
+     * Every customer belonging to $ruler, newest first. Searching, sorting and
+     * paging happen in the browser (assets/js/ds-table.js), so the page ships
+     * the whole (tenant-scoped) list once.
      *
      * @return array<int, array<string, mixed>>
      */
-    public static function all(): array
+    public static function all(int $ruler): array
     {
-        return Db::all('SELECT * FROM customers ORDER BY id DESC');
+        return Db::all('SELECT * FROM customers WHERE ruler = ? ORDER BY id DESC', [$ruler]);
     }
 
-    public static function create(array $data): void
+    public static function create(array $data, int $ruler): void
     {
         $cols = implode(', ', self::FIELDS);
         $ph   = implode(', ', array_fill(0, count(self::FIELDS), '?'));
 
-        $st = Db::conn()->prepare("INSERT INTO customers ($cols) VALUES ($ph)");
-        $st->execute(array_map(
+        $args = array_map(
             static fn(string $f): ?string => ($data[$f] ?? '') === '' ? null : $data[$f],
             self::FIELDS
-        ));
+        );
+        $args[] = $ruler;
+
+        Db::conn()->prepare("INSERT INTO customers ($cols, ruler) VALUES ($ph, ?)")->execute($args);
     }
 
-    public static function update(int $id, array $data): void
+    public static function update(int $id, array $data, int $ruler): void
     {
         $set = implode(', ', array_map(static fn(string $f): string => "$f = ?", self::FIELDS));
 
-        $st    = Db::conn()->prepare("UPDATE customers SET $set WHERE id = ?");
-        $args  = array_map(
+        $args = array_map(
             static fn(string $f): ?string => ($data[$f] ?? '') === '' ? null : $data[$f],
             self::FIELDS
         );
         $args[] = $id;
-        $st->execute($args);
+        $args[] = $ruler;
+
+        Db::conn()->prepare("UPDATE customers SET $set WHERE id = ? AND ruler = ?")->execute($args);
     }
 
     /**
@@ -65,7 +74,7 @@ final class Customer
      *
      * @return array{0: array<string,string>, 1: array<string,string>} [clean input, errors keyed by field]
      */
-    public static function validate(array $input, ?int $excludeId = null): array
+    public static function validate(array $input, int $ruler, ?int $excludeId = null): array
     {
         $clean = [];
         foreach (self::FIELDS as $f) {
@@ -90,7 +99,7 @@ final class Customer
         if ($clean['customer_taxid'] !== '') {
             if (mb_strlen($clean['customer_taxid']) > 64) {
                 $errors['customer_taxid'] = terr('cust.err_too_long', 64);
-            } elseif (self::taxIdTaken($clean['customer_taxid'], $excludeId)) {
+            } elseif (self::taxIdTaken($clean['customer_taxid'], $ruler, $excludeId)) {
                 $errors['customer_taxid'] = terr('cust.err_taxid_taken');
             }
         }
@@ -108,15 +117,15 @@ final class Customer
         return [$clean, $errors];
     }
 
-    private static function taxIdTaken(string $taxid, ?int $excludeId): bool
+    private static function taxIdTaken(string $taxid, int $ruler, ?int $excludeId): bool
     {
         if ($excludeId !== null) {
             return Db::all(
-                'SELECT 1 FROM customers WHERE customer_taxid = ? AND id != ? LIMIT 1',
-                [$taxid, $excludeId]
+                'SELECT 1 FROM customers WHERE customer_taxid = ? AND ruler = ? AND id != ? LIMIT 1',
+                [$taxid, $ruler, $excludeId]
             ) !== [];
         }
 
-        return Db::all('SELECT 1 FROM customers WHERE customer_taxid = ? LIMIT 1', [$taxid]) !== [];
+        return Db::all('SELECT 1 FROM customers WHERE customer_taxid = ? AND ruler = ? LIMIT 1', [$taxid, $ruler]) !== [];
     }
 }

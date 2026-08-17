@@ -8,6 +8,7 @@
  * @var array   $old          field => value, so a rejected form comes back filled
  * @var ?string $created      name of the product just added
  * @var ?string $updated      name of the product just edited
+ * @var string  $currency     organization.currency ('GEL' or 'USD')
  *
  * Core: name, type, unit, price. Quantity/image still live on their own page
  * (the Warehouse module's /warehouse, see app/Modules/Warehouse/) — type
@@ -105,10 +106,13 @@ $selected = static fn(string $f, string $optionValue): string
       </div>
 
       <div class="col-md-4">
-        <div class="form-floating">
-          <input type="number" step="0.01" min="0" class="form-control <?= $bad('unit_price') ?>" id="unit_price"
-                 name="unit_price" value="<?= $val('unit_price') ?>" placeholder=" " required>
-          <label for="unit_price"><?= t('prod.price') ?> *</label>
+        <div class="input-group">
+          <div class="form-floating">
+            <input type="number" step="0.01" min="0" class="form-control <?= $bad('unit_price') ?>" id="unit_price"
+                   name="unit_price" value="<?= $val('unit_price') ?>" placeholder=" " required>
+            <label for="unit_price"><?= t('prod.price') ?> *</label>
+          </div>
+          <span class="input-group-text"><?= e(currency_symbol($currency)) ?></span>
         </div>
         <?php if (isset($errors['unit_price'])): ?><div class="invalid-feedback d-block"><?= e($errors['unit_price']) ?></div><?php endif; ?>
       </div>
@@ -147,7 +151,7 @@ $selected = static fn(string $f, string $optionValue): string
             <th><?= t('prod.name') ?></th>
             <th><?= t('prod.type') ?></th>
             <th><?= t('prod.unit') ?></th>
-            <th><?= t('prod.price') ?></th>
+            <th><?= t('prod.price') ?> (<?= e(currency_symbol($currency)) ?>)</th>
           </tr>
         </thead>
         <tbody>

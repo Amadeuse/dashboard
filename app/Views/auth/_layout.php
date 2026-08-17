@@ -36,6 +36,7 @@
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/vendor/floating-label/js/floating-label.js"></script>
 <script>
 (() => {
   const photo = document.querySelector('.ds-auth-visual-photo');

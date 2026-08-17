@@ -5,6 +5,12 @@ declare(strict_types=1);
 define('APP_PATH', __DIR__);
 define('ROOT_PATH', dirname(__DIR__));
 
+// Composer packages (currently just mpdf/mpdf, for PDF export — see
+// App\Core\Pdf). Everything else in this app is dependency-free by design
+// (vendor/ under public/ is this project's own hand-copied JS/CSS, not
+// Composer), so this is the one place a real package's autoloader is needed.
+require ROOT_PATH . '/vendor/autoload.php';
+
 // PSR-4-ish autoloader: App\Core\Router -> app/Core/Router.php
 spl_autoload_register(static function (string $class): void {
     $prefix = 'App\\';

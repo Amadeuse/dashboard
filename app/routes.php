@@ -12,6 +12,7 @@ use App\Controllers\OrganizationController;
 use App\Controllers\ProductController;
 use App\Controllers\ProfileController;
 use App\Controllers\StyleGuideController;
+use App\Controllers\SuperUserController;
 use App\Controllers\UserController;
 
 /**
@@ -43,7 +44,9 @@ $router->post('/product-types', [LookupController::class, 'productTypes']);
 $router->get('/invoices', [InvoiceController::class, 'index']);
 $router->post('/invoices', [InvoiceController::class, 'store']);
 $router->get('/invoices/view', [InvoiceController::class, 'show']);
+$router->get('/invoices/export-pdf', [InvoiceController::class, 'exportInvoicePdf']);
 $router->get('/orders', [InvoiceController::class, 'orders']);
+$router->get('/orders/export-pdf', [InvoiceController::class, 'exportOrdersPdf']);
 
 $router->get('/settings/modules', [ModuleController::class, 'index']);
 $router->post('/settings/modules/install', [ModuleController::class, 'install']);
@@ -79,3 +82,7 @@ $router->post('/settings/users', [UserController::class, 'store']);
 
 $router->get('/settings/organization', [OrganizationController::class, 'show']);
 $router->post('/settings/organization', [OrganizationController::class, 'save']);
+
+$router->get('/superuser', [SuperUserController::class, 'index']);
+$router->post('/superuser/impersonate', [SuperUserController::class, 'impersonate']);
+$router->post('/superuser/stop', [SuperUserController::class, 'stop']);

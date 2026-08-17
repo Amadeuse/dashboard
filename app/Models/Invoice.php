@@ -27,16 +27,21 @@ final class Invoice
     }
 
     /**
-     * @param int|null $createdBy when given, only that user's own invoices
-     *   (orders.php's table — each user sees only what they created).
-     *   $invoicesByCustomer on /invoices stays unfiltered on purpose: a
-     *   customer's full invoice history is relevant there regardless of who
-     *   created each one.
+     * @param list<int>|null $createdByIds when given, only invoices created by
+     *   one of these user ids — orders.php's table passes the whole tenant
+     *   (User::tenantMemberIds($ruler): the admin + every sub-user), so a
+     *   sub-user's invoices show up for the admin too, not just their own
+     *   (was a single user id, `created_by = ?`, until 4.36 — a sub-user's
+     *   invoices were invisible on /orders to anyone but that sub-user,
+     *   while the dashboard already counted them for the whole tenant).
+     *   $invoicesByCustomer on /invoices stays unfiltered (null) on purpose:
+     *   a customer's full invoice history is relevant there regardless of
+     *   who created each one.
      * @return array<int, array<string, mixed>> newest first, with the customer's
      *   name/tax id and the creator's name (orders.php's table) joined in.
      *   creator_name is NULL for invoices predating created_by (migrations/021).
      */
-    public static function all(?int $createdBy = null): array
+    public static function all(?array $createdByIds = null): array
     {
         $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, u.name AS creator_name
                   FROM invoices i
@@ -44,9 +49,10 @@ final class Invoice
                   LEFT JOIN users u ON u.id = i.created_by';
         $args = [];
 
-        if ($createdBy !== null) {
-            $sql .= ' WHERE i.created_by = ?';
-            $args[] = $createdBy;
+        if ($createdByIds !== null) {
+            $ph = implode(',', array_fill(0, max(count($createdByIds), 1), '?'));
+            $sql .= " WHERE i.created_by IN ($ph)";
+            $args = $createdByIds;
         }
 
         $sql .= ' ORDER BY i.id DESC';
@@ -54,14 +60,21 @@ final class Invoice
         return Db::all($sql, $args);
     }
 
-    /** One invoice plus the customer fields the print/view page's "Bill To" needs, or null if it doesn't exist. */
+    /**
+     * One invoice plus the customer fields the print/view page's "Bill To"
+     * needs, or null if it doesn't exist. creator_name (the issuing tenant
+     * member — pdf/invoice.php's header shows them as the org side's own
+     * "საკონტაქტო") is NULL for invoices predating created_by (migrations/021).
+     */
     public static function find(int $id): ?array
     {
         $rows = Db::all(
             'SELECT i.*, c.customer_name, c.customer_taxid, c.customer_contact,
-                    c.customer_phone, c.customer_email, c.customer_address
+                    c.customer_phone, c.customer_email, c.customer_address,
+                    u.name AS creator_name
                FROM invoices i
                JOIN customers c ON c.id = i.customer_id
+               LEFT JOIN users u ON u.id = i.created_by
               WHERE i.id = ?',
             [$id]
         );
@@ -101,6 +114,10 @@ final class Invoice
      * @param int|null $createdBy the logged-in user at creation time (Auth::user()),
      *   only ever written on INSERT — "who created this" doesn't change on edit,
      *   so the UPDATE branch below never touches created_by.
+     *
+     * A random view_token is generated on every INSERT (never on UPDATE, never
+     * regenerated) — InvoiceController::show()'s no-login "share this invoice
+     * with the customer" path checks it, see handoff.md.
      */
     public static function save(array $clean, ?int $editingId, ?string $expectedUpdatedAt = null, ?int $createdBy = null): ?int
     {
@@ -134,10 +151,11 @@ final class Invoice
             $invoiceId = $editingId;
         } else {
             $conn->prepare(
-                'INSERT INTO invoices (customer_id, issue_date, total, status, is_zero, is_recurring, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO invoices (customer_id, issue_date, total, status, is_zero, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 (int) $clean['customer_id'], date('Y-m-d'), $total,
                 $clean['status'], $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $createdBy,
+                bin2hex(random_bytes(32)),
             ]);
             $invoiceId = (int) $conn->lastInsertId();
         }

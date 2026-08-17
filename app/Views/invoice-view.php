@@ -72,15 +72,15 @@ $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
           <tr>
             <td><?= e($item['product_name']) ?></td>
             <td class="text-end"><?= e($fmtQty((string) $item['quantity'])) ?></td>
-            <td class="text-end"><?= number_format((float) $item['unit_price'], 2) ?></td>
-            <td class="text-end"><?= number_format((float) $item['line_total'], 2) ?></td>
+            <td class="text-end"><?= e(money((float) $item['unit_price'], $org['currency'])) ?></td>
+            <td class="text-end"><?= e(money((float) $item['line_total'], $org['currency'])) ?></td>
           </tr>
           <?php endforeach; ?>
         </tbody>
         <tfoot>
           <tr class="fw-bold border-top">
             <td colspan="3" class="text-end"><?= t('inv.total') ?></td>
-            <td class="text-end"><?= number_format((float) $invoice['total'], 2) ?></td>
+            <td class="text-end"><?= e(money((float) $invoice['total'], $org['currency'])) ?></td>
           </tr>
         </tfoot>
       </table>

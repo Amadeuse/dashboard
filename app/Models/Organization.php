@@ -7,21 +7,37 @@ namespace App\Models;
 use App\Core\Db;
 use App\Core\Iban;
 
-/** Single-org app — one row, always id=1 (seeded by migrations/011_create_organization.sql). */
+/**
+ * Multi-tenant (migrations/024) — one row per tenant (`ruler`, UNIQUE), not
+ * a single always-id=1 row anymore. get() is get-or-create: a tenant with no
+ * row yet (freshly registered, or predates this migration) gets a blank one
+ * inserted on first read, so every caller keeps getting a plain array back
+ * instead of having to null-check.
+ */
 final class Organization
 {
-    public static function get(): array
+    public const CURRENCIES = ['GEL', 'USD'];
+
+    public static function get(int $ruler): array
     {
-        return Db::all('SELECT * FROM organization WHERE id = 1')[0];
+        $existing = Db::all('SELECT * FROM organization WHERE ruler = ?', [$ruler]);
+        if ($existing !== []) {
+            return $existing[0];
+        }
+
+        Db::conn()->prepare('INSERT INTO organization (ruler) VALUES (?)')->execute([$ruler]);
+
+        return Db::all('SELECT * FROM organization WHERE ruler = ?', [$ruler])[0];
     }
 
-    public static function save(array $data): void
+    public static function save(array $data, int $ruler): void
     {
         Db::conn()->prepare(
             'UPDATE organization SET
                 name = ?, tax_id = ?, email = ?, website = ?, phone = ?,
-                address = ?, invoice_prefix = ?, bank_details = ?
-             WHERE id = 1'
+                address = ?, invoice_prefix = ?, bank_details = ?,
+                vat_rate = ?, currency = ?
+             WHERE ruler = ?'
         )->execute([
             $data['name'],
             self::orNull($data['tax_id']),
@@ -31,6 +47,9 @@ final class Organization
             self::orNull($data['address']),
             self::orNull($data['invoice_prefix']),
             self::orNull(implode("\n", array_filter($data['bank_ibans'], static fn(string $v): bool => $v !== ''))),
+            $data['vat_rate'],
+            $data['currency'],
+            $ruler,
         ]);
     }
 
@@ -42,14 +61,14 @@ final class Organization
         return $raw === '' ? [] : preg_split('/\r?\n/', $raw);
     }
 
-    public static function updateLogo(string $filename): void
+    public static function updateLogo(string $filename, int $ruler): void
     {
-        Db::conn()->prepare('UPDATE organization SET logo = ? WHERE id = 1')->execute([$filename]);
+        Db::conn()->prepare('UPDATE organization SET logo = ? WHERE ruler = ?')->execute([$filename, $ruler]);
     }
 
-    public static function updateSignature(string $filename): void
+    public static function updateSignature(string $filename, int $ruler): void
     {
-        Db::conn()->prepare('UPDATE organization SET signature = ? WHERE id = 1')->execute([$filename]);
+        Db::conn()->prepare('UPDATE organization SET signature = ? WHERE ruler = ?')->execute([$filename, $ruler]);
     }
 
     /** @return array{0: array<string,string>, 1: array<string,string>} [clean, errors] */
@@ -63,6 +82,8 @@ final class Organization
             'phone'          => trim((string) ($input['phone'] ?? '')),
             'address'        => trim((string) ($input['address'] ?? '')),
             'invoice_prefix' => trim((string) ($input['invoice_prefix'] ?? '')),
+            'vat_rate'       => trim((string) ($input['vat_rate'] ?? '')),
+            'currency'       => trim((string) ($input['currency'] ?? '')),
             'bank_ibans'     => array_map(
                 static fn($v): string => Iban::normalize(trim((string) $v)),
                 array_values((array) ($input['bank_ibans'] ?? []))
@@ -76,6 +97,14 @@ final class Organization
 
         if ($clean['email'] !== '' && !filter_var($clean['email'], FILTER_VALIDATE_EMAIL)) {
             $errors['email'] = terr('auth.err_email_invalid');
+        }
+
+        if (!is_numeric($clean['vat_rate']) || (float) $clean['vat_rate'] < 0 || (float) $clean['vat_rate'] > 100) {
+            $errors['vat_rate'] = terr('org.err_vat_rate');
+        }
+
+        if (!in_array($clean['currency'], self::CURRENCIES, true)) {
+            $errors['currency'] = terr('org.err_currency');
         }
 
         foreach ($clean['bank_ibans'] as $i => $iban) {

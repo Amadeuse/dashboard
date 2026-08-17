@@ -34,13 +34,68 @@ final class User
         return self::findByEmail($email) !== null;
     }
 
-    /** Every user in the (single) organization — the /settings/users roster. */
-    public static function all(): array
+    /**
+     * The sub-users *this* tenant's admin created — /settings/users' roster.
+     * Was unscoped (every user, every tenant) before multi-tenancy (migrations/
+     * 022-025) existed; fixed alongside it, since an unscoped roster here meant
+     * any admin could see — and, via updateSubUser(), edit — any other
+     * tenant's sub-users, including their password. role != 'superadmin' is
+     * belt-and-braces: created_by already excludes it (see ensureSuperuser()),
+     * this just keeps it out even if that ever changes.
+     */
+    public static function all(int $ruler): array
     {
-        return Db::all('SELECT * FROM users ORDER BY name');
+        return Db::all("SELECT * FROM users WHERE created_by = ? AND role != 'superadmin' ORDER BY name", [$ruler]);
     }
 
-    /** code => translated label, in a fixed display order (most to least access). */
+    /**
+     * Every tenant (an admin with no creator of their own) plus their
+     * sub-users, for /superuser's roster — the one place a cross-tenant,
+     * unscoped listing is actually the point. Grouped in PHP, not SQL: the
+     * table's small enough that a self-join/window-function query would be
+     * more code for no real gain.
+     *
+     * @return array<int, array{tenant: array<string,mixed>, subUsers: array<int, array<string,mixed>>}>
+     *   keyed by the tenant's own user id, tenant first then children, both
+     *   ordered by name.
+     */
+    public static function allGroupedByTenant(): array
+    {
+        $rows = Db::all("SELECT * FROM users WHERE role != 'superadmin' ORDER BY name");
+
+        $tenants = [];
+        foreach ($rows as $row) {
+            if ($row['created_by'] === null) {
+                $tenants[(int) $row['id']] = ['tenant' => $row, 'subUsers' => []];
+            }
+        }
+        foreach ($rows as $row) {
+            if ($row['created_by'] !== null && isset($tenants[(int) $row['created_by']])) {
+                $tenants[(int) $row['created_by']]['subUsers'][] = $row;
+            }
+        }
+
+        return $tenants;
+    }
+
+    /**
+     * The tenant admin's own id plus every sub-user they created — "the
+     * whole team", used anywhere invoices need to be scoped per-tenant
+     * rather than per-individual-user (invoices.created_by is a single user
+     * id, not a ruler — see Dashboard.php and InvoiceController::orders()).
+     * Always at least [$ruler].
+     *
+     * @return list<int>
+     */
+    public static function tenantMemberIds(int $ruler): array
+    {
+        return array_map('intval', array_column(
+            Db::all('SELECT id FROM users WHERE id = ? OR created_by = ?', [$ruler, $ruler]),
+            'id'
+        ));
+    }
+
+    /** code => translated label, in a fixed display order (most to least access). Deliberately never includes 'superadmin' — see ensureSuperuser(). */
     public static function roles(): array
     {
         return [
@@ -48,6 +103,29 @@ final class User
             'manager' => t('role.manager'),
             'viewer'  => t('role.viewer'),
         ];
+    }
+
+    /**
+     * Called only from Auth::attemptSuperuser() after the .env credential
+     * itself already matched — this never authenticates anyone by itself,
+     * it only materialises/refreshes a normal `users` row (role=superadmin,
+     * created_by NULL) so the rest of the app has one to work with. The
+     * hash is re-derived from the current .env password on every call, so
+     * changing SUPERUSER_PASSWORD takes effect on the very next login with
+     * no separate sync step.
+     *
+     * @return int the superadmin's user id
+     */
+    public static function ensureSuperuser(string $email, string $password): int
+    {
+        $conn = Db::conn();
+        $conn->prepare(
+            "INSERT INTO users (name, email, password_hash, role)
+             VALUES ('SuperUser', ?, ?, 'superadmin')
+             ON DUPLICATE KEY UPDATE password_hash = VALUES(password_hash), role = 'superadmin'"
+        )->execute([$email, password_hash($password, PASSWORD_DEFAULT)]);
+
+        return (int) (self::findByEmail($email)['id'] ?? 0);
     }
 
     public static function create(string $name, string $email, string $password, ?string $phone = null): int
@@ -88,8 +166,16 @@ final class User
         return (int) Db::conn()->lastInsertId();
     }
 
-    /** Editing an existing sub-user — password stays put unless a new one was typed. */
-    public static function updateSubUser(int $id, array $data): void
+    /**
+     * Editing an existing sub-user — password stays put unless a new one was
+     * typed. `created_by = ?` in the WHERE means an admin can only ever edit
+     * (and only ever *has* editing them tested against) sub-users they
+     * themselves created — id alone isn't enough, that would let one
+     * tenant's admin overwrite another tenant's sub-user (including their
+     * password) just by guessing/finding the row id. Same reasoning as
+     * Customer::update()'s `ruler = ?`.
+     */
+    public static function updateSubUser(int $id, array $data, int $ruler): void
     {
         $sql    = 'UPDATE users SET name = ?, email = ?, phone = ?, avatar = ?, role = ?';
         $params = [
@@ -105,8 +191,9 @@ final class User
             $params[] = password_hash($data['password'], PASSWORD_DEFAULT);
         }
 
-        $sql      .= ' WHERE id = ?';
+        $sql      .= ' WHERE id = ? AND created_by = ?';
         $params[] = $id;
+        $params[] = $ruler;
 
         Db::conn()->prepare($sql)->execute($params);
     }

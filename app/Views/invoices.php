@@ -36,6 +36,13 @@ $selected = static fn(string $f, string $optionValue): string
 $invoiceNumber = static fn(array $row): string => \App\Models\Invoice::number($row, $invoicePrefix);
 $uploadUrl = '/assets/uploads/organization/';
 
+// Per-organization, not hardcoded — see org.vat_rate in /settings/organization.
+// Display-only: prices are already entered VAT-inclusive, so this never
+// changes the stored invoice total, just what the form shows alongside it.
+$vatRate = (float) ($org['vat_rate'] ?? 18);
+$vatRateDisplay = rtrim(rtrim(number_format($vatRate, 2), '0'), '.') ?: '0';
+$currency = (string) ($org['currency'] ?? 'GEL');
+
 /** id => full row, for the 1/4-column "customer info" panel — JS re-renders it from this on every selection change. */
 $customersById = array_column($customers, null, 'id');
 $customerFieldLabels = [
@@ -186,8 +193,8 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
             <div class="row g-2 text-secondary small mb-1 d-none d-md-flex">
               <div class="col"><?= t('inv.product') ?></div>
               <div class="col-md-2"><?= t('inv.quantity') ?></div>
-              <div class="col-md-2"><?= t('inv.unit_price') ?></div>
-              <div class="col-md-2"><?= t('inv.line_total') ?></div>
+              <div class="col-md-2"><?= t('inv.unit_price') ?> (<?= e(currency_symbol($currency)) ?>)</div>
+              <div class="col-md-2"><?= t('inv.line_total') ?> (<?= e(currency_symbol($currency)) ?>)</div>
               <div class="col-auto"></div>
             </div>
 
@@ -198,7 +205,9 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
                  ), JSON_UNESCAPED_UNICODE)) ?>"
                  data-search-placeholder="<?= e(t('table.search')) ?>"
                  data-no-results="<?= e(t('table.empty')) ?>"
-                 data-clear-label="<?= e(t('cust.clear_field')) ?>">
+                 data-clear-label="<?= e(t('cust.clear_field')) ?>"
+                 data-vat-rate="<?= e((string) $vatRate) ?>"
+                 data-currency-symbol="<?= e(currency_symbol($currency)) ?>">
               <?php foreach ($itemRows as $i => $row): $itemRow($i, $row, $errors['items_' . $i] ?? null); endforeach; ?>
             </div>
 <hr>
@@ -209,12 +218,12 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
               </div>
               <div class="col-md-4">
                 <div class="d-flex justify-content-between text-secondary small pb-2 border-bottom">
-                  <span><?= t('inv.vat') ?> (18%):</span>
-                  <span id="invoiceVat">0.00</span>
+                  <span><?= t('inv.vat') ?> (<?= e($vatRateDisplay) ?>%):</span>
+                  <span id="invoiceVat"><?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
                 <div class="d-flex justify-content-between fw-semibold pt-2">
                   <span><?= t('inv.grand_total') ?>:</span>
-                  <span id="invoiceGrandTotal">0.00</span>
+                  <span id="invoiceGrandTotal"><?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
                 <div class="d-flex justify-content-end gap-2 mt-3">
                   <button type="reset" class="btn btn-outline-secondary"><?= t('inv.reset') ?></button>
@@ -290,6 +299,8 @@ $scripts = <<<'HTML'
   const searchPh    = container.dataset.searchPlaceholder;
   const noResults   = container.dataset.noResults;
   const clearLabel  = container.dataset.clearLabel;
+  const vatRate     = parseFloat(container.dataset.vatRate) || 0;
+  const currencySym = container.dataset.currencySymbol;
 
   const customerInfoPanel = document.getElementById('customerInfoPanel');
   const customersById  = customerInfoPanel ? JSON.parse(customerInfoPanel.dataset.customers) : {};
@@ -379,8 +390,11 @@ $scripts = <<<'HTML'
     container.querySelectorAll('[data-item-row]').forEach((row) => {
       sum += parseFloat(row.querySelector('[data-item-line-total]').value) || 0;
     });
-    vatEl.textContent = (sum * 0.18).toFixed(2);
-    grandTotalEl.textContent = sum.toFixed(2);
+    // sum is already VAT-inclusive (see the org.vat_rate docblock note above)
+    // — this extracts how much of it is VAT, it doesn't add anything on top:
+    // vat = total * rate / (100 + rate), not total * rate / 100.
+    vatEl.textContent = currencySym + ' ' + (sum * (vatRate / (100 + vatRate))).toFixed(2);
+    grandTotalEl.textContent = currencySym + ' ' + sum.toFixed(2);
   }
 
   function addRow(values) {

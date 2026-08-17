@@ -4,60 +4,113 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Core\Db;
+
 /**
- * Hardcoded sample data. Swap these method bodies for DB queries — the views
- * and controllers only depend on the array shapes returned here.
+ * All of this is tenant-scoped (App\Core\Auth::tenantId()) — customers/
+ * products via their own `ruler` column, invoices via `created_by IN
+ * (User::tenantMemberIds($ruler))` since invoices are scoped per-user (who
+ * issued it), not per-tenant directly (see 4.25.7/4.30/4.36 in handoff.md).
+ * A sub-user's own invoices count toward their admin's dashboard — that's
+ * the whole point of "the team's numbers together".
  */
 final class Dashboard
 {
-    public static function stats(): array
+    /** @return array<int, array{key:string,value:string,icon:string,tone:string}> */
+    public static function stats(int $ruler): array
     {
+        $userIds = User::tenantMemberIds($ruler);
+        $ph      = self::placeholders($userIds);
+
+        $customers = (int) (Db::all('SELECT COUNT(*) AS c FROM customers WHERE ruler = ?', [$ruler])[0]['c'] ?? 0);
+        $products  = (int) (Db::all('SELECT COUNT(*) AS c FROM products WHERE ruler = ?', [$ruler])[0]['c'] ?? 0);
+        $invoices  = (int) (Db::all("SELECT COUNT(*) AS c FROM invoices WHERE created_by IN ($ph)", $userIds)[0]['c'] ?? 0);
+        $revenue   = (float) (Db::all("SELECT COALESCE(SUM(total), 0) AS s FROM invoices WHERE created_by IN ($ph)", $userIds)[0]['s'] ?? 0);
+
         return [
-            ['key' => 'stat.revenue',      'value' => '$128,430', 'icon' => 'bi-currency-dollar', 'tone' => 'primary', 'trend' => 'success', 'dir' => 'up',   'delta' => '12.4%'],
-            ['key' => 'stat.active_users', 'value' => '8,940',    'icon' => 'bi-people-fill',     'tone' => 'info',    'trend' => 'success', 'dir' => 'up',   'delta' => '4.1%'],
-            ['key' => 'stat.orders',       'value' => '1,284',    'icon' => 'bi-bag-check-fill',  'tone' => 'warning', 'trend' => 'danger',  'dir' => 'down', 'delta' => '2.3%'],
-            ['key' => 'stat.conversion',   'value' => '3.8%',     'icon' => 'bi-graph-up-arrow',  'tone' => 'primary', 'trend' => 'success', 'dir' => 'up',   'delta' => '0.6%'],
+            ['key' => 'stat.customers', 'value' => number_format($customers),  'icon' => 'bi-people-fill', 'tone' => 'primary'],
+            ['key' => 'stat.products',  'value' => number_format($products),   'icon' => 'bi-box-seam',    'tone' => 'info'],
+            ['key' => 'stat.invoices',  'value' => number_format($invoices),   'icon' => 'bi-receipt',     'tone' => 'warning'],
+            ['key' => 'stat.revenue',   'value' => number_format($revenue, 2), 'icon' => 'bi-cash-stack',  'tone' => 'success'],
         ];
     }
 
-    public static function revenueSeries(): array
+    /**
+     * The current calendar year's (Jan-Dec) invoice revenue, one series per
+     * tenant member (the admin + every sub-user) — grouped bars, one colour
+     * per person, so the chart shows who's issuing how much side by side,
+     * not just a single blended line. Months are raw 'YYYY-MM' keys; the
+     * view (not this model, see Dashboard::activity()'s old convention)
+     * turns them into localized labels via t('month.N').
+     *
+     * @return array{months: list<string>, series: list<array{userId:int,label:string,color:string,data:list<float>}>}
+     */
+    public static function revenueByUser(int $ruler): array
     {
-        return [12000, 15400, 13200, 18100, 16700, 20300, 19200];
+        $members = Db::all(
+            'SELECT id, name FROM users WHERE id = ? OR created_by = ? ORDER BY (id != ?), name',
+            [$ruler, $ruler, $ruler]
+        );
+        $memberIds = array_map('intval', array_column($members, 'id'));
+
+        $months = self::currentYearMonths();
+        $ph     = self::placeholders($memberIds);
+        $rows   = Db::all(
+            "SELECT DATE_FORMAT(issue_date, '%Y-%m') AS month, created_by, SUM(total) AS total
+               FROM invoices
+              WHERE created_by IN ($ph) AND YEAR(issue_date) = YEAR(CURDATE())
+              GROUP BY month, created_by",
+            $memberIds
+        );
+
+        $totals = []; // [month][userId] => total
+        foreach ($rows as $row) {
+            $totals[$row['month']][(int) $row['created_by']] = (float) $row['total'];
+        }
+
+        $palette = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#84cc16'];
+        $series  = [];
+        foreach ($members as $i => $member) {
+            $userId    = (int) $member['id'];
+            $series[]  = [
+                'userId' => $userId,
+                'label'  => $member['name'],
+                'color'  => $palette[$i % count($palette)],
+                'data'   => array_map(static fn(string $m): float => round($totals[$m][$userId] ?? 0.0, 2), $months),
+            ];
+        }
+
+        return ['months' => $months, 'series' => $series];
     }
 
-    public static function traffic(): array
+    /** @return array<int, array<string,mixed>> the tenant's most recent invoices (any member), customer/creator names joined in. */
+    public static function recentInvoices(int $ruler, int $limit = 6): array
     {
-        return [
-            ['key' => 'traffic.organic',  'color' => '#4f46e5', 'pct' => 48],
-            ['key' => 'traffic.social',   'color' => '#22c55e', 'pct' => 27],
-            ['key' => 'traffic.referral', 'color' => '#f59e0b', 'pct' => 17],
-            ['key' => 'traffic.other',    'color' => '#e2e8f0', 'pct' => 8],
-        ];
+        $userIds = User::tenantMemberIds($ruler);
+        $ph      = self::placeholders($userIds);
+
+        return Db::all(
+            "SELECT i.*, c.customer_name, u.name AS creator_name
+               FROM invoices i
+               JOIN customers c ON c.id = i.customer_id
+               LEFT JOIN users u ON u.id = i.created_by
+              WHERE i.created_by IN ($ph)
+              ORDER BY i.id DESC
+              LIMIT " . max(1, $limit),
+            $userIds
+        );
     }
 
-    public static function orders(): array
+    private static function placeholders(array $items): string
     {
-        return [
-            ['name' => 'Nini Kapanadze',  'initials' => 'NK', 'color' => '#6366f1', 'product' => 'UI Kit Pro',       'date' => '2026-07-24', 'amount' => '$249.00', 'tone' => 'success', 'status' => 'status.paid'],
-            ['name' => 'Luka Gelashvili', 'initials' => 'LG', 'color' => '#22c55e', 'product' => 'Analytics Add-on', 'date' => '2026-07-23', 'amount' => '$89.00',  'tone' => 'warning', 'status' => 'status.pending'],
-            ['name' => 'Ana Chkheidze',   'initials' => 'AC', 'color' => '#f59e0b', 'product' => 'Team Seats (5)',   'date' => '2026-07-22', 'amount' => '$620.00', 'tone' => 'success', 'status' => 'status.paid'],
-            ['name' => 'Beka Lomidze',    'initials' => 'BL', 'color' => '#ef4444', 'product' => 'Storage Upgrade',  'date' => '2026-07-21', 'amount' => '$35.00',  'tone' => 'danger',  'status' => 'status.rejected'],
-            ['name' => 'Tako Maisuradze', 'initials' => 'TM', 'color' => '#4f46e5', 'product' => 'API Access',       'date' => '2026-07-20', 'amount' => '$149.00', 'tone' => 'success', 'status' => 'status.paid'],
-        ];
+        return implode(',', array_fill(0, max(count($items), 1), '?'));
     }
 
-    public static function activity(): array
+    /** @return list<string> this calendar year's 12 months as 'YYYY-MM', January through December. */
+    private static function currentYearMonths(): array
     {
-        return [
-            ['text' => 'activity.1', 'time' => 'activity.1_time'],
-            ['text' => 'activity.2', 'time' => 'activity.2_time'],
-            ['text' => 'activity.3', 'time' => 'activity.3_time'],
-            ['text' => 'activity.4', 'time' => 'activity.4_time'],
-        ];
-    }
+        $year = date('Y');
 
-    public static function goal(): array
-    {
-        return ['current' => '$18,200', 'target' => '$25,000', 'percent' => 73];
+        return array_map(static fn(int $m): string => sprintf('%s-%02d', $year, $m), range(1, 12));
     }
 }

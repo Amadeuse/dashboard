@@ -42,6 +42,16 @@
           <?php endif; ?>
         <?php endforeach; ?>
       <?php endforeach; ?>
+
+      <?php // Not in menu.json — menu.json has no role-visibility concept, and this
+            // is the only item that has ever needed one, so a special case here is
+            // less machinery than adding one for a single link. ?>
+      <?php if ((\App\Core\Auth::user()['role'] ?? null) === 'superadmin'): ?>
+        <p class="ds-nav-section"><?= t('nav.superuser') ?></p>
+        <a href="/superuser" class="ds-nav-link <?= ds_is_current('/superuser') ? 'active' : '' ?>">
+          <i class="bi bi-shield-lock-fill"></i> <?= t('nav.superuser') ?>
+        </a>
+      <?php endif; ?>
     </nav>
   </div>
 </div>

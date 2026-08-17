@@ -119,6 +119,20 @@ function e(string $s): string
     return htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 }
 
+/** ₾ for GEL (written after the amount, local convention), $ for USD (written before). */
+function currency_symbol(string $currency): string
+{
+    return $currency === 'USD' ? '$' : '₾';
+}
+
+/** number_format(2) + the organization's currency symbol, placed the way each currency is conventionally written. */
+function money(float $amount, string $currency): string
+{
+    $formatted = number_format($amount, 2);
+
+    return $currency === 'USD' ? '$' . $formatted : $formatted . ' ₾';
+}
+
 /**
  * Everything a page needs to turn its tables into ds-tables: the translated
  * labels plus the script itself. Assign it to $scripts in the view.
