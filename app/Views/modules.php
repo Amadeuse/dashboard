@@ -13,7 +13,6 @@
         <li class="breadcrumb-item active"><?= t('page.modules') ?></li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0"><?= t('page.modules') ?></h1>
   </div>
 </div>
 

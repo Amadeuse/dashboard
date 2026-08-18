@@ -1016,6 +1016,15 @@ submit `/customers`-ზე → flash-ში დაბრუნებულ HTML-
 შეცდომა #4821" და ეს ერთი რიცხვი ცალსახად ადგენს, რომელი წესი ჩაიშალა,
 log-ის გარეშე.
 
+⚠️ **`4.47`-ის შემდეგ user-მა მოითხოვა ნომრის ჩვენების მოშორება**
+(`(#7867)` UI-ში ზედმეტად ჩანდა) — `terr()` **დარჩა ყველგან
+გამოძახებული** (call site-ები უცვლელია, `$errors[...] = terr(...)`),
+უბრალოდ `terr()`-ის სხეული გახდა `t()`-ის alias
+(`app/Core/helpers.php`), კოდის დამატება მოშორდა. ფუნქცია
+დატოვებულია (არა პირდაპირ `t()`-ზე გადართვა ყველა საიტზე) — თუ
+მომავალში ისევ დასჭირდებათ ნომრები (support-ის მოთხოვნით), ერთ
+ადგილას დაბრუნდება.
+
 ### 4.24 `window.dsNotify` — გლობალური toast შეცდომებისთვის, submit-მდე
 
 `4.22`-ის ავატარის ატვირთვის ბაგის (ორფანი ფაილები) გამოსწორების შემდეგ
@@ -2709,6 +2718,640 @@ stat-წყვილისთვის.
 "გთხოვთ დროულად დაფაროთ დავალიანება" ჩანს ზედა ხაზის ზემოთ,
 "დაგენერირებულია Nova DS" კვლავ ხაზის ქვემოთ. ტესტ-ფაილი და
 სესია წაშლილია.
+
+### 4.40 `/invoices`-ის გვერდითი პანელი — დუბლირებული "შენახვა" წაშლილია, "PDF ექსპორტი" გამართულია
+
+user-მა შენიშნა, რომ ახალი ინვოისის გვერდზე ორი ღილაკი ("+ დამატება"
+ფორმის ბოლოში და "შენახვა" გვერდით პანელში) ვიზუალურად ერთსა და იმავეს
+ჰგავდა, მაგრამ მხოლოდ პირველი მუშაობდა რეალურად — მეორე (`inv.action_save`,
+`bi-save`) წმინდა დეკორატიული იყო, `4.29`-დან ("no functionality yet,
+per request"). დადასტურდა, რომ ეს რეალური inconsistency იყო
+(`AskUserQuestion`-ის მსგავსი პირდაპირი კითხვის გარეშე, უბრალო
+რეკომენდაციით) — user-მა აირჩია **წაშლა**, არა ორმაგი ბმა ერთსა და
+იმავე ფორმაზე. `inv.action_save` lang-key წაშლილია (ka/en), აღარსად
+გამოიყენებოდა.
+
+**"PDF ექსპორტი" ღილაკს** (`inv.action_export_pdf`, ასევე დეკორატიული
+იყო) დაემატა იგივე ფუნქციონალი, რაც `/orders`-ის row-action-ს აქვს —
+`/invoices/export-pdf?id=N`. ახალი (შენახვის წინ) ინვოისისთვის id
+არ არსებობს, ამიტომ `$editingInvoice !== null`-ზეა პირობითი: `?edit=N`
+რეჟიმში რეალური `<a href>` ბმულია, ახალი ინვოისის ფორმაზე კი
+disabled `<button>` ტულთიფით ("ჯერ შეინახეთ ინვოისი", ახალი
+`inv.action_export_pdf_disabled_hint` key).
+
+**გადამოწმებულია ცოცხლად**: ახალი ინვოისის გვერდზე — "შენახვა"
+ღილაკი (`bi-save`) აღარ ჩანს, "PDF ექსპორტი" disabled-ია სწორი
+tooltip-ით; `/invoices?edit=12`-ზე — "PDF ექსპორტი" რეალური ბმულია
+(`href="/invoices/export-pdf?id=12"`), დაწკაპებით ნამდვილი, ვალიდური
+PDF ჩამოიტვირთა. ტესტ-ფაილები და სესია წაშლილია.
+
+**შემდეგ**: user-მა დააზუსტა — "PDF ექსპორტი" ღილაკი **არ** უნდა
+იყოს disabled ახალ (შეუნახავ) ინვოისზეც, არამედ ერთი დაწკაპებით
+ორივე მოქმედება უნდა შესრულდეს: შენახვა/დამატება **და** PDF
+ექსპორტი. Disabled-branch/`$editingInvoice`-პირობა მთლიანად
+მოშორდა — ღილაკი ეხლა ჩვეულებრივი `type="submit"
+form="invoiceMainForm" name="submit_action" value="export_pdf"`-ია,
+ფორმის შიდა submit-ღილაკის (`id="invoiceSubmitBtn"`) გვერდით, იმავე
+ფორმაზე მიბმული — HTML-ის სტანდარტული "ორი submit ღილაკი, სხვადასხვა
+name=value ერთ ფორმაზე" ქცევა, ახალი JS არ დასჭირდა.
+`InvoiceController::store()`-ს დაემატა ერთი პირობა: წარმატებული
+save/update-ის შემდეგ, თუ `$_POST['submit_action'] === 'export_pdf'`,
+`/invoices`-ის მაგივრად `/invoices/export-pdf?id={ახლადშენახული}`-ზე
+გადამისამართებს — validation/conflict error-ის შემთხვევაში კვლავ
+ჩვეულებრივ `/invoices#invoice-form`/`?edit=N`-ზე ბრუნდება (PDF
+არასდროს გენერირდება წარუმატებელი save-ის შემდეგ).
+`inv.action_export_pdf_disabled_hint` lang-key წაშლილია, აღარ
+გამოიყენება.
+
+⚠️ **გადამოწმებისას აღმოჩენილი, ცალკე, წინარე ხარვეზი** (ჩემი ახალი
+ცვლილების ბრალი არაა): SuperUser-ით tenant-ის impersonation-ის დროს
+შექმნილ ინვოისს `created_by` სუფთა superadmin-ის საკუთარ user id-ზე
+ეწერება (არა real tenant-ზე) — შედეგად `ownerTenant()` ვერასდროს
+დაემთხვევა არც ერთ ნამდვილ tenant-ს, და ასეთი ინვოისის PDF ექსპორტი
+შემდეგ `404`-ს იძლევა. ამიტომ ეს კონკრეტული ცოცხალი ტესტი
+**tenant test1-ად პირდაპირი login-ით** ჩავატარე (დროებით
+`password_hash` შევუცვალე ცნობილ პაროლზე, ტესტის შემდეგ ორიგინალზე
+დავაბრუნე) — SuperUser-ის impersonation-ის ეს ხარვეზი ცალკე,
+მომავალი ფიქსია, ამ ცვლილების scope-ს არ ეხება.
+
+**გადამოწმებულია ცოცხლად** (tenant test1-ის საკუთარი login-ით): ახალი
+ინვოისის ფორმა შევსებული → "PDF ექსპორტი" ღილაკზე დაწკაპებით — ახალი
+ინვოისი (id=16) რეალურად შეიქმნა ბაზაში (სწორი customer/product/
+quantity/notes/ჯამი) **და** იმავე request-ის ფარგლებში გადამისამართდა
+`/invoices/export-pdf?id=16`-ზე, საიდანაც ნამდვილი, ამ ინვოისის
+სწორი მონაცემებით PDF ჩამოიტვირთა. სატესტო ინვოისი (id=16, id=15 —
+წინა, SuperUser-impersonation-ის ცდიდან დარჩენილი) წაშლილია,
+password_hash აღდგენილია, ტესტ-ფაილები და სესიები წაშლილია.
+
+### 4.41 SuperUser — view-only impersonation + user block/unblock
+
+user-მა თავად აღმოაჩინა და ცალსახად ჩამოაყალიბა policy: **SuperUser
+არასდროს არ უნდა მოქმედებდეს tenant-ის მაგივრად** (მხოლოდ თვალყურის
+დევნება/monitoring), მისი ერთადერთი ლეგიტიმური write-ქმედება არის
+მომხმარებლის დაბლოკვა/განბლოკვა (in-app შეტყობინების feature-ი
+მოთხოვნით გადაიდო — user-მა აირჩია, რომ ჯერ არ აშენდეს).
+
+**Write-surface აუდიტი** (`Explore` agent-ით) გამოავლინა ყველა
+tenant-write action, რომელიც აქამდე იმპერსონაციისას ხელმისაწვდომი
+იყო SuperUser-ისთვის: `CustomerController::store`,
+`ProductController::store`, `LookupController::save`(private,
+`units()`-ის)/`productTypes`, `InvoiceController::store`,
+`OrganizationController::save`, `UserController::store`,
+`Warehouse\WarehouseController::store`,
+`Warehouse\ProductTypeController::save`.
+
+**`Auth::requireNotImpersonating()`** (ახალი) — `http_response_code(403);
+exit(...)`, იმავე style-ის, რასაც `csrf_verify()` იყენებს — დაემატა
+ყველა ზემოთ ჩამოთვლილი redirect-სტილის action-ის თავში (`csrf_verify()`-ის
+გვერდით). ორი JSON-პასუხიანი endpoint-ისთვის (`LookupController`-ის
+ორივე action, Warehouse-ის `ProductTypeController::save`) ეს ვერ
+გამოდგებოდა (plain-text `exit()` AJAX-ის JS-ს ვერ დაუმუშავდებოდა) —
+იქ inline `Auth::impersonating() !== null`-შემოწმებაა, JSON `403`-ის
+დაბრუნებით.
+
+⚠️ **ცალკე, ამ აუდიტისას აღმოჩენილი პრე-არსებული ხარვეზი, ამავე
+დროს გასწორებული**: `ModuleController::install/enable/disable`-ს
+**საერთოდ არ ჰქონდა** `Auth::requireAdmin()` — ნებისმიერ
+ავტორიზებულ მომხმარებელს (არა მხოლოდ admin-ს) შეეძლო მთელი
+აპლიკაციისთვის (არა tenant-სკოუპილი — `modules`-ს `ruler` სვეტი
+საერთოდ არ აქვს) module-ის ჩართვა/გამორთვა. დაემატა `requireAdmin()`
++ `requireNotImpersonating()` სამივეს. **Caveat**: topbar-ის apps
+dropdown-ის (`partials/topbar.php`) enable/disable toggle კვლავ
+ყველასთვის ჩანს ვიზუალურად — non-admin-ის დაწკაპება ეხლა უბრალოდ
+`forbidden`-ზე აისვლის, UI არ არის დამალული role-ის მიხედვით (ცალკე,
+არმოთხოვნილი polish, არ გავაკეთე დამატებითი scope-ის გარეშე).
+
+**User block/unblock**: `migrations/029_add_users_blocked_at.sql` —
+`users.blocked_at TIMESTAMP NULL`. `Auth::attempt()`-ის ჩვეულებრივი
+(არა-superuser) branch-ს ემატება `blocked_at !== null` უარყოფა.
+**`Auth::check()`-ს** (ერთადერთი უნივერსალური choke-point — ყოველ
+request-ზე გადის `public/index.php`-ის app-wide gate-იდან) დაემატა
+იგივე შემოწმება — ეს არა მხოლოდ mid-session force-logout-ს
+უზრუნველყოფს (დაბლოკვისთანავე, არა შემდეგი login-ის მოლოდინში), არამედ
+ხურავს OTP-ისა და Google OAuth login-ის გვერდის ბილიკებსაც (ორივე
+პირდაპირ `Auth::login()`-ს იძახებს, `attempt()`-ს გვერდს უვლის) —
+ორივე მაინც `check()`-ს დაეჯახება მომდევნო request-ზე.
+`User::setBlocked(int $id, bool $blocked)` (ახალი) წერს/შლის
+`blocked_at`-ს.
+
+**`SuperUserController::toggleBlock()`** (ახალი, route
+`/superuser/toggle-block`) — `Auth::requireSuperuser()` +
+`csrf_verify()`, **განზრახ არ** არის `requireNotImpersonating()`-ით
+დაცული (ეს არის თვითონ SuperUser-ის ლეგიტიმური, პირდაპირი
+ქმედება — არა tenant-ის მაგივრად მოქმედება). სამიზნე არასდროს
+შეიძლება იყოს superadmin. `superuser.php`-ის roster-ს დაემატა:
+თითო root tenant-row-ს — "დაბლოკვა/განბლოკვა" ღილაკი (`bi-lock`/
+`bi-unlock`) "დათვალიერება"-ს გვერდით + წითელი "დაბლოკილია" badge
+სახელის გვერდით, თუ დაბლოკილია; თითო sub-user badge კი **თავად
+გახდა** პატარა submit-ღილაკი (`toggle-block`-ზე, `user_id`-ით) —
+დაბლოკილს ემატება `bi-lock-fill` + წითელი ფერი.
+
+**გადამოწმებულია ცოცხლად**: (1) SuperUser-ით tenant 31-ის
+იმპერსონაციისას customer/invoice/units-შექმნის მცდელობებმა `403`
+დააბრუნა, **არაფერი არ ჩაწერილა ბაზაში** (პირდაპირ SQL-ით
+გადამოწმებული); (2) `/superuser/toggle-block`-ით tenant 32 (test2)
+დაიბლოკა → roster-ში წითელი badge გამოჩნდა → **ახალი login-ის
+მცდელობა უარყოფილია** (`/login`-ზე უკან, არა `/`) → **აქტიური
+სესიაც** (test2-ად უკვე შესული) **მომდევნო request-ზევე
+force-logout** გახდა (`/login`-ზე გადამისამართებით); (3) განბლოკვის
+შემდეგ ორივე (login + აქტიური სესია, ახლიდან) ისევ მუშაობს; (4)
+non-impersonating ჩვეულებრივმა tenant-write-მა (test1-ად პირდაპირი
+login-ით) **გამართულად იმუშავა**, `403` არ დაბრუნებულა (რეგრესია
+არ არის); (5) `ModuleController::enable`-იც `403`-ს იძლევა
+იმპერსონაციისას. ყველა ტესტ-ცვლილება (temp password-ები,
+block-toggle-ები, ტესტ-customer) აღდგენილი/წაშლილია, სესიები
+დახურულია.
+
+### 4.42 ინვოისის სტრიქონებს დაემატა ერთეულის select
+
+user-ის მოთხოვნით სვეტების რიგი: პროდუქტი, რაოდენობა, **ერთეული**,
+ფასი, ჯამი. `invoice_items`-ს აქამდე `unit_id` საერთოდ არ ჰქონდა
+(`migrations/030_add_invoice_items_unit.sql` — `NULL`, FK `units`-ზე,
+ძველი სტრიქონებისთვის `NULL` რჩება, migration-ის დროს ისინი უკვე
+არსებობდნენ). `unit_price`/`line_total`-ის იგივე "snapshot save-ის
+დროს" პრინციპია — **არა** live join `products.unit_id`-ზე, პროდუქტის
+default ერთეულის მომავალმა ცვლილებამ უკვე გამოწერილი ინვოისი არ
+უნდა შეცვალოს.
+
+`Invoice::validate()`-ს დაემატა `unit_id`-ის შემოწმება (`ctype_digit`
++ `units`-ში არსებობა) — იმავე style-ის, რასაც `product_id` იყენებს,
+ერთი errors_N key-ით ორივესთვის. `Invoice::save()`-ს INSERT/UPDATE
+სვეტების სიაში დაემატა. `Invoice::itemsFor()`-ს დაემატა `LEFT JOIN
+units` (`LEFT`, არა `JOIN` — ძველი `NULL`-იანი სტრიქონები არ უნდა
+გაქრეს ჯოინიდან).
+
+`invoices.php`-ს ახალი select — `products` `<option>`-ებს დაემატა
+`data-unit` (`data-price`-ის გვერდით), ისე რომ პროდუქტის არჩევა
+ერთეულსაც default-ად ავსებდეს (**კვლავ თავისუფლად overridable**,
+ისევე როგორც ფასია) — JS-ის `change` listener-ს ერთი ხაზი დაემატა.
+`data-units` ახალი JSON attribute `#invoiceItems`-ზე — JS-ით
+დინამიურად დამატებულ row-ებსაც (`rowHtml()`) აქვთ იგივე select.
+
+**გადამოწმებულია ცოცხლად** (tenant test1-ის საკუთარი login-ით):
+ახალი ინვოისი ერთეულით (`კგ`) შენახულია → პირდაპირ SQL-ით
+დადასტურებული, რომ `invoice_items.unit_id` სწორადაა ჩაწერილი;
+`?edit=N`-ზე ხელახლა ჩატვირთვისას select სწორად აჩვენებს იმავე
+ერთეულს; ძველი, migration-მდელი ინვოისი (id=12, `unit_id NULL`)
+ჩვეულებრივად იტვირთება ცარიელი select-ით, error/crash არ არის;
+ცარიელი ერთეულით submit-მა `terr('prod.err_unit_required')`
+("აირჩიე ერთეული.") სწორად დააბრუნა. ტესტ-ინვოისი წაშლილია,
+password_hash აღდგენილია, სესიები დახურულია.
+
+**შემდეგ**: user-მა შენიშნა, რომ ახალი ერთეულის select უბრალო
+Bootstrap `.form-select` იყო, პროდუქტის/დამკვეთის ds-select-ების
+გვერდით არათანმიმდევრული ჩანდა — და ეს **ზოგად წესად** დააფიქსირა:
+"ყველგან სადაც select-ს ვიყენებთ, უნდა იყოს ასეთივე" (ds-select).
+ერთეულის select-ს (ორივეს — PHP-ით რენდერილს და JS-ით დინამიურად
+დამატებულს) დაემატა იგივე `data-ds-select` ატრიბუტები, რასაც
+პროდუქტის select იყენებს; JS-ს დაემატა `new window.DsSelect(...)`
+ახალი row-ებისთვის და `.dsSelect?.refresh()` ყველგან, სადაც
+`.value` პროგრამულად იცვლება (პროდუქტის არჩევისას ერთეულის
+ავტო-შევსება, row-გასუფთავებისას) — ds-select-ის საკუთარი trigger
+UI ხელით არ სინქრონდება native `<select>`-ის value-სთან, `refresh()`
+საჭიროა. ეს **ზოგადი წესი** დამახსოვრებულია auto-memory-ში
+(`feedback-ds-select-everywhere.md`) — მომავალში ნებისმიერი ახალი
+select ავტომატურად ასე უნდა აშენდეს, `invoice_status`/ვალუტის
+select-ების (ჯერ პლეინ) retrofit-ი კი დასადასტურებელია, არ
+გაკეთებულა ჯერ.
+
+**გადამოწმებულია ცოცხლად, ბრაუზერში** (`Claude_Browser` ტულით,
+click-ით და ax-tree-ის დათვალიერებით, არა curl): ერთეულის select
+ეხლა ნამდვილი ds-select ტრიგერია (`combobox "Select…"` → `[type=button]`);
+პროდუქტის ("ლურსმანი 5სმ") არჩევისას ერთეულის trigger ავტომატურად
+"კგ"-ზე გადავიდა (product-ის default unit_id-დან); ხელით
+ხელახლა შერჩევამ ("ცალი") სწორად გადააჭარბა default-ს — თავისუფლად
+overridable რჩება. სესიის temp password აღდგენილია, ახალი ინვოისი
+არ შექმნილა (ფორმა submit არ გაკეთებულა).
+
+### 4.43 `/orders`-ს დაემატა "ნახვა" — PDF-ის ვიზუალი მოდალში, HTML-ად
+
+user-მა მოითხოვა `/orders`-ის მოქმედების სვეტში ახალი "ნახვა" ღილაკი
+— მოდალში PDF-ის იმავე ვიზუალის ჩვენება (`pdf/invoice.php`-ის
+დიზაინი), HTML ფორმატში, **footer-ისა და ხელმოწერის გარეშე**.
+
+**გადაწყვეტა: `<iframe>`, არა fetch()+innerHTML** — `pdf/invoice.php`-ს
+საკუთარი, mPDF-ისთვის დაწერილი `<style>` აქვს ზოგადი კლასების
+სახელებით (`.items`, `.muted`, `.right`, უბრალო `table` selector-იც
+კი) — ეს კლასები რეალურად შეიძლება დაპირისპირებოდა/გაჟონილიყო
+orders.php-ის საკუთარ სტილებში, fetch-ით ჩამატებული HTML რომ
+ყოფილიყო. Iframe სრულად იზოლირებს — იგივე template ერთხელ დაწერილი,
+ორივე კონტექსტში (PDF-იც და browser-ის preview-იც) ხელუხლებლად
+გამოიყენება.
+
+**`pdf/invoice.php`-ს დაემატა ახალი, optional `$isPreview` (default
+`false`)**: (1) ხელმოწერის ბლოკი მთლიანად `!$isPreview`-ზეა
+პირობითი; (2) `$uploadDir` (ლოგო/ხელმოწერის სურათების `src`)
+გახდა preview-ისას public URL (`/assets/uploads/organization/`),
+PDF-ისას კვლავ filesystem path (mPDF-ს ეს სჭირდება) — ცალკე
+**`$uploadDirFs`** (ყოველთვის filesystem) დაემატა `is_file()`
+შემოწმებებისთვის, რომ ეს ორი საჭიროება არ აგვერიოს (browser-ის
+`<img src>`-ს ვერასდროს გაუმართავს absolute Windows path,
+`is_file()`-საც კი URL-ზე გაშვება ყოველთვის `false`-ს დააბრუნებდა
+— ორივე შემოწმდა და გასწორდა ცოცხლად, იხ. ქვემოთ). **Footer-ი
+(`Pdf::download()`-ის `$footerHtml`) დამატებითი ცვლილების გარეშეც
+არასდროს გამოჩნდება preview-ში** — `4.41`-ის შემდეგ ის უკვე აღარაა
+`pdf/invoice.php`-ის საკუთარი output-ის ნაწილი (mPDF-ის `SetHTMLFooter()`-
+ით ცალკე რენდერდება), ამიტომ ამ template-ის ხელახალი გამოყენება
+"footer-ის გარეშეს" უფასოდ იძლევა.
+
+**`InvoiceController`**-ს დაემატა `preview()` (route `GET
+/invoices/preview`) — `exportInvoicePdf()`-ის იგივე access-control
+(`Auth::requireUser()` + `ownerTenant()` match, სხვაგვარად `404`) და
+იგივე `pdf/invoice` template, უბრალოდ PDF-ად wrap-ის მაგივრად
+პირდაპირ browser-ს ეგზავნება (`isPreview: true`-ით). გამეორებული
+"invoice-ს ჩატვირთვა + access-check + org/number გამოთვლა" ლოგიკა
+ორივე action-ისთვის ახალ `loadOwnedInvoiceForPdf()` private
+მეთოდშია გატანილი.
+
+`orders.php`-ს დაემატა **ერთი, საერთო** modal ყველა row-სთვის (არა
+თითო-row-ზე ცალკე) — "ნახვა" ღილაკის `data-invoice-id`-ს
+`show.bs.modal` listener კითხულობს და `<iframe src>`-ს ცვლის;
+`hidden.bs.modal`-ზე `src`-ი `about:blank`-ზე ბრუნდება, რომ
+დახურვის შემდეგ წინა ინვოისის მონაცემები iframe-ში აღარ იჯდეს.
+
+**გადამოწმებულია ცოცხლად** (ორივე curl-ით და `Claude_Browser`
+ტულით, ბოლოში JS-ის გამოძახებით iframe-ის `contentDocument`-ის
+პირდაპირ დათვალიერებით): (1) `/invoices/preview?id=12` → `200`,
+footer-ის ტექსტი (`დაგენერირებულია`) და `.signature-table`
+element-ი **არცერთი არ გვხვდება** output-ში, ლოგოს `src` სწორი
+public URL-ია; (2) სხვა tenant-ის ინვოისის (id=3) preview-ს მცდელობამ
+`404` დააბრუნა; (3) რეალურ ბრაუზერში ღილაკზე დაწკაპებით მოდალი
+გაიხსნა, iframe-მა სწორი invoice-ის სრული ვიზუალი ჩატვირთა, ლოგოს
+სურათი რეალურად ჩაიტვირთა (`naturalWidth: 700`, არა broken image).
+ტესტ-სესია და temp password აღდგენილია.
+
+⚠️ **user-მა სქრინშოტით უჩვენა რეალური ხარვეზი preview-მოდალში**:
+"დღგ:"/"ჯამი:" ბლოკი overlap-ს აკეთებდა `.items` ცხრილის ბოლო
+row-ზე/ხაზზე — **მხოლოდ ბრაუზერში, PDF-ში კი არა**. Root cause:
+`.summary-table`/`.total-table`-ს ჰქონდა `align="right"` — ეს ძველი
+HTML ატრიბუტი mPDF-ში უბრალოდ მარჯვნივ სწორებას ნიშნავს, **რეალურ
+ბრაუზერში კი `float:right`-ის იდენტურ ლეგასი ქცევას იწვევს**
+`<table>`-ზე — floated ცხრილს მომდევნო content არ „ეჯახება" ჩვეულებრივ
+flow-ში, გვერდით/თავზე „ეხვევა". ეს არასდროს გამოვლენილა აქამდე,
+რადგან ეს template აქამდე **მხოლოდ** mPDF-ისთვის იწერებოდა — `4.43`-მა
+(preview-მოდალი) პირველად გაუშვა იგივე HTML რეალურ ბრაუზერშიც.
+
+**ფიქსი**: `align="right"` მთლიანად მოშორდა. ორივე mini-table
+(`.summary-table`/`.total-table`) გადავიდა ახალ `.summary-wrap-outer`
+(სრულ-სიგანის, ერთი row-იანი, 2-სვეტიანი table) `<td>`-ში — ცარიელი
+მარცხენა სვეტი + შევსებული მარჯვენა (`.summary-wrap`). Table-column
+layout ბუნებრივად სვამს content-ს row-ის მარჯვენა კიდეზე, float-ის
+გარეშე — იგივე ქცევა mPDF-შიც და ბრაუზერშიც, ეს არის ამ ფაილში უკვე
+რამდენჯერმე დამტკიცებული "table > float/margin/align" პრინციპის
+გაგრძელება. ამავე დროს, user-ის მოთხოვნით, **font-size გაიზარდა**:
+`.summary-table` 10.5px → 13px, `.total-table` 12px → 15px (padding-იც
+ოდნავ გაიზარდა კომფორტისთვის).
+
+**გადამოწმებულია ცოცხლად ორივე კონტექსტში**: (1) რეალური PDF
+(`/invoices/export-pdf?id=12`) — ვიზუალურად უცვლელი, უბრალოდ
+დღგ/ჯამის ტექსტი მსხვილია, overlap აქამდეც არ ჰქონდა; (2) preview
+(`/invoices/preview?id=12`, `Claude_Browser`-ით) — `getBoundingClientRect()`-ით
+ზუსტად გავზომე: `.items` bottom=311, `.summary-table` top=323
+(12px gap, `margin-top` ემთხვევა), `.total-table` top=356
+(`.summary-table`-ის bottom=350-დან 6px gap) — **overlap აღარ არის**,
+ორივეს `right`/`left` კიდეც კვლავ ემთხვევა `.items`-ის საკუთარ
+მარჯვენა კიდეს. ტესტ-სესია და temp password აღდგენილია.
+
+### 4.44 პდფ/preview-ის ფონტის ზრდა, დღგ/ჯამის მარჯვნივ-სწორების mPDF-რეგრესია, სვეტების თანმიმდევრობა+ერთეული
+
+user-მა სამი რამ მოითხოვა ერთდროულად: (1) მოდალის ტექსტის ფონტი
+საერთოდ გაზრდილიყო (არა მხოლოდ დღგ/ჯამი, რაც `4.44`-ის წინა
+ვერსიაში უკვე გაზრდილი იყო); (2) **დაგენერირებულ PDF-ში** დღგ/ჯამი
+ისევე მარჯვნივ ყოფილიყო, როგორც მოდალშია; (3) items ცხრილის
+თანმიმდევრობა ორივეგან (PDF/preview **და** `invoices.php`) ერთნაირი
+— პროდუქტი, რაოდენობა, **ერთეული**, ფასი, ჯამი.
+
+**(1) ფონტის ზრდა**: `body` 11px → 13px, და თითქმის ყველა
+ცალკეული explicit font-size (`.stat-value`, `.info-name`,
+`.info-field`, `.items th`, `.section-label`, `.notes`, `.bank`)
+პროპორციულად აწეულია — `body`-ს ცვლილება მხოლოდ იმ ელემენტებზე
+მოქმედებდა, სადაც უკვე არ იყო override.
+
+⚠️ **ამ ფონტის ზრდამ თავად წარმოშვა ახალი ხარვეზი**: `.top-row`-ის
+თარიღი/ინვოისის ნომრის ორი `20%`-სვეტიანი stat-ბლოკი აღარ
+ეტეოდა 12px→14px-ზე გაზრდილ ტექსტს (`table-layout:fixed`-ის
+გარეშე) — "TS1 2026-08-16 0012" პირდაპირ თარიღის სვეტში
+"ჩაცურდა", ხარვევის გარეშე. გასწორდა: `table-layout:fixed`
+დაემატა `.top-row`-ს, სვეტების პროპორცია 60/20/20 → 42/23/35
+(ინვოისის ნომერი ყველაზე გრძელი ტექსტია), + 8px `padding-right`
+თარიღის სვეტზე დამატებითი "buffer"-ისთვის.
+
+**(2) mPDF-ის მარჯვნივ-სწორების რეგრესია** — `4.43`-ში
+`align="right"`-ის მოშორებამ ბრაუზერის float-ბაგი გამოასწორა,
+მაგრამ **ახალმა სტრუქტურამ** (`.summary-wrap-outer`-ის ცარიელი
+მარცხენა `<td>` + `.summary-wrap` მარჯვენა `<td>`) mPDF-ში
+სხვა ბაგი გამოავლინა: `table-layout:fixed`-ის გარეშე mPDF ცარიელ
+მარცხენა `<td>`-ს თითქმის 0-მდე იკუმშავდა და მთელ ბლოკს **მარცხენა**
+კიდესთან სვამდა, არა მარჯვნივ (ბრაუზერს ეს პრობლემა არ ჰქონდა).
+ფიქსი: `.summary-wrap-outer`-საც დაემატა `table-layout:fixed` +
+ცხადი `%`-სიგანეები ორივე `<td>`-ზე (`.summary-wrap-spacer`
+კლასით მარცხენაზე — **არა** `:first-child`, ამ ფაილს უკვე ერთხელ
+დაუმტკიცებია, რომ mPDF-ის pseudo-class-ს არ ენდობა).
+
+⚠️ **პირველმა ამ ფიქსმაც კიდევ ერთი ახალი ხარვეზი გამოავლინა**:
+`.summary-table`/`.total-table`-ს ჰქონდა ცხადი `width: 260px`,
+`.summary-wrap` `<td>`-ს კი `40%` — ეს ორი სიგანე არ ემთხვეოდა
+ერთმანეთს (260px < 40%-ის რეალური სიგანე), ამიტომ 260px-იანი
+შიდა table **მარცხნივ ეკვროდა** თავის (უფრო განიერ) მშობელ
+`<td>`-ს შიგნით, ხოვლი დარჩა ცარიელი მარჯვნივ — ანუ დღგ/ჯამი
+კვლავ **არ** ეხებოდა `.items`-ის ნამდვილ მარჯვენა კიდეს ვიზუალურად
+(თუმცა float აღარ იყო). საბოლოო ფიქსი: `.summary-table`/
+`.total-table` გახდა `width: 100%` (თავისი `.summary-wrap`
+მშობლის, არა ცხადი px) — შიდა content ყოველთვის ზუსტად ავსებს
+მშობელ სვეტს, სიგანის შეუსაბამობა აღარასდროს შეიძლება წარმოიშვას.
+`.summary-wrap`-ის საკუთარი პროცენტი (`22%` → საბოლოოდ `32%`)
+დაზუსტდა კიდევ ერთხელ, რადგან თავიდან ძალიან ვიწრო აღმოჩნდა —
+"1,656.00 ₾" bold 15px-ზე ორ სტრიქონად იშლებოდა indigo ყუთში;
+`white-space: nowrap` დაემატა დამატებით უსაფრთხოებისთვის ორივე
+mini-table-ის `td`-ზე.
+
+**(3) სვეტების თანმიმდევრობა + ერთეული** — `pdf/invoice.php`-ის
+items-ცხრილს (რომელსაც `4.37`-ის მოთხოვნით ჰქონდა "ფასი
+რაოდენობის წინ" წყობა, სხვა screenshot-ის მიხედვით) დაემატა
+**ახალი "ერთეული" სვეტი** (`$item['unit_name']`, `Invoice::itemsFor()`-
+დან უკვე ხელმისაწვდომი `4.42`-დან — LEFT JOIN, NULL ძველი
+სტრიქონებისთვის, ცარიელი ჩანს) და თანმიმდევრობა შეეთანხმა
+`invoices.php`-ის ფორმის რიგს: # | პროდუქტი | რაოდენობა | ერთეული |
+ფასი | ჯამი.
+
+**გადამოწმებულია ცოცხლად, ორივე ეტაპზე, ორივე კონტექსტში**
+(PDF-ის ხელახალი export + `Claude_Browser`-ის `getBoundingClientRect()`):
+top-row-ის overlap გასწორდა (`table-layout:fixed`); დღგ/ჯამის
+`right` ეხლა ზუსტად `.items`-ის `right`-ს ემთხვევა **ორივე
+ეტაპის შემდეგ** გადამოწმებული — პირველი ფიქსით (`22%`) მარჯვნივ
+სწორად იდგა, მაგრამ box-ი 2 სტრიქონად იშლებოდა (`total-table`
+`height=44px→` ~2 line-height, ანუ ~64-88px იქნებოდა wrap-ის
+შემთხვევაში); მეორე ფიქსის (`32%` + nowrap) შემდეგ `height=44px`
+ზუსტად ერთი სტრიქონია. ორივე (browser + PDF) საბოლოო screenshot-ი
+ვიზუალურადაც სუფთაა. ტესტ-სესია და temp password აღდგენილია.
+
+### 4.45 "ნახვა"-მოდალი გახდა სრულიად ცალკე კოდი, აღარ იზიარებს PDF-შაბლონს
+
+user-მა, `4.43`/`4.44`-ის mPDF/browser dual-context ბრძოლის შემდეგ,
+გადაწყვიტა: მოდალი აეშენებინა **სრულიად ცალკე კოდით**, `pdf/invoice.php`-ს
+საერთოდ არ შეხებოდა, და მისცა კონკრეტული reference სქრინშოტი
+სასურველი ვიზუალით (მარტივი Bootstrap card/table იერსახე, ლოგო
+პატარა hero-სურათად ზემოთ, org/customer plain ტექსტად გვერდიგვერდ
+— არა shaded info-box; items-ცხრილს light-header, არა ლურჯი
+underline; დღგ/ჯამი bordered box-ებში, არა indigo-შევსებული).
+
+**`pdf/invoice.php` სრულად დაბრუნდა PDF-only მდგომარეობაში** —
+`$isPreview`/`$uploadDirFs`-ის მთელი ლოგიკა მოშორდა (`4.43`-ში
+დამატებული, ერთი session-ის სიცოცხლის მანძილზე გამოყენებული).
+
+**ახალი, დამოუკიდებელი `app/Views/invoice-preview.php`** — plain
+Bootstrap markup (row/col, `table-sm`, `border rounded-3` box-ები),
+**არა** `pdf/invoice.php`-ის საკუთარი custom CSS/კლასები — უსაფრთხოა
+პირდაპირ `innerHTML`-ით ჩასმა orders.php-ის საკუთარ სტილებთან
+კონფლიქტის გარეშე (`Controller::renderToString()`-ით, layout-ის
+გარეშე, fragment-ად, ისევე როგორც PDF view-ებიც შენდება).
+`InvoiceController::preview()` ამ ახალ view-ს რენდერავს, `pdf/invoice`-ს
+მაგივრად — access-control (`loadOwnedInvoiceForPdf()`) უცვლელია.
+
+**orders.php-ის მოდალი** — `<iframe>`-ის მაგივრად ახლა `fetch()` +
+`innerHTML` (body-ს ნაწილისთვის), header/footer კი **სტატიკური,
+თავად orders.php-ში ჩაშენებული** chrome-ია (არა Bootstrap-ის default
+`modal-title`) — "INVOICE | {ნომერი}" + სტატუსის badge მარჯვნივ,
+footer-ში "დახურვა"/"ბეჭდვა"/"PDF" ღილაკები. ეს ოთხივე მოთხოვნილი
+დეტალი (ნომერი, სტატუსი, ბეჭდვის/PDF ბმულები) **არ** სჭირდება
+ცალკე request-ს — "ნახვა" ღილაკს დაემატა `data-invoice-number`/
+`data-invoice-status` (ცხრილის row-ს ისედაც აქვს ეს მონაცემები),
+JS `show.bs.modal`-ზე პირდაპირ სვამს მათ, `fetch()` მხოლოდ **body-ს
+შიგთავსისთვისაა**. სტატუსის badge-ის ფერი/ტექსტი იგივე მეპინგია,
+რასაც `dashboard.php`-ის ბოლო-ინვოისების ცხრილი იყენებს — PHP-ში
+აშენებული, `window.dsOrderStatus`-ად embed-ილი JSON (JS-მა `t()`
+არ იცის, ამიტომ label-ებიც წინასწარ ითარგმნება PHP-ში).
+
+**ახალი lang-key-ები**: `inv.close`, `inv.notes_empty`
+("დამატებითი ინფორმაცია არ არის" — ცარიელი notes-ის placeholder,
+ზუსტად user-ის სქრინშოტის ტექსტი).
+
+⚠️ **"დამგზავნი" badge-ი სქრინშოტიდან არ არის ვერბატიმ
+რეპლიცირებული** — ამ აპში ეს ტექსტი არაფერს არ ნიშნავს, ინვოისს
+კი აქვს რეალური `status` (draft/final/due/paid) — badge-მა ეს
+რეალური სტატუსი აჩვენა (dashboard.php-ის იმავე ფერების სქემით),
+ვიზუალურად იმავე ადგილას/სტილში, მაგრამ user-ს გაუცნობია ეს
+choice, თუ სხვა რამ სურდა კონკრეტულად, საჭიროებს დაზუსტებას.
+
+**გადამოწმებულია ცოცხლად**: id=12-ის PDF export ხელუხლებელია
+(`pdf/invoice.php`-ის cleanup-ის შემდეგაც `200`); ახალი
+`/invoices/preview?id=12` endpoint-მა სუფთა Bootstrap fragment
+დააბრუნა (`<html>`/`<style>` არსად); `Claude_Browser`-ით "ნახვა"
+ღილაკზე დაწკაპებით — header-მა სწორად აჩვენა "INVOICE | TS1
+2026-08-16 0012" + "პირველადი" badge სწორი (secondary) ფერით,
+body-მ სწორად ჩატვირთა org/customer/items/notes/VAT, footer-ის
+"ბეჭდვა"/"PDF" ბმულებმა სწორი `href`-ები აიღეს
+(`/invoices/view?id=12`, `/invoices/export-pdf?id=12`) — console
+error არცერთი. ტესტ-სესია და temp password აღდგენილია.
+
+### 4.46 `/invoices`-ის "გადახედვა" ღილაკიც "ნახვა"-მოდალს იყენებს — მოდალი გატანილია საერთო კოდში
+
+user-მა მოითხოვა: `/invoices`-ის (ახალი ინვოისის შექმნის გვერდის)
+გვერდითი პანელის "გადახედვა" ღილაკს (`inv.action_preview`, `4.40`-მდე
+დეკორატიული) დაკავშირებოდა იგივე მოდალი, რაც `/orders`-ზეა
+(`4.45`-ის ახალი, ცალკე `invoice-preview.php` design).
+
+**გატანილია საერთო კოდში**, ორმაგი გამოყენების გამო (`/orders`-ის
+row-ღილაკი + ეხლა `/invoices`-ის sidebar-ღილაკი) — აღარ დუბლირდება
+თითო გვერდზე:
+- **`app/Views/partials/invoice-preview-modal.php`** (ახალი) —
+  მოდალის მთელი markup (header/body/footer chrome), `require`-დება
+  ორივე გვერდზე (`orders.php`, `invoices.php`).
+- **`ds_invoice_preview_script(): string`** (ახალი, `app/Core/helpers.php`,
+  `ds_table_script()`-ის იგივე კონვენციით) — სტატუსის badge-ის
+  ფერების/ლეიბლების JSON + `show.bs.modal` handler-ი (fetch +
+  header/footer-ის შევსება ღილაკის `data-*`-იდან), ორივე გვერდის
+  `$scripts`-ში ემატება.
+
+**"გადახედვა" ღილაკის ორი მდგომარეობა** (`$editingInvoice`-ზეა
+პირობითი) — **განზრახ განსხვავებული ლოგიკა**, ვიდრე "ექსპორტი
+PDF"-ის `4.40`-ის "combined save+export": PDF-ის ექსპორტი
+ისედაც მთავრდება გვერდის დატოვებით/ფაილის ჩამოტვირთვით, ამიტომ
+წინასწარი save გონივრულია; "გადახედვა" კი "ნახვა შენახვამდე"-ს
+სემანტიკას ატარებს — თუ ის ჩუმად შეინახავდა ინვოისს, user-ს
+გაუკვირდებოდა (შესაძლოა ჯერ არ სურდეს committ-ი, უბრალოდ ნახვა
+სურდეს):
+- **`$editingInvoice !== null`** (რეალური, უკვე შენახული ინვოისი,
+  `?edit=N`-დან) — ჩვეულებრივი ღილაკია, `data-invoice-id`/
+  `-number`/`-status`-ით, ზუსტად ისე, როგორც `/orders`-ის row-ღილაკს
+  აქვს.
+- **ახალი, შეუნახავი ინვოისი** — `disabled`, ტულთიფით "ჯერ
+  შეინახეთ ინვოისი" (ახალი `inv.action_disabled_hint` key —
+  იმავე ტექსტის, რაც `4.40`-ში `inv.action_export_pdf_disabled_hint`-
+  ს ჰქონდა, სანამ PDF-ის ღილაკი "combined save+export"-ზე არ
+  გადავიდა — ეს key მაშინ წაშლილი იყო, ეხლა ზოგადი სახელით
+  დაბრუნდა, ხელახლა გამოსაყენებლად).
+
+**გადამოწმებულია ცოცხლად**: (1) `/orders`-ის "ნახვა" — refactor-ის
+შემდეგაც უცვლელად მუშაობს (regression არ არის); (2) ახალი
+(შეუნახავი) ინვოისის გვერდზე — "გადახედვა" `disabled=true`,
+სწორი ტულთიფი; (3) `?edit=12`-ზე — ღილაკზე `data-invoice-id="12"`
+(და სწორი number/status) სწორადაა დაყენებული, დაწკაპებით მოდალი
+ზუსტად იმავე შემადგენლობით გაიხსნა, რასაც `/orders`-იდან
+ვხედავდით. console error არცერთ გვერდზე არ ყოფილა. ტესტ-სესია და
+temp password აღდგენილია.
+
+⚠️ **user-მა მაშინვე მოითხოვა disabled-მდგომარეობის მოშორება** —
+"გადახედვა" არასდროს არ უნდა იყოს disabled, ახალ ინვოისზეც კი.
+პრობლემა: მოდალის გახსნა client-side ქმედებაა, plain `redirect()`-ს
+ვერ "გაუხსნია" — ამიტომ "PDF ექსპორტი"-ის `submit_action`-ტრიკი
+გამეორდა, უბრალო redirect-ის მაგივრად კი **redirect + ერთჯერადი
+auto-click** დაემატა:
+- ახალი (შეუნახავი) ინვოისისთვის, ღილაკი გახდა კიდევ ერთი
+  `submit_action=preview` submit-ღილაკი (იგივე ფორმა, "PDF
+  ექსპორტის" ანალოგიური).
+- `InvoiceController::store()`-ს დაემატა მესამე branch:
+  `submit_action === 'preview'` → `redirect('/invoices?edit=' .
+  $invoiceId . '&preview=1')` (არა პირდაპირ PDF-ზე, არამედ
+  ?edit=N-ის ჩვეულ fresh-load ბრენჩზე, უკვე არსებული მექანიზმით).
+- `invoices.php`-ის ბოლოში დაემატა პატარა, პირობითი (`isset($_GET['preview'])
+  && $editingInvoice !== null`) script — `document.getElementById(
+  'invoicePreviewTrigger')?.click()`-ით ავტომატურად აჭერს
+  (ეხლა-რეალურ, `data-invoice-id`-იან) "გადახედვა" ღილაკს გვერდის
+  ჩატვირთვისთანავე — იგივე მოდალი იხსნება, თითქოს user-მა თავად
+  დააჭირა ღილაკს ხელახლა ჩატვირთვის შემდეგ. `history.replaceState`-
+  ით `?preview=1` მოიხსნება URL-იდან (manual refresh-ზე ხელახლა არ
+  გაიხსნას).
+
+`inv.action_disabled_hint` lang-key (ორივე ენაზე) მოშორდა — აღარ
+გამოიყენება.
+
+**გადამოწმებულია ცოცხლად**: ახალი ინვოისი `submit_action=preview`-ით
+submit-ის შემდეგ — რეალურად შეინახა ბაზაში (`invoices`/`invoice_items`
+სწორი customer/unit_id/quantity/total-ით, პირდაპირ SQL-ით
+გადამოწმებული), `Location` header-მა სწორი `/invoices?edit=N&preview=1`
+დააბრუნა; `Claude_Browser`-ით ამ URL-ზე ნავიგაციისას მოდალი
+**ავტომატურად გაიხსნა**, სწორი შემადგენლობით (ერთეულის ჩათვლით —
+"კგ" სწორად გამოჩნდა items-ცხრილში), `location.href`-მაც
+დაადასტურა, რომ `?preview=1` URL-იდან წაშლილია. console error
+არცერთი. ტესტ-ინვოისი წაშლილია, temp password აღდგენილია.
+
+### 4.47 ვალიდაციის red-border/`.invalid-feedback` ველის გასწორებისას აღარ ქრებოდა — app-wide fix
+
+user-მა შეამჩნია: `/invoices`-ზე, როცა failed submit-ის შემდეგ (მაგ.
+ცარიელი "დამკვეთი") server აბრუნებდა `is-invalid` + წითელ
+`.invalid-feedback` შეტყობინებას, **ველის შემდგომი გასწორება
+(customer-ის არჩევა, product-ის არჩევა) ვალიდაციის კვალს არ
+შლიდა** — წითელი კონტური და შეტყობინება ეკრანზე რჩებოდა, თუმცა
+სერვერის მხრიდან ველი უკვე ვალიდურია. საეჭვოდ მიაჩნდა, რომ
+app-wide ბაგია, არა მხოლოდ `/invoices`-ის სპეციფიკური.
+
+**გადამოწმებულია**: მართლა app-wide, არსად არ არსებობდა JS, რომელიც
+`.is-invalid`-ს შლიდა client-side-ზე — 11 გვერდი დაზარალდა
+(`invoices.php`, `products.php`, `organization.php`, `customers.php`,
+`users.php`, `profile.php`, `profile-settings.php`, ოთხივე `auth/*`).
+
+**ფიქსი — ერთი დელეგირებული listener `public/assets/js/app.js`-ში**
+(არა თითო გვერდზე ცალკე), სამი განსხვავებული DOM-ფორმის დამუშავებით:
+1. **უბრალო `.form-control`** (`customers.php`-ის `დასახელება` და
+   მისნაირები) — `.invalid-feedback` `.form-floating`-ის (ან, თუ
+   `$append`-იანია, `.input-group`-ის) sibling-ია, არა შვილი
+   (`app/Views/customers.php`-ის დოკუმენტირებული კონვენცია — ლეიბლი
+   `.form-floating`-ში `height:100%`-ია, შიგნით მოთავსებული
+   შეტყობინება გაწელავდა).
+2. **`ds-select`** (`customer_id`, `item_product_id[]` და ა.შ.) —
+   ხილული წითელი კონტური `.ds-select-trigger`-ზეა, არა დამალულ
+   native `<select>`-ზე (`ds-select.js` მას მხოლოდ კონსტრუქციისას
+   ერთხელ აკოპირებს, არასდროს არ synхронizდება); `pick()` მაინც
+   აგზავნის ნამდვილ bubbling `change`-ს native select-ზე, ასე რომ
+   delegated listener მაინც ხედავს ინტერაქციას — უბრალოდ
+   `.ds-select-trigger`-საც ცალკე უნდა მოეხსნას კლასი.
+3. **`invoices.php`-ის დინამიური line-item row** — 4 ველი (product/
+   quantity/unit/price) **ერთ საერთო** `items_N` შეცდომას იზიარებს
+   (`Invoice::validate()`), `.invalid-feedback` კი row-ის `.col-12`-შია,
+   არა რომელიმე ცალკე ველის sibling — ამიტომ ამ შემთხვევაში ნებისმიერი
+   ველის გასწორება წმენდს **მთელი row-ის** `.is-invalid`-ს (ყველა
+   ველზე) და row-ის საერთო შეტყობინებას ერთად.
+
+`clearInvalid(event)` `input`/`change`-ზეა დელეგირებული: ჯერ
+`field.closest('[data-item-row]')`-ს ამოწმებს (შემთხვევა 3), თუ
+ვერ პოულობს — გადადის ჩვეულებრივ `.form-floating`/`.input-group`
++ ds-select-trigger ლოგიკაზე (შემთხვევები 1-2).
+
+**გადამოწმებულია ცოცხლად** (`Claude_Browser`, JS-inspection
+`getBoundingClientRect`/`querySelectorAll` გამოყენებით, screenshot
+ამ გარემოში არ მუშაობს): (1) `/invoices` — ცარიელი submit →
+`customer_id`-ზე "აირჩიე დამკვეთი (#7867)" + წითელი trigger,
+დამკვეთის არჩევის შემდეგ ორივე გაქრა; (2) იგივე გვერდზე, row-ში
+მხოლოდ quantity შევსებული (product ცარიელი) → "აირჩიე პროდუქტი
+(#9558)" + 6 `is-invalid` ელემენტი row-ში, product-ის არჩევის
+შემდეგ ყველა `is-invalid` და შეტყობინება გაქრა ერთად; (3)
+`/customers` — `დასახელება`-ს ცარიელ submit-ზე, ტექსტის ჩაწერისას
+`.is-invalid` მოშორდა. Console error არცერთგან. Test customer-ის
+ფორმა submit არ გაკეთებულა (მხოლოდ client-side ცვლილება), ბაზაში
+არაფერი დამატებულა.
+
+⚠️ **user-მა მაშინვე დაადასტურა, რომ პროდუქტზე მაინც არ ქრებოდა** —
+მეორე, ცალკე ხარვეზი აღმოჩნდა: სრულიად ცარიელი row-ს (product-იც,
+quantity-იც, price-იც ცარიელი — `Invoice::validate()`-ის `continue`
+branch-ი, `items_N`-ს საერთოდ არ ანიჭებს) არანაირი per-field
+`is-invalid` არა აქვს, "დაამატე მინიმუმ ერთი პროდუქტი" კი ჩვეულებრივ
+`<div class="alert alert-danger py-2 small">`-ადაა გამოსახული
+`#invoiceItems`-ის თავზე (`invoices.php:206-208`) — ეს ბანერი
+საერთოდ არ ჯდება `.invalid-feedback`-ის შაბლონში, ამიტომ 3
+ზემოთხსენებული შემთხვევიდან არცერთი მას არ სწმენდდა. დამატებულია
+მეოთხე, პატარა წესი `clearInvalid`-ში: row-ის ნებისმიერ ველზე
+ცვლილებისას, `#invoiceItems`-ის მშობელ `.col-12`-ში თუ დარჩენილია
+`.alert-danger`, ისიც შორდება — **გადამოწმებულია ცოცხლად**:
+დამკვეთი არჩეული, item-row სრულიად ცარიელი submit → ბანერი
+გამოჩნდა, product-ის არჩევის შემდეგ გაქრა.
+
+`(#7867)`-ის მნიშვნელობა user-ს აუხსნა chat-ში: ეს `terr()`-ის
+(`4.23`) auto-generated სტაბილური კოდია (`crc32($key) % 10000`) —
+support-ისთვის საკმარისია user-მა თქვას "#7867", კონკრეტულად რომელი
+ვალიდაცია ჩავარდა (`inv.err_customer_required`), log-ის ძებნის
+გარეშე.
+
+### 4.48 `/invoices`-ის card-header — რედაქტირებისას ფერი + ტექსტი იცვლება
+
+user-მა მოითხოვა: ინვოისის რედაქტირებისას (`?edit=N`) card-header-ის
+ტექსტი "ახალი ინვოისი"-ს მაგივრად "ინვოისის რედაქტირება" იყოს,
+ფერიც განსხვავებული — ვიზუალურად ცხადი გახდეს, რომ user არსებულ
+ჩანაწერს ცვლის, არა ახალს ქმნის.
+
+- ახალი lang-key `inv.edit_title` (ორივე ენაზე), `inv.new_title`-ის
+  გვერდით.
+- `invoices.php`-ის card-header (`id="invoiceFormHeader"`) — უკვე
+  არსებულ `$editing` bool-ზეა პირობითი (`old['invoice_id']`-იდან
+  გამოთვლილი, არა `$editingInvoice`-ზე პირდაპირ — ეს ორივე ცოცხლად
+  `?edit=N`-ის ჩატვირთვასაც მოიცავს და ჩავარდნილ resubmit-საც,
+  docblock-ის თანახმად): `bg-warning-subtle` + `inv.edit_title`
+  რედაქტირებისას, `bg-transparent` + `inv.new_title` ახალზე.
+- "გასუფთავება" (`form.addEventListener('reset', ...)`) — უკვე
+  არსებულ pattern-ს დაემატა header-ის title/ფერის დაბრუნებაც
+  (`data-title-add` ატრიბუტიდან), იმავე ადგილას სადაც submit-ღილაკის
+  ლეიბლიც და ნომერიც ბრუნდება "ახალზე".
+
+**გადამოწმებულია ცოცხლად**: `/invoices?edit=12` → header
+`bg-warning-subtle` + "ინვოისის რედაქტირება"; "გასუფთავება"-ზე
+დაჭერის შემდეგ → `bg-transparent` + "ახალი ინვოისი"; ახალი
+(`/invoices`, პარამეტრის გარეშე) — თავიდანვე `bg-transparent` +
+"ახალი ინვოისი". Client-side სხვა გზა, რომლითაც `$editing`
+შეიცვლებოდა page-reload-ის გარეშე, არ არსებობს (`invoices.php`-ის
+საკუთარი docblock ადასტურებს — რედაქტირება მხოლოდ ნამდვილი
+`?edit=N` ნავიგაციითაა, არა same-page row-click-ით).
+
+### 4.49 გვერდების სათაურის `<h1>` მოშორდა — breadcrumb-ია ერთადერთი წყარო
+
+user-მა შეამჩნია: 10 გვერდზე (`customers`, `products`, `orders`,
+`users`, `superuser`, `invoices`, `organization`, `profile`,
+`profile-settings`, `modules`) `<h1>` მხოლოდ ბრედქრამბის ტექსტს
+იმეორებდა — ზედმეტი დუბლირება. მოთხოვნა: `<h1>`-ის ტექსტი წაშლილიყო,
+ხოლო თუ მასში badge იყო (ჩანაწერების რაოდენობა — `customers`,
+`products`, `orders`, `users`, `superuser`), badge breadcrumb-ის
+აქტიურ item-ში გადასულიყო.
+
+`dashboard.php` **გამონაკლისია, დატოვებულია უცვლელი** — მისი `<h1>`
+არა დუბლირებული სათაურია, არამედ პერსონალური მისალმება
+("გამარჯობა, {სახელი} 👋"), badge-ის გარეშე, ინფორმაცია არსად
+სხვაგან არ მეორდება — user-ს პირდაპირ ვკითხე (`AskUserQuestion`),
+დაადასტურა, რომ ეს დარჩეს.
+
+**გადამოწმებულია ცოცხლად**: `/customers` → breadcrumb "დამკვეთები 8"
+(badge-ითურთ), `<h1>` აღარ არსებობს; `/orders` → "ყველა შეკვეთა 1";
+`/invoices` (badge-ის გარეშე გვერდი) → მხოლოდ breadcrumb-ის ტექსტი,
+card-header-ის `4.48`-ის საკუთარი "ახალი ინვოისი"/"ინვოისის
+რედაქტირება" უცვლელად მუშაობს. Console error არცერთგან.
 
 ## 5. კონვენციები
 

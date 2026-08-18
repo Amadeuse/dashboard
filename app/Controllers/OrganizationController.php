@@ -56,6 +56,7 @@ final class OrganizationController extends Controller
     {
         Auth::requireAdmin();
         csrf_verify();
+        Auth::requireNotImpersonating();
 
         $ruler = Auth::tenantId();
 

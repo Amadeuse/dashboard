@@ -38,6 +38,15 @@ final class LookupController extends Controller
         csrf_verify();
         header('Content-Type: application/json; charset=utf-8');
 
+        // SuperUser is read-only while impersonating (Auth::requireNotImpersonating()'s
+        // docblock) — inline here, not that shared helper, since this responds
+        // with JSON and must never exit with a plain-text 403 the modal's JS can't parse.
+        if (Auth::impersonating() !== null) {
+            http_response_code(403);
+            echo json_encode(['error' => terr('error.forbidden')], JSON_UNESCAPED_UNICODE);
+            return;
+        }
+
         $ruler     = Auth::tenantId();
         $id        = trim((string) ($_POST['id'] ?? ''));
         $name      = trim((string) ($_POST['name'] ?? ''));
@@ -69,6 +78,12 @@ final class LookupController extends Controller
     {
         csrf_verify();
         header('Content-Type: application/json; charset=utf-8');
+
+        if (Auth::impersonating() !== null) {
+            http_response_code(403);
+            echo json_encode(['error' => terr('error.forbidden')], JSON_UNESCAPED_UNICODE);
+            return;
+        }
 
         $id        = trim((string) ($_POST['id'] ?? ''));
         $name      = trim((string) ($_POST['name'] ?? ''));

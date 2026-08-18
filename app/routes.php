@@ -45,6 +45,7 @@ $router->get('/invoices', [InvoiceController::class, 'index']);
 $router->post('/invoices', [InvoiceController::class, 'store']);
 $router->get('/invoices/view', [InvoiceController::class, 'show']);
 $router->get('/invoices/export-pdf', [InvoiceController::class, 'exportInvoicePdf']);
+$router->get('/invoices/preview', [InvoiceController::class, 'preview']);
 $router->get('/orders', [InvoiceController::class, 'orders']);
 $router->get('/orders/export-pdf', [InvoiceController::class, 'exportOrdersPdf']);
 
@@ -86,3 +87,4 @@ $router->post('/settings/organization', [OrganizationController::class, 'save'])
 $router->get('/superuser', [SuperUserController::class, 'index']);
 $router->post('/superuser/impersonate', [SuperUserController::class, 'impersonate']);
 $router->post('/superuser/stop', [SuperUserController::class, 'stop']);
+$router->post('/superuser/toggle-block', [SuperUserController::class, 'toggleBlock']);

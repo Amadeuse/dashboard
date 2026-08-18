@@ -26,13 +26,12 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb small mb-1">
         <li class="breadcrumb-item"><a href="/" class="text-decoration-none">Nova</a></li>
-        <li class="breadcrumb-item active"><?= t('users.title') ?></li>
+        <li class="breadcrumb-item active">
+          <?= t('users.title') ?>
+          <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
+        </li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0">
-      <?= t('users.title') ?>
-      <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
-    </h1>
   </div>
 </div>
 

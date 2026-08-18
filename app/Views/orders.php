@@ -33,13 +33,12 @@ $taxId = static function (array $row): string {
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb small mb-1">
         <li class="breadcrumb-item"><a href="/" class="text-decoration-none">Nova</a></li>
-        <li class="breadcrumb-item active"><?= t('nav.orders_all') ?></li>
+        <li class="breadcrumb-item active">
+          <?= t('nav.orders_all') ?>
+          <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
+        </li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0">
-      <?= t('nav.orders_all') ?>
-      <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
-    </h1>
   </div>
   <?php if ($rows !== []): ?>
     <a href="/orders/export-pdf" class="btn btn-outline-secondary">
@@ -78,6 +77,13 @@ $taxId = static function (array $row): string {
             <td><?= $inv['creator_name'] !== null ? e($inv['creator_name']) : '<span class="text-secondary">—</span>' ?></td>
             <td data-order="<?= (float) $inv['total'] ?>"><?= number_format((float) $inv['total'], 2) ?></td>
             <td class="text-end">
+              <button type="button" class="btn btn-sm btn-outline-secondary" title="<?= t('inv.view') ?>"
+                      data-bs-toggle="modal" data-bs-target="#invoicePreviewModal"
+                      data-invoice-id="<?= (int) $inv['id'] ?>"
+                      data-invoice-number="<?= e($invoiceNumber($inv)) ?>"
+                      data-invoice-status="<?= e($inv['status']) ?>">
+                <i class="bi bi-eye"></i>
+              </button>
               <a href="/invoices?edit=<?= (int) $inv['id'] ?>" class="btn btn-sm btn-outline-secondary" title="<?= t('cust.edit_hint') ?>">
                 <i class="bi bi-pencil"></i>
               </a>
@@ -98,4 +104,6 @@ $taxId = static function (array $row): string {
   <?php endif; ?>
 </div>
 
-<?php $scripts = ds_table_script(); ?>
+<?php require APP_PATH . '/Views/partials/invoice-preview-modal.php'; ?>
+
+<?php $scripts = ds_table_script() . ds_invoice_preview_script(); ?>

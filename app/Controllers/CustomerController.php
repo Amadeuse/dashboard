@@ -29,6 +29,7 @@ final class CustomerController extends Controller
     public function store(): void
     {
         csrf_verify();
+        Auth::requireNotImpersonating();
 
         $ruler = Auth::tenantId();
 

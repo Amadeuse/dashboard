@@ -82,13 +82,20 @@ final class Invoice
         return $rows[0] ?? null;
     }
 
-    /** @return array<int, array<string,mixed>> one invoice's line items, product name joined in */
+    /**
+     * @return array<int, array<string,mixed>> one invoice's line items,
+     *   product name and unit name joined in. unit_name is NULL for a line
+     *   item saved before unit_id existed (migrations/030) — views treat
+     *   that the same as "no unit", they don't fall back to the product's
+     *   current unit (see save()'s docblock on why this is a snapshot).
+     */
     public static function itemsFor(int $id): array
     {
         return Db::all(
-            'SELECT ii.*, p.name AS product_name
+            'SELECT ii.*, p.name AS product_name, un.name AS unit_name
                FROM invoice_items ii
                JOIN products p ON p.id = ii.product_id
+               LEFT JOIN units un ON un.id = ii.unit_id
               WHERE ii.invoice_id = ?
               ORDER BY ii.id',
             [$id]
@@ -96,7 +103,7 @@ final class Invoice
     }
 
     /**
-     * @param array{customer_id:string,status:string,is_zero:int,is_recurring:int,notes:string,items:list<array{product_id:string,quantity:string,unit_price:string}>} $clean
+     * @param array{customer_id:string,status:string,is_zero:int,is_recurring:int,notes:string,items:list<array{product_id:string,unit_id:string,quantity:string,unit_price:string}>} $clean
      * @param string|null $expectedUpdatedAt for an edit: the `updated_at` the
      *   form was loaded with (a hidden field — see invoices.php). Ignored
      *   when $editingId is null (a brand new row has nothing to conflict with).
@@ -161,12 +168,12 @@ final class Invoice
         }
 
         $insertItem = $conn->prepare(
-            'INSERT INTO invoice_items (invoice_id, product_id, quantity, unit_price, line_total) VALUES (?, ?, ?, ?, ?)'
+            'INSERT INTO invoice_items (invoice_id, product_id, unit_id, quantity, unit_price, line_total) VALUES (?, ?, ?, ?, ?, ?)'
         );
         foreach ($clean['items'] as $item) {
             $lineTotal = (float) $item['quantity'] * (float) $item['unit_price'];
             $insertItem->execute([
-                $invoiceId, (int) $item['product_id'], $item['quantity'], $item['unit_price'], $lineTotal,
+                $invoiceId, (int) $item['product_id'], (int) $item['unit_id'], $item['quantity'], $item['unit_price'], $lineTotal,
             ]);
         }
 
@@ -178,7 +185,7 @@ final class Invoice
     /**
      * @return array{0: array<string,mixed>, 1: array<string,string>} [clean, errors]
      *   clean = ['customer_id','status','is_zero','is_recurring','notes',
-     *            'items' => list of ['product_id','quantity','unit_price']]
+     *            'items' => list of ['product_id','unit_id','quantity','unit_price']]
      *   notes is free text, no validation — an empty textarea just stores ''.
      */
     public static function validate(array $input): array
@@ -201,12 +208,14 @@ final class Invoice
         }
 
         $items = [];
-        $rawProducts  = (array) ($input['item_product_id'] ?? []);
+        $rawProducts   = (array) ($input['item_product_id'] ?? []);
+        $rawUnits      = (array) ($input['item_unit_id'] ?? []);
         $rawQuantities = (array) ($input['item_quantity'] ?? []);
         $rawPrices     = (array) ($input['item_unit_price'] ?? []);
 
         foreach ($rawProducts as $i => $productId) {
             $productId = trim((string) $productId);
+            $unitId    = trim((string) ($rawUnits[$i] ?? ''));
             $quantity  = trim((string) ($rawQuantities[$i] ?? ''));
             $price     = trim((string) ($rawPrices[$i] ?? ''));
 
@@ -216,6 +225,11 @@ final class Invoice
 
             if (!ctype_digit($productId) || self::missing('products', (int) $productId)) {
                 $errors['items_' . $i] = terr('inv.err_product_required');
+                continue;
+            }
+
+            if (!ctype_digit($unitId) || self::missing('units', (int) $unitId)) {
+                $errors['items_' . $i] = terr('prod.err_unit_required');
                 continue;
             }
 
@@ -229,7 +243,7 @@ final class Invoice
                 continue;
             }
 
-            $items[] = ['product_id' => $productId, 'quantity' => $quantity, 'unit_price' => $price];
+            $items[] = ['product_id' => $productId, 'unit_id' => $unitId, 'quantity' => $quantity, 'unit_price' => $price];
         }
 
         if ($items === [] && !isset($errors['items_0'])) {

@@ -20,7 +20,6 @@ $uploadUrl = '/assets/uploads/organization/';
         <li class="breadcrumb-item active"><?= t('org.title') ?></li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0"><?= t('org.title') ?></h1>
   </div>
 </div>
 

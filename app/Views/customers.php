@@ -57,13 +57,12 @@ $field = static function (string $name, string $label, string $type = 'text', st
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb small mb-1">
         <li class="breadcrumb-item"><a href="/" class="text-decoration-none">Nova</a></li>
-        <li class="breadcrumb-item active"><?= t('page.customers') ?></li>
+        <li class="breadcrumb-item active">
+          <?= t('page.customers') ?>
+          <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
+        </li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0">
-      <?= t('page.customers') ?>
-      <span class="badge bg-primary-subtle text-primary rounded-pill align-middle ms-1"><?= $total ?></span>
-    </h1>
   </div>
 </div>
 

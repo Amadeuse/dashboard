@@ -1,7 +1,11 @@
 <?php
 /**
  * @var array   $customers      every customer, for the picker
- * @var array   $products       every product, for each line's picker (id/name/unit_price)
+ * @var array   $products       every product, for each line's picker (id/name/unit_id/unit_price)
+ * @var array   $units          every unit (id/name), for each line's unit select — picking a
+ *                                product defaults its line's unit to the product's own unit_id,
+ *                                but the select stays freely overridable (same convention as
+ *                                unit_price already has)
  * @var array   $org            the organization row (Organization::get()), for partials/invoice-header.php
  * @var string  $invoicePrefix  organization.invoice_prefix, or "INV" if unset
  * @var array   $invoicesByCustomer  customer_id => list of ['number','total'], for the right column's history panel
@@ -59,6 +63,7 @@ if (isset($old['item_product_id'])) {
     foreach ((array) $old['item_product_id'] as $i => $productId) {
         $itemRows[] = [
             'product_id' => (string) $productId,
+            'unit_id'    => (string) (((array) ($old['item_unit_id'] ?? []))[$i] ?? ''),
             'quantity'   => (string) (((array) ($old['item_quantity'] ?? []))[$i] ?? ''),
             'unit_price' => (string) (((array) ($old['item_unit_price'] ?? []))[$i] ?? ''),
         ];
@@ -68,12 +73,13 @@ if (isset($old['item_product_id'])) {
 // blank row already round-trips through $old as-is, this only kicks in for
 // a fresh ?edit=N load, where every row PHP built above is a real item.
 if ($itemRows === [] || end($itemRows)['product_id'] !== '') {
-    $itemRows[] = ['product_id' => '', 'quantity' => '', 'unit_price' => ''];
+    $itemRows[] = ['product_id' => '', 'unit_id' => '', 'quantity' => '', 'unit_price' => ''];
 }
 
-/** One product/qty/price/total line — used for both the initial render and the JS-built rows share this shape (see rowHtml() below). */
-$itemRow = static function (int $i, array $row, ?string $err) use ($products): void {
-    $productId = $row['product_id']; ?>
+/** One product/qty/unit/price/total line — used for both the initial render and the JS-built rows share this shape (see rowHtml() below). */
+$itemRow = static function (int $i, array $row, ?string $err) use ($products, $units): void {
+    $productId = $row['product_id'];
+    $unitId    = $row['unit_id']; ?>
   <div class="row g-2 mb-2 align-items-center" data-item-row>
     <div class="col">
       <select class="form-select <?= $err ? 'is-invalid' : '' ?>" name="item_product_id[]"
@@ -82,7 +88,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
               data-item-product>
         <option value=""></option>
         <?php foreach ($products as $p): ?>
-          <option value="<?= (int) $p['id'] ?>" data-price="<?= e((string) $p['unit_price']) ?>"
+          <option value="<?= (int) $p['id'] ?>" data-price="<?= e((string) $p['unit_price']) ?>" data-unit="<?= (int) $p['unit_id'] ?>"
                   <?= $productId === (string) $p['id'] ? 'selected' : '' ?>><?= e($p['name']) ?></option>
         <?php endforeach; ?>
       </select>
@@ -90,6 +96,17 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
     <div class="col-md-2">
       <input type="number" step="0.001" min="0" class="form-control <?= $err ? 'is-invalid' : '' ?>"
              name="item_quantity[]" value="<?= e($row['quantity']) ?>" data-item-quantity>
+    </div>
+    <div class="col-md-2">
+      <select class="form-select <?= $err ? 'is-invalid' : '' ?>" name="item_unit_id[]"
+              data-ds-select data-search-placeholder="<?= t('table.search') ?>"
+              data-no-results="<?= t('table.empty') ?>" data-clear-label="<?= t('cust.clear_field') ?>"
+              data-item-unit>
+        <option value=""></option>
+        <?php foreach ($units as $u): ?>
+          <option value="<?= (int) $u['id'] ?>" <?= $unitId === (string) $u['id'] ? 'selected' : '' ?>><?= e($u['name']) ?></option>
+        <?php endforeach; ?>
+      </select>
     </div>
     <div class="col-md-2">
       <input type="number" step="0.01" min="0" class="form-control <?= $err ? 'is-invalid' : '' ?>"
@@ -117,7 +134,6 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
         <li class="breadcrumb-item active"><?= t('page.invoices') ?></li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0"><?= t('page.invoices') ?></h1>
   </div>
 </div>
 
@@ -140,10 +156,11 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
 <div class="row g-3">
   <div class="col-lg-9">
     <div class="card ds-card" id="invoice-form">
-      <div class="card-header bg-transparent d-flex flex-wrap justify-content-between align-items-center gap-2 py-3">
+      <div class="card-header <?= $editing ? 'bg-warning-subtle' : 'bg-transparent' ?> d-flex flex-wrap justify-content-between align-items-center gap-2 py-3"
+           id="invoiceFormHeader" data-title-add="<?= e(t('inv.new_title')) ?>" data-title-edit="<?= e(t('inv.edit_title')) ?>">
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-receipt text-primary"></i>
-          <h2 class="h6 mb-0"><?= t('inv.new_title') ?></h2>
+          <h2 class="h6 mb-0" id="invoiceFormTitle"><?= $editing ? t('inv.edit_title') : t('inv.new_title') ?></h2>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2"
              data-today-formatted="<?= e(date('Y-m-d')) ?>" data-new-label="<?= e(t('inv.new_number_pending')) ?>">
@@ -193,6 +210,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
             <div class="row g-2 text-secondary small mb-1 d-none d-md-flex">
               <div class="col"><?= t('inv.product') ?></div>
               <div class="col-md-2"><?= t('inv.quantity') ?></div>
+              <div class="col-md-2"><?= t('prod.unit') ?></div>
               <div class="col-md-2"><?= t('inv.unit_price') ?> (<?= e(currency_symbol($currency)) ?>)</div>
               <div class="col-md-2"><?= t('inv.line_total') ?> (<?= e(currency_symbol($currency)) ?>)</div>
               <div class="col-auto"></div>
@@ -200,8 +218,12 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
 
             <div id="invoiceItems"
                  data-products="<?= e(json_encode(array_map(
-                     static fn(array $p): array => ['id' => (int) $p['id'], 'name' => $p['name'], 'price' => (string) $p['unit_price']],
+                     static fn(array $p): array => ['id' => (int) $p['id'], 'name' => $p['name'], 'price' => (string) $p['unit_price'], 'unitId' => (int) $p['unit_id']],
                      $products
+                 ), JSON_UNESCAPED_UNICODE)) ?>"
+                 data-units="<?= e(json_encode(array_map(
+                     static fn(array $u): array => ['id' => (int) $u['id'], 'name' => $u['name']],
+                     $units
                  ), JSON_UNESCAPED_UNICODE)) ?>"
                  data-search-placeholder="<?= e(t('table.search')) ?>"
                  data-no-results="<?= e(t('table.empty')) ?>"
@@ -241,12 +263,43 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
   </div>
 
   <div class="col-lg-3">
-    <!-- No functionality wired yet, per request — plain buttons/inputs, nothing submits or calls anything. -->
+    <!-- action_save removed — it duplicated the form's own submit button
+         with none of its functionality (4.40 in handoff.md). action_export_pdf
+         submits the same form (form="invoiceMainForm", like the status
+         select/checkboxes below already do) with an extra submit_action=
+         export_pdf field — InvoiceController::store() saves/updates exactly
+         as normal, then redirects to the PDF instead of back to /invoices,
+         so one click both saves (or creates) the invoice and downloads it.
+         action_preview opens the same modal orders.php's "ნახვა" uses
+         (4.46 in handoff.md). For an invoice that already has a real id
+         (editing one) it's a plain modal-trigger button, no submit
+         involved. For a brand new, unsaved one there's nothing to preview
+         yet, so it's the same submit_action=export_pdf trick instead —
+         value="preview" saves/updates exactly like that button does, then
+         InvoiceController::store() redirects to ?edit=N&preview=1, and this
+         page's own JS (below) auto-clicks the now-real "გადახედვა" button
+         (populated by the fresh ?edit=N load) once, on page load — same
+         modal either way, this branch just needs one extra round trip to
+         get a real id first.
+         action_email/whatsapp/share_link remain unwired placeholders,
+         per the original request. -->
     <div class="card ds-card mb-3">
       <div class="card-body d-grid gap-2">
-        <button type="button" class="btn btn-primary"><i class="bi bi-save me-1"></i><?= t('inv.action_save') ?></button>
-        <button type="button" class="btn btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i><?= t('inv.action_export_pdf') ?></button>
-        <button type="button" class="btn btn-outline-secondary"><i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?></button>
+        <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf" class="btn btn-outline-secondary">
+          <i class="bi bi-file-earmark-pdf me-1"></i><?= t('inv.action_export_pdf') ?>
+        </button>
+        <?php if ($editingInvoice !== null): ?>
+          <button type="button" class="btn btn-outline-secondary" id="invoicePreviewTrigger" data-bs-toggle="modal" data-bs-target="#invoicePreviewModal"
+                  data-invoice-id="<?= (int) $editingInvoice['id'] ?>"
+                  data-invoice-number="<?= e($invoiceNumber($editingInvoice)) ?>"
+                  data-invoice-status="<?= e($editingInvoice['status']) ?>">
+            <i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?>
+          </button>
+        <?php else: ?>
+          <button type="submit" form="invoiceMainForm" name="submit_action" value="preview" class="btn btn-outline-secondary">
+            <i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?>
+          </button>
+        <?php endif; ?>
         <button type="button" class="btn btn-outline-secondary"><i class="bi bi-envelope me-1"></i><?= t('inv.action_email') ?></button>
         <button type="button" class="btn btn-outline-secondary"><i class="bi bi-whatsapp me-1"></i><?= t('inv.action_whatsapp') ?></button>
         <button type="button" class="btn btn-outline-secondary"><i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?></button>
@@ -287,8 +340,10 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products): v
   </div>
 </div>
 
+<?php require APP_PATH . '/Views/partials/invoice-preview-modal.php'; ?>
+
 <?php
-$scripts = <<<'HTML'
+$scripts = ds_invoice_preview_script() . <<<'HTML'
 
 <script>
 (() => {
@@ -296,6 +351,7 @@ $scripts = <<<'HTML'
   const grandTotalEl = document.getElementById('invoiceGrandTotal');
   const vatEl        = document.getElementById('invoiceVat');
   const products    = JSON.parse(container.dataset.products);
+  const units       = JSON.parse(container.dataset.units);
   const searchPh    = container.dataset.searchPlaceholder;
   const noResults   = container.dataset.noResults;
   const clearLabel  = container.dataset.clearLabel;
@@ -349,7 +405,13 @@ $scripts = <<<'HTML'
 
   function productOptionsHtml() {
     return '<option value=""></option>' + products.map((p) =>
-      `<option value="${p.id}" data-price="${p.price}">${escapeHtml(p.name)}</option>`
+      `<option value="${p.id}" data-price="${p.price}" data-unit="${p.unitId}">${escapeHtml(p.name)}</option>`
+    ).join('');
+  }
+
+  function unitOptionsHtml() {
+    return '<option value=""></option>' + units.map((u) =>
+      `<option value="${u.id}">${escapeHtml(u.name)}</option>`
     ).join('');
   }
 
@@ -365,6 +427,13 @@ $scripts = <<<'HTML'
         </div>
         <div class="col-md-2">
           <input type="number" step="0.001" min="0" class="form-control" name="item_quantity[]" data-item-quantity>
+        </div>
+        <div class="col-md-2">
+          <select class="form-select" name="item_unit_id[]" data-ds-select
+                  data-search-placeholder="${searchPh}" data-no-results="${noResults}"
+                  data-clear-label="${clearLabel}" data-item-unit>
+            ${unitOptionsHtml()}
+          </select>
         </div>
         <div class="col-md-2">
           <input type="number" step="0.01" min="0" class="form-control" name="item_unit_price[]" data-item-price>
@@ -401,7 +470,11 @@ $scripts = <<<'HTML'
     container.insertAdjacentHTML('beforeend', rowHtml());
     const row = container.lastElementChild;
     const select = row.querySelector('[data-item-product]');
-    if (window.DsSelect) select.dsSelect = new window.DsSelect(select);
+    const unitSelect = row.querySelector('[data-item-unit]');
+    if (window.DsSelect) {
+      select.dsSelect = new window.DsSelect(select);
+      unitSelect.dsSelect = new window.DsSelect(unitSelect);
+    }
 
     if (values) {
       select.value = values.product_id;
@@ -418,7 +491,12 @@ $scripts = <<<'HTML'
     if (!select) return;
     const row = select.closest('[data-item-row]');
     const option = select.selectedOptions[0];
-    if (option && option.value !== '') row.querySelector('[data-item-price]').value = option.dataset.price;
+    if (option && option.value !== '') {
+      row.querySelector('[data-item-price]').value = option.dataset.price;
+      const unitSelect = row.querySelector('[data-item-unit]');
+      unitSelect.value = option.dataset.unit;
+      unitSelect.dsSelect?.refresh();
+    }
     updateRowTotal(row);
 
     if (row === container.lastElementChild && select.value !== '') addRow();
@@ -440,6 +518,8 @@ $scripts = <<<'HTML'
       row.querySelector('[data-item-product]').value = '';
       row.querySelector('[data-item-product]').dsSelect?.refresh();
       row.querySelector('[data-item-quantity]').value = '';
+      row.querySelector('[data-item-unit]').value = '';
+      row.querySelector('[data-item-unit]').dsSelect?.refresh();
       row.querySelector('[data-item-price]').value = '';
       updateRowTotal(row);
     }
@@ -459,6 +539,8 @@ $scripts = <<<'HTML'
     const numberSpan = document.getElementById('invoiceFormNumber');
     const dateSpan   = document.getElementById('invoiceFormDate');
     const meta = numberSpan.closest('[data-today-formatted]');
+    const formHeader = document.getElementById('invoiceFormHeader');
+    const formTitle  = document.getElementById('invoiceFormTitle');
     if (!form) return;
 
     form.addEventListener('reset', () => {
@@ -467,6 +549,9 @@ $scripts = <<<'HTML'
       labelSpan.textContent = submitBtn.dataset.labelAdd;
       numberSpan.textContent = meta.dataset.newLabel;
       dateSpan.textContent = meta.dataset.todayFormatted;
+      formHeader.classList.remove('bg-warning-subtle');
+      formHeader.classList.add('bg-transparent');
+      formTitle.textContent = formHeader.dataset.titleAdd;
       setTimeout(() => {
         customerSelect.dsSelect?.refresh();
         container.innerHTML = '';
@@ -487,4 +572,19 @@ $scripts = <<<'HTML'
 })();
 </script>
 HTML;
+
+// After a "გადახედვა"-triggered save (submit_action=preview above),
+// InvoiceController::store() redirects here with ?preview=1 — this
+// auto-clicks the now-real, populated #invoicePreviewTrigger button once,
+// the same way a tenant clicking it themselves would. history.replaceState
+// drops the query flag so a manual refresh of this URL doesn't re-open it.
+if (isset($_GET['preview']) && $editingInvoice !== null) {
+    $scripts .= <<<'HTML'
+
+<script>
+document.getElementById('invoicePreviewTrigger')?.click();
+history.replaceState(null, '', location.pathname + location.search.replace(/[?&]preview=1/, ''));
+</script>
+HTML;
+}
 ?>

@@ -21,6 +21,39 @@
     form.querySelector("input[type=checkbox]").addEventListener("change", () => form.submit());
   });
 
+  // Server-flashed validation errors (.is-invalid + .invalid-feedback) never
+  // cleared once the user fixes the field — fix live instead of making them
+  // reload. Two DOM shapes in play: most fields' .invalid-feedback sits as a
+  // sibling of .form-floating (or .input-group, when the field has one); a
+  // dynamic invoice item row (see Invoice::validate()'s items_N errors)
+  // shares ONE is-invalid/.invalid-feedback across all its fields instead.
+  const clearInvalid = (event) => {
+    const field = event.target;
+    if (!field.matches("input, select, textarea")) return;
+
+    const row = field.closest("[data-item-row]");
+    if (row) {
+      row.querySelectorAll(".is-invalid").forEach((el) => el.classList.remove("is-invalid"));
+      row.querySelector(".invalid-feedback")?.remove();
+      // A fully-empty row carries no per-field error at all — "add at least
+      // one product" (Invoice::validate()) instead renders as a plain
+      // .alert-danger just above #invoiceItems. Any row edit means the user
+      // is addressing that too.
+      field.closest("#invoiceItems")?.parentElement.querySelector(".alert-danger")?.remove();
+      return;
+    }
+
+    field.classList.remove("is-invalid");
+    field.closest(".ds-select")?.querySelector(".ds-select-trigger")?.classList.remove("is-invalid");
+
+    const wrapper = field.closest(".input-group") || field.closest(".form-floating");
+    if (wrapper?.nextElementSibling?.classList.contains("invalid-feedback")) {
+      wrapper.nextElementSibling.remove();
+    }
+  };
+  document.addEventListener("input", clearInvalid);
+  document.addEventListener("change", clearInvalid);
+
   // Flash messages (e.g. "customer added") fade out on their own — no close
   // button needed. bootstrap.Alert already owns the fade + DOM removal, so
   // this just schedules the same close() a manual dismiss button would call.

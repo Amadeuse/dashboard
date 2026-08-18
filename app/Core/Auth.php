@@ -31,7 +31,7 @@ final class Auth
         }
 
         $user = User::findByEmail($email);
-        if ($user === null || !password_verify($password, $user['password_hash'])) {
+        if ($user === null || $user['blocked_at'] !== null || !password_verify($password, $user['password_hash'])) {
             return false;
         }
 
@@ -101,6 +101,13 @@ final class Auth
      * is logged out right here so every caller (this class's own gates, the
      * app-wide one in index.php) sees the same "not logged in" state instead
      * of each having to re-check the timestamp itself.
+     *
+     * Also the one universal choke point a SuperUser-blocked user can't
+     * route around: password login already refuses to start a session for
+     * one (attempt()), but the OTP and Google-OAuth paths call login()
+     * directly and don't re-check — this catches those too, on whichever
+     * request happens to follow a block, since public/index.php's app-wide
+     * gate calls this on every single request.
      */
     public static function check(): bool
     {
@@ -112,6 +119,12 @@ final class Auth
         $lastActivity   = $_SESSION['last_activity'] ?? null;
 
         if ($lastActivity !== null && time() - $lastActivity > $timeoutSeconds) {
+            self::logout();
+            return false;
+        }
+
+        $user = User::findById((int) $_SESSION['user_id']);
+        if ($user === null || $user['blocked_at'] !== null) {
             self::logout();
             return false;
         }
@@ -209,6 +222,27 @@ final class Auth
         }
 
         return $user;
+    }
+
+    /**
+     * SuperUser is read-only while impersonating a tenant — it exists to
+     * monitor, never to act on a tenant's behalf. Call this at the top of
+     * every tenant-data write action (store/save/update/delete), right
+     * alongside csrf_verify() — after requireUser()/requireAdmin() if the
+     * action already calls one of those. A non-impersonating caller (every
+     * real tenant admin/sub-user, and a superadmin who hasn't picked a
+     * tenant yet) always passes; this only ever blocks a superadmin
+     * mid-impersonation. JSON endpoints (LookupController and friends)
+     * can't use this as-is — they check Auth::impersonating() directly and
+     * return a JSON 403 instead, to keep their AJAX callers' response
+     * contract intact.
+     */
+    public static function requireNotImpersonating(): void
+    {
+        if (self::impersonating() !== null) {
+            http_response_code(403);
+            exit(t('error.forbidden'));
+        }
     }
 
     /** "Browse as this tenant" — the caller (SuperUserController) has already checked requireSuperuser(). */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Modules\Warehouse\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Modules\Warehouse\Models\ProductType;
 
@@ -23,6 +24,12 @@ final class ProductTypeController extends Controller
     {
         csrf_verify();
         header('Content-Type: application/json; charset=utf-8');
+
+        if (Auth::impersonating() !== null) {
+            http_response_code(403);
+            echo json_encode(['error' => terr('error.forbidden')], JSON_UNESCAPED_UNICODE);
+            return;
+        }
 
         $id        = trim((string) ($_POST['id'] ?? ''));
         $name      = trim((string) ($_POST['name'] ?? ''));

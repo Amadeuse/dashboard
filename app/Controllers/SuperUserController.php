@@ -60,4 +60,29 @@ final class SuperUserController extends Controller
         Auth::stopImpersonating();
         redirect('/superuser');
     }
+
+    /**
+     * The one write action SuperUser is actually allowed — block or unblock
+     * a tenant admin or one of their sub-users (superuser.php's per-row and
+     * per-badge buttons). Everything else about a tenant is view-only while
+     * impersonating (Auth::requireNotImpersonating()) — this route
+     * deliberately isn't gated by that, it's SuperUser's own direct action,
+     * not something done *as* the tenant.
+     */
+    public function toggleBlock(): void
+    {
+        Auth::requireSuperuser();
+        csrf_verify();
+
+        $userId = (int) ($_POST['user_id'] ?? 0);
+        $target = User::findById($userId);
+
+        if ($target === null || $target['role'] === 'superadmin') {
+            flash('notice', terr('superuser.err_invalid_tenant'));
+            redirect('/superuser');
+        }
+
+        User::setBlocked($userId, $target['blocked_at'] === null);
+        redirect('/superuser');
+    }
 }

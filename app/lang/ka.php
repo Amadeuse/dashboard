@@ -207,6 +207,7 @@ return [
 
     // ინვოისები (/invoices)
     'inv.new_title'           => 'ახალი ინვოისი',
+    'inv.edit_title'          => 'ინვოისის რედაქტირება',
     'inv.list_title'          => 'ინვოისების სია',
     'inv.number'              => 'ინვოისი',
     'inv.new_number_pending'  => 'ახალი',
@@ -214,7 +215,7 @@ return [
     'inv.issue_date'          => 'გამოწერის თარიღი',
     'inv.customer_info'       => 'დამკვეთის ინფორმაცია',
     'inv.customer_info_empty' => 'აირჩიეთ დამკვეთი დეტალების სანახავად.',
-    'inv.action_save'         => 'შენახვა',
+    'inv.notes_empty'         => 'დამატებითი ინფორმაცია არ არის',
     'inv.action_export_pdf'   => 'ექსპორტი PDF',
     'inv.action_preview'      => 'გადახედვა',
     'inv.action_email'        => 'მეილზე გაგზავნა',
@@ -248,6 +249,9 @@ return [
     'inv.bill_to'             => 'გადამხდელი',
     'inv.save_pdf'            => 'PDF შენახვა',
     'inv.print'               => 'ბეჭდვა',
+    'inv.view'                => 'ნახვა',
+    'inv.preview_title'       => 'ინვოისის ნახვა',
+    'inv.close'               => 'დახურვა',
     // pdf/invoice.php-ის compact header-ის საკუთარი, მოკლე ლეიბლები —
     // cust.taxid/cust.contact-ზე ერთი-ორი სიტყვით მოკლეა, user-ის მოცემული
     // დიზაინის სკრინშოტს რომ ემთხვეოდეს ზუსტად.
@@ -439,6 +443,9 @@ return [
     'superuser.err_invalid_tenant'   => 'არასწორი tenant.',
     'superuser.impersonating_banner' => 'SuperUser — ხედავ როგორც: %s',
     'superuser.stop_impersonating'   => 'გამოსვლა',
+    'superuser.block'                => 'დაბლოკვა',
+    'superuser.unblock'              => 'განბლოკვა',
+    'superuser.blocked_badge'        => 'დაბლოკილია',
 
     // ორგანიზაცია (/settings/organization)
     'org.title'                => 'ორგანიზაცია',

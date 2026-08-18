@@ -41,6 +41,7 @@ final class UserController extends Controller
     {
         Auth::requireAdmin();
         csrf_verify();
+        Auth::requireNotImpersonating();
 
         $ruler = Auth::tenantId();
 

@@ -20,7 +20,6 @@ $roleLabels = \App\Models\User::roles();
         <li class="breadcrumb-item active"><?= t('profile.title') ?></li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0"><?= t('profile.title') ?></h1>
   </div>
 </div>
 

@@ -34,6 +34,13 @@ final class User
         return self::findByEmail($email) !== null;
     }
 
+    /** SuperUser-only (App\Controllers\SuperUserController::toggleBlock()) — see App\Core\Auth for enforcement. */
+    public static function setBlocked(int $id, bool $blocked): void
+    {
+        Db::conn()->prepare('UPDATE users SET blocked_at = ? WHERE id = ?')
+            ->execute([$blocked ? date('Y-m-d H:i:s') : null, $id]);
+    }
+
     /**
      * The sub-users *this* tenant's admin created — /settings/users' roster.
      * Was unscoped (every user, every tenant) before multi-tenancy (migrations/

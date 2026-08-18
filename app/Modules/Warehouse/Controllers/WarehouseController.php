@@ -36,6 +36,7 @@ final class WarehouseController extends Controller
     public function store(): void
     {
         csrf_verify();
+        Auth::requireNotImpersonating();
 
         [$clean, $errors] = ProductWarehouse::validate($_POST);
 

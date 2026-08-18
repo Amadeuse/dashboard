@@ -11,6 +11,7 @@ use App\Models\Customer;
 use App\Models\Invoice;
 use App\Models\Organization;
 use App\Models\Product;
+use App\Models\Unit;
 use App\Models\User;
 
 final class InvoiceController extends Controller
@@ -49,6 +50,7 @@ final class InvoiceController extends Controller
                     'notes'           => (string) ($invoice['notes'] ?? ''),
                     'updated_at'      => (string) $invoice['updated_at'],
                     'item_product_id' => array_column($items, 'product_id'),
+                    'item_unit_id'    => array_column($items, 'unit_id'),
                     'item_quantity'   => array_column($items, 'quantity'),
                     'item_unit_price' => array_column($items, 'unit_price'),
                 ];
@@ -72,6 +74,7 @@ final class InvoiceController extends Controller
             'title'         => t('page.invoices') . ' · ' . app_name(),
             'customers'     => Customer::all($ruler),
             'products'      => Product::all($ruler),
+            'units'         => Unit::all(),
             'org'           => $org,
             'invoicePrefix' => $invoicePrefix,
             'invoicesByCustomer' => $invoicesByCustomer,
@@ -126,6 +129,7 @@ final class InvoiceController extends Controller
     public function store(): void
     {
         csrf_verify();
+        Auth::requireNotImpersonating();
 
         $id        = trim((string) ($_POST['invoice_id'] ?? ''));
         $editingId = ctype_digit($id) ? (int) $id : null;
@@ -161,6 +165,27 @@ final class InvoiceController extends Controller
         $org    = Organization::get(Auth::tenantId());
         $number = Invoice::number(Invoice::find($invoiceId), (string) ($org['invoice_prefix'] ?? '') ?: 'INV');
         flash($editingId !== null ? 'updated' : 'created', $number);
+
+        // The sidebar's "PDF ექსპორტი"/"გადახედვა" buttons are this same
+        // submit button, just with an extra name=value (form="invoiceMainForm",
+        // see invoices.php) — one click saves/updates exactly as above, then
+        // lands somewhere other than the list. The flash set above still
+        // shows next time the tenant visits /invoices, it's just not what
+        // this particular response renders.
+        if (($_POST['submit_action'] ?? '') === 'export_pdf') {
+            redirect('/invoices/export-pdf?id=' . $invoiceId);
+        }
+
+        // "გადახედვა" needs the preview *modal*, a client-side thing — a
+        // straight redirect can't open it by itself. Reusing the existing
+        // ?edit=N reload (index()'s fresh-load branch already knows how to
+        // fill the form from a real, saved invoice) plus one query flag the
+        // page's own JS checks on load to auto-click the now-populated
+        // "გადახედვა" button — same modal, same trigger, as if the tenant
+        // had clicked it themselves right after the page reloaded.
+        if (($_POST['submit_action'] ?? '') === 'preview') {
+            redirect('/invoices?edit=' . $invoiceId . '&preview=1');
+        }
 
         redirect('/invoices');
     }
@@ -236,37 +261,77 @@ final class InvoiceController extends Controller
      */
     public function exportInvoicePdf(): void
     {
-        $id      = (int) ($_GET['id'] ?? 0);
+        $id  = (int) ($_GET['id'] ?? 0);
+        $ctx = $this->loadOwnedInvoiceForPdf($id);
+        if ($ctx === null) {
+            return;
+        }
+
+        $html = $this->renderToString('pdf/invoice', [
+            'invoice'       => $ctx['invoice'],
+            'invoiceNumber' => $ctx['number'],
+            'items'         => Invoice::itemsFor($id),
+            'org'           => $ctx['org'],
+            'bankIbans'     => Organization::bankIbans($ctx['org']),
+        ]);
+
+        // "PH 2026-08-15 0011" -> "PH-2026-08-15-0011.pdf" — spaces are legal
+        // in a Content-Disposition filename, but not worth risking across
+        // browsers/OSes when a hyphen reads exactly the same.
+        Pdf::download($html, str_replace(' ', '-', $ctx['number']) . '.pdf', $this->pdfFooterHtml());
+    }
+
+    /**
+     * "ნახვა" — the per-row action on /orders. Fetched (not navigated to)
+     * by orders.php's JS and injected into its preview modal's body — same
+     * access rule as exportInvoicePdf(), but its own view (invoice-preview.php),
+     * a deliberately separate, independently-designed template from
+     * pdf/invoice.php per the user's own reference screenshot, not a reuse
+     * of the PDF one (an earlier version did reuse it; the user asked for
+     * genuinely separate code instead).
+     */
+    public function preview(): void
+    {
+        $id  = (int) ($_GET['id'] ?? 0);
+        $ctx = $this->loadOwnedInvoiceForPdf($id);
+        if ($ctx === null) {
+            return;
+        }
+
+        echo $this->renderToString('invoice-preview', [
+            'invoice'   => $ctx['invoice'],
+            'items'     => Invoice::itemsFor($id),
+            'org'       => $ctx['org'],
+            'bankIbans' => Organization::bankIbans($ctx['org']),
+        ]);
+    }
+
+    /**
+     * @return array{invoice: array, number: string, org: array}|null null
+     *   once a 404 has already been sent (missing id, or a real invoice
+     *   belonging to a different tenant) — the caller just returns.
+     */
+    private function loadOwnedInvoiceForPdf(int $id): ?array
+    {
         $invoice = Invoice::find($id);
 
         if ($invoice === null) {
             http_response_code(404);
             (new ErrorController())->notFound();
-            return;
+            return null;
         }
 
         Auth::requireUser();
         if ($this->ownerTenant($invoice) !== Auth::tenantId()) {
             http_response_code(404);
             (new ErrorController())->notFound();
-            return;
+            return null;
         }
 
         $org    = Organization::get(Auth::tenantId());
         $number = Invoice::number($invoice, (string) ($org['invoice_prefix'] ?? '') ?: 'INV');
 
-        $html = $this->renderToString('pdf/invoice', [
-            'invoice'       => $invoice,
-            'invoiceNumber' => $number,
-            'items'         => Invoice::itemsFor($id),
-            'org'           => $org,
-            'bankIbans'     => Organization::bankIbans($org),
-        ]);
-
-        // "PH 2026-08-15 0011" -> "PH-2026-08-15-0011.pdf" — spaces are legal
-        // in a Content-Disposition filename, but not worth risking across
-        // browsers/OSes when a hyphen reads exactly the same.
-        Pdf::download($html, str_replace(' ', '-', $number) . '.pdf', $this->pdfFooterHtml());
+        return ['invoice' => $invoice, 'number' => $number, 'org' => $org];
     }
 
     /**

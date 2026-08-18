@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controllers;
 
+use App\Core\Auth;
 use App\Core\Controller;
 use App\Core\ModuleRegistry;
 
@@ -13,6 +14,13 @@ use App\Core\ModuleRegistry;
  * disk (placed there out-of-band); this just runs its migrations and starts
  * tracking it. No uninstall (destructive, deferred) and no license/purchase
  * check (deferred — see handoff.md).
+ *
+ * `modules` has no `ruler` column (see migrations/003) — enabling/disabling
+ * one affects every tenant in the whole app, not just the caller's own.
+ * These three actions had no Auth::requireAdmin() at all until now (any
+ * logged-in user, including a non-admin sub-user, could toggle a
+ * system-wide module) — a real pre-existing gap, fixed alongside adding
+ * the impersonation block below, since both land on the same lines.
  */
 final class ModuleController extends Controller
 {
@@ -27,7 +35,10 @@ final class ModuleController extends Controller
 
     public function install(): void
     {
+        Auth::requireAdmin();
         csrf_verify();
+        Auth::requireNotImpersonating();
+
         $code = (string) ($_POST['code'] ?? '');
         ModuleRegistry::install($code);
         flash('modules_flash', t('modules.installed', $code));
@@ -36,14 +47,20 @@ final class ModuleController extends Controller
 
     public function enable(): void
     {
+        Auth::requireAdmin();
         csrf_verify();
+        Auth::requireNotImpersonating();
+
         ModuleRegistry::enable((string) ($_POST['code'] ?? ''));
         redirect($this->backTo());
     }
 
     public function disable(): void
     {
+        Auth::requireAdmin();
         csrf_verify();
+        Auth::requireNotImpersonating();
+
         ModuleRegistry::disable((string) ($_POST['code'] ?? ''));
         redirect($this->backTo());
     }

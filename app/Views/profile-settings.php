@@ -16,7 +16,6 @@ $hasPassword = $user['password_hash'] !== null;
         <li class="breadcrumb-item active"><?= t('profile.settings.title') ?></li>
       </ol>
     </nav>
-    <h1 class="h3 fw-bold mb-0"><?= t('profile.settings.title') ?></h1>
   </div>
 </div>
 
