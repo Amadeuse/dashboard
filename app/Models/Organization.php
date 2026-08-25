@@ -35,7 +35,7 @@ final class Organization
         Db::conn()->prepare(
             'UPDATE organization SET
                 name = ?, tax_id = ?, email = ?, website = ?, phone = ?,
-                address = ?, invoice_prefix = ?, bank_details = ?,
+                address = ?, invoice_prefix = ?, invoice_start_number = ?, email_message_default = ?, bank_details = ?,
                 vat_rate = ?, currency = ?
              WHERE ruler = ?'
         )->execute([
@@ -46,6 +46,8 @@ final class Organization
             self::orNull($data['phone']),
             self::orNull($data['address']),
             self::orNull($data['invoice_prefix']),
+            (int) $data['invoice_start_number'],
+            self::orNull($data['email_message_default']),
             self::orNull(implode("\n", array_filter($data['bank_ibans'], static fn(string $v): bool => $v !== ''))),
             $data['vat_rate'],
             $data['currency'],
@@ -82,6 +84,8 @@ final class Organization
             'phone'          => trim((string) ($input['phone'] ?? '')),
             'address'        => trim((string) ($input['address'] ?? '')),
             'invoice_prefix' => trim((string) ($input['invoice_prefix'] ?? '')),
+            'invoice_start_number' => trim((string) ($input['invoice_start_number'] ?? '')),
+            'email_message_default' => trim((string) ($input['email_message_default'] ?? '')),
             'vat_rate'       => trim((string) ($input['vat_rate'] ?? '')),
             'currency'       => trim((string) ($input['currency'] ?? '')),
             'bank_ibans'     => array_map(
@@ -101,6 +105,10 @@ final class Organization
 
         if (!is_numeric($clean['vat_rate']) || (float) $clean['vat_rate'] < 0 || (float) $clean['vat_rate'] > 100) {
             $errors['vat_rate'] = terr('org.err_vat_rate');
+        }
+
+        if (!ctype_digit($clean['invoice_start_number']) || (int) $clean['invoice_start_number'] < 1) {
+            $errors['invoice_start_number'] = terr('org.err_invoice_start_number');
         }
 
         if (!in_array($clean['currency'], self::CURRENCIES, true)) {

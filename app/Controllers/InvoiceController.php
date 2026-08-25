@@ -6,6 +6,8 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Controller;
+use App\Core\Mailer;
+use App\Core\ModuleRegistry;
 use App\Core\Pdf;
 use App\Models\Customer;
 use App\Models\Invoice;
@@ -21,8 +23,13 @@ final class InvoiceController extends Controller
         $ruler = Auth::tenantId();
         $org   = Organization::get($ruler);
 
-        $errors = flash('errors') ?? [];
-        $old    = flash('old') ?? [];
+        $errors      = flash('errors') ?? [];
+        $old         = flash('old') ?? [];
+        // "მეილზე გაგზავნა" modal's own errors/old, kept separate from the
+        // main form's — a failed email send/validation shouldn't touch the
+        // invoice form's own error state (see sendEmail(), invoices.php).
+        $emailErrors = flash('email_errors') ?? [];
+        $emailOld    = flash('email_old') ?? [];
         $editingInvoice = null;
 
         // A fresh GET with ?edit=N (from /orders' pencil icon, or the conflict
@@ -44,7 +51,7 @@ final class InvoiceController extends Controller
                 $old = [
                     'invoice_id'      => (string) $editId,
                     'customer_id'     => (string) $invoice['customer_id'],
-                    'status'          => (string) $invoice['status'],
+                    'document_state'  => (string) $invoice['document_state'],
                     'is_zero'         => $invoice['is_zero'] ? 1 : 0,
                     'is_recurring'    => $invoice['is_recurring'] ? 1 : 0,
                     'notes'           => (string) ($invoice['notes'] ?? ''),
@@ -58,6 +65,30 @@ final class InvoiceController extends Controller
         }
 
         $invoicePrefix = (string) ($org['invoice_prefix'] ?? '') ?: 'INV';
+
+        // What the next invoice's number would be right now — the card-header
+        // shows this instead of a generic "new" placeholder, both on a fresh
+        // load and (via data-new-label, invoices.php's own JS) after
+        // "გასუფთავება" resets an edit back to blank. Invoice::number() only
+        // reads sequence_number/issue_date off the row, so a synthetic one
+        // works exactly like a real invoice would.
+        $previewNumber = Invoice::number(
+            ['sequence_number' => Invoice::previewNextSequenceNumber(User::tenantMemberIds($ruler), (int) $org['invoice_start_number']), 'issue_date' => date('Y-m-d')],
+            $invoicePrefix,
+        );
+
+        // InvoiceWorkflow (payment/cancellation tracking) is optional and
+        // fully independent of core status — see handoff.md. null means
+        // "don't show its UI" (module off, or nothing to edit yet); the
+        // module's own class is never `use`-imported here, only referenced
+        // by FQCN behind this guard, same spirit as ds_menu()'s module
+        // awareness in helpers.php.
+        $workflow = null;
+        if ($editingInvoice !== null
+            && in_array('InvoiceWorkflow', ModuleRegistry::enabledCodes(), true)
+            && class_exists(\App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::class)) {
+            $workflow = \App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::for((int) $editingInvoice['id']);
+        }
 
         // Grouped by customer, for the "this customer's other invoices" panel —
         // computed here (not in the view) since it needs the same numbering
@@ -77,12 +108,18 @@ final class InvoiceController extends Controller
             'units'         => Unit::all(),
             'org'           => $org,
             'invoicePrefix' => $invoicePrefix,
+            'previewNumber' => $previewNumber,
             'invoicesByCustomer' => $invoicesByCustomer,
             'editingInvoice' => $editingInvoice,
+            'workflow'      => $workflow,
             'errors'        => $errors,
             'old'           => $old,
+            'emailErrors'   => $emailErrors,
+            'emailOld'      => $emailOld,
             'created'       => flash('created'),
             'updated'       => flash('updated'),
+            'emailSent'     => flash('email_sent'),
+            'emailFailed'   => flash('email_failed'),
         ]);
     }
 
@@ -100,16 +137,37 @@ final class InvoiceController extends Controller
         $rows  = Invoice::all(User::tenantMemberIds($ruler));
         $org   = Organization::get($ruler);
 
+        // See index()'s own $workflow block for why this is guarded like this.
+        $workflow = [];
+        if (in_array('InvoiceWorkflow', ModuleRegistry::enabledCodes(), true)
+            && class_exists(\App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::class)) {
+            $workflow = \App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::forMany(array_column($rows, 'id'));
+        }
+
         $this->view('orders', [
             'title'         => t('nav.orders_all') . ' · ' . app_name(),
             'rows'          => $rows,
+            'workflow'      => $workflow,
+            'org'           => $org,
             'invoicePrefix' => (string) ($org['invoice_prefix'] ?? '') ?: 'INV',
             'currency'      => (string) $org['currency'],
             'total'         => count($rows),
+            // "მეილზე გაგზავნა" modal state — same flash keys sendEmail()
+            // already uses for /invoices (4.55), reused here since only one
+            // of the two pages is ever the redirect target of a given submit.
+            'emailErrors'   => flash('email_errors') ?? [],
+            'emailOld'      => flash('email_old') ?? [],
+            'emailSent'     => flash('email_sent'),
+            'emailFailed'   => flash('email_failed'),
         ]);
     }
 
-    /** "ექსპორტი PDF" on /orders — same tenant scope as orders() above, via mpdf/mpdf (App\Core\Pdf). */
+    /**
+     * "ექსპორტი PDF" on /orders — same tenant scope as orders() above, via
+     * mpdf/mpdf (App\Core\Pdf). ?sign= is the same "ხელმოწერით"/"ხელმოწერის
+     * გარეშე" dropdown choice exportInvoicePdf() reads (4.63) — orders.php's
+     * button links straight here with the query string, no form/JS needed.
+     */
     public function exportOrdersPdf(): void
     {
         $ruler = Auth::tenantId();
@@ -121,6 +179,7 @@ final class InvoiceController extends Controller
             'invoicePrefix' => (string) ($org['invoice_prefix'] ?? '') ?: 'INV',
             'org'           => $org,
             'generatedAt'   => ds_date(date('Y-m-d')),
+            'signed'        => ($_GET['sign'] ?? '1') !== '0',
         ]);
 
         Pdf::download($html, 'orders-' . date('Y-m-d') . '.pdf');
@@ -146,8 +205,17 @@ final class InvoiceController extends Controller
             redirect('/invoices#invoice-form');
         }
 
+        $ruler       = Auth::tenantId();
+        $org         = Organization::get($ruler);
         $currentUser = Auth::user();
-        $invoiceId   = Invoice::save($clean, $editingId, $expectedUpdatedAt, $currentUser['id'] ?? null);
+        $invoiceId   = Invoice::save(
+            $clean,
+            $editingId,
+            $expectedUpdatedAt,
+            $currentUser['id'] ?? null,
+            User::tenantMemberIds($ruler),
+            (int) $org['invoice_start_number'],
+        );
 
         if ($invoiceId === null) {
             // Someone else saved this invoice after the form was loaded (or
@@ -162,7 +230,6 @@ final class InvoiceController extends Controller
 
         // Flashed as the already-formatted number (not the raw id) — the success
         // message needs issue_date too, which only exists once the row is saved.
-        $org    = Organization::get(Auth::tenantId());
         $number = Invoice::number(Invoice::find($invoiceId), (string) ($org['invoice_prefix'] ?? '') ?: 'INV');
         flash($editingId !== null ? 'updated' : 'created', $number);
 
@@ -171,9 +238,12 @@ final class InvoiceController extends Controller
         // see invoices.php) — one click saves/updates exactly as above, then
         // lands somewhere other than the list. The flash set above still
         // shows next time the tenant visits /invoices, it's just not what
-        // this particular response renders.
-        if (($_POST['submit_action'] ?? '') === 'export_pdf') {
-            redirect('/invoices/export-pdf?id=' . $invoiceId);
+        // this particular response renders. Two submit_action values (not one
+        // + a separate "sign" field) — a dropdown of two plain submit buttons
+        // needs no JS to pick between them (4.63 in handoff.md).
+        if (in_array($_POST['submit_action'] ?? '', ['export_pdf_signed', 'export_pdf_unsigned'], true)) {
+            $sign = ($_POST['submit_action'] === 'export_pdf_signed') ? '1' : '0';
+            redirect('/invoices/export-pdf?id=' . $invoiceId . '&sign=' . $sign);
         }
 
         // "გადახედვა" needs the preview *modal*, a client-side thing — a
@@ -185,6 +255,12 @@ final class InvoiceController extends Controller
         // had clicked it themselves right after the page reloaded.
         if (($_POST['submit_action'] ?? '') === 'preview') {
             redirect('/invoices?edit=' . $invoiceId . '&preview=1');
+        }
+
+        // "მეილზე გაგზავნა" — same trick as "გადახედვა" above: the email
+        // modal is client-side, an unsaved invoice needs a real id first.
+        if (($_POST['submit_action'] ?? '') === 'email') {
+            redirect('/invoices?edit=' . $invoiceId . '&email=1');
         }
 
         redirect('/invoices');
@@ -203,8 +279,39 @@ final class InvoiceController extends Controller
      */
     public function show(): void
     {
-        $id      = (int) ($_GET['id'] ?? 0);
-        $token   = (string) ($_GET['token'] ?? '');
+        $id    = (int) ($_GET['id'] ?? 0);
+        $token = (string) ($_GET['token'] ?? '');
+        $ctx   = $this->resolveInvoiceForView($id, $token);
+        if ($ctx === null) {
+            return;
+        }
+
+        $this->view('invoice-view', [
+            'title'         => $ctx['number'] . ' · ' . app_name(),
+            'invoice'       => $ctx['invoice'],
+            'invoiceNumber' => $ctx['number'],
+            'items'         => Invoice::itemsFor($id),
+            'org'           => $ctx['org'],
+            'bankIbans'     => Organization::bankIbans($ctx['org']),
+            // "PDF შენახვა" (invoice-view.php) links straight to
+            // exportInvoicePdf() with this token — that route accepts the
+            // same share-link bypass this page does, so an anonymous
+            // customer viewing via a shared link can still download the
+            // real PDF, not just window.print(). Always the invoice's own
+            // token, never the $_GET one — a logged-in tenant viewer got
+            // here without a token in the URL at all.
+            'viewToken'     => (string) $ctx['invoice']['view_token'],
+        ]);
+    }
+
+    /**
+     * Shared by show() and exportInvoicePdf() — the "view this invoice"
+     * access rule: a valid view_token (share-link, no login needed) or a
+     * logged-in viewer from the invoice's own tenant. Sends 404 and returns
+     * null itself on denial, same convention as loadOwnedInvoiceForPdf().
+     */
+    private function resolveInvoiceForView(int $id, string $token): ?array
+    {
         $invoice = Invoice::find($id);
 
         if ($invoice === null) {
@@ -213,7 +320,7 @@ final class InvoiceController extends Controller
             // on us to set the status before delegating to the same error view.
             http_response_code(404);
             (new ErrorController())->notFound();
-            return;
+            return null;
         }
 
         $sharedLinkValid = $token !== '' && hash_equals((string) $invoice['view_token'], $token);
@@ -229,42 +336,102 @@ final class InvoiceController extends Controller
             if ($ownerTenant !== $viewerTenant) {
                 http_response_code(404);
                 (new ErrorController())->notFound();
-                return;
+                return null;
             }
         }
 
         // Falling back to the viewer's own tenant (an orphaned invoice with no
         // resolvable owner, viewed by a logged-in tenant match) is purely
-        // cosmetic — whose org branding the print page shows, the access
-        // check above already ran. Never calls Auth::tenantId() on the
-        // token/no-session path — that would redirect an anonymous, valid-
-        // token viewer straight to /login, defeating the point of the token.
+        // cosmetic — whose org branding the page/PDF shows, the access check
+        // above already ran. Never calls Auth::tenantId() on the token/no-
+        // session path — that would redirect an anonymous, valid-token
+        // viewer straight to /login, defeating the point of the token.
         $org    = Organization::get($ownerTenant ?? $viewerTenant ?? 0);
         $number = Invoice::number($invoice, (string) ($org['invoice_prefix'] ?? '') ?: 'INV');
 
-        $this->view('invoice-view', [
-            'title'         => $number . ' · ' . app_name(),
-            'invoice'       => $invoice,
-            'invoiceNumber' => $number,
-            'items'         => Invoice::itemsFor($id),
-            'org'           => $org,
-            'bankIbans'     => Organization::bankIbans($org),
-        ]);
+        return ['invoice' => $invoice, 'number' => $number, 'org' => $org];
     }
 
     /**
-     * "ექსპორტი PDF" — the per-row action on /orders. Same access rule as
-     * show()'s no-token branch (login required, viewer must belong to the
-     * invoice's own tenant) — this is only ever reached from a button behind
-     * the login gate, so there's no equivalent to show()'s anonymous
-     * share-link path here.
+     * "ექსპორტი PDF" — the per-row action on /orders (no token, login
+     * required, same as before) *and* "PDF შენახვა" on /invoices/view
+     * (invoice-view.php always passes the invoice's own view_token) — same
+     * dual access rule as show(), via resolveInvoiceForView(), so a customer
+     * viewing an invoice through a shared link can download the real PDF
+     * too, not just window.print().
      */
     public function exportInvoicePdf(): void
     {
-        $id  = (int) ($_GET['id'] ?? 0);
+        $id    = (int) ($_GET['id'] ?? 0);
+        $token = (string) ($_GET['token'] ?? '');
+        $ctx   = $this->resolveInvoiceForView($id, $token);
+        if ($ctx === null) {
+            return;
+        }
+
+        // "ხელმოწერით"/"ხელმოწერის გარეშე" — invoices.php's export dropdown
+        // (store()) and orders.php's/invoice-view.php's plain links both land
+        // here; absent ?sign= (every link that isn't the dropdown) keeps the
+        // pre-4.63 default of always showing it, same as before this existed.
+        $signed = ($_GET['sign'] ?? '1') !== '0';
+
+        $html = $this->renderToString('pdf/invoice', [
+            'invoice'       => $ctx['invoice'],
+            'invoiceNumber' => $ctx['number'],
+            'items'         => Invoice::itemsFor($id),
+            'org'           => $ctx['org'],
+            'bankIbans'     => Organization::bankIbans($ctx['org']),
+            'signed'        => $signed,
+        ]);
+
+        // "PH 2026-08-15 0011" -> "PH-2026-08-15-0011.pdf" — spaces are legal
+        // in a Content-Disposition filename, but not worth risking across
+        // browsers/OSes when a hyphen reads exactly the same.
+        Pdf::download($html, str_replace(' ', '-', $ctx['number']) . '.pdf', $this->pdfFooterHtml());
+    }
+
+    /**
+     * "მეილზე გაგზავნა" — invoices.php's own modal (4.55), and orders.php's
+     * same modal per-row (4.62) — always behind login (loadOwnedInvoiceForPdf(),
+     * no anonymous/token path — unlike show()/exportInvoicePdf(), sending mail
+     * is never something a share-link viewer does). Attaches the same PDF
+     * exportInvoicePdf() would download. "From" stays this app's own verified
+     * MAIL_FROM (a single shared SMTP relay serves every tenant — most
+     * providers reject/flag a From they didn't authenticate as); the
+     * organization's own email goes in Reply-To instead, so a reply from the
+     * customer reaches them.
+     */
+    public function sendEmail(): void
+    {
+        csrf_verify();
+        Auth::requireNotImpersonating();
+
+        $id  = (int) ($_POST['invoice_id'] ?? 0);
         $ctx = $this->loadOwnedInvoiceForPdf($id);
         if ($ctx === null) {
             return;
+        }
+
+        // Which page's modal this came from — whitelisted, not an open
+        // redirect (the form only ever sends its own hardcoded hidden value).
+        // Absent/anything else keeps the original /invoices behaviour.
+        $fromOrders = ($_POST['redirect'] ?? '') === '/orders';
+
+        $to      = trim((string) ($_POST['to'] ?? ''));
+        $message = trim((string) ($_POST['message'] ?? ''));
+
+        $errors = [];
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            $errors['to'] = terr('inv.err_email_to');
+        }
+        if ($message === '') {
+            $errors['message'] = terr('inv.err_email_message');
+        }
+
+        if ($errors) {
+            flash('email_errors', $errors);
+            flash('email_old', ['to' => $to, 'message' => $message]);
+            redirect($fromOrders ? '/orders?email_error=' . $id : '/invoices?edit=' . $id . '&email=1#invoice-form');
         }
 
         $html = $this->renderToString('pdf/invoice', [
@@ -273,12 +440,45 @@ final class InvoiceController extends Controller
             'items'         => Invoice::itemsFor($id),
             'org'           => $ctx['org'],
             'bankIbans'     => Organization::bankIbans($ctx['org']),
+            // Emailed copy always carries the signature — the with/without
+            // choice (4.63) is only for the explicit "ექსპორტი PDF" download.
+            'signed'        => true,
         ]);
+        $pdfBytes = Pdf::render($html, $this->pdfFooterHtml());
 
-        // "PH 2026-08-15 0011" -> "PH-2026-08-15-0011.pdf" — spaces are legal
-        // in a Content-Disposition filename, but not worth risking across
-        // browsers/OSes when a hyphen reads exactly the same.
-        Pdf::download($html, str_replace(' ', '-', $ctx['number']) . '.pdf', $this->pdfFooterHtml());
+        $body = nl2br(e($message)) . '<br><br>' . $this->orgSignatureHtml($ctx['org']);
+        $sent = Mailer::send(
+            $to,
+            t('inv.email_subject', $ctx['number']),
+            $body,
+            [['filename' => str_replace(' ', '-', $ctx['number']) . '.pdf', 'content' => $pdfBytes, 'mimeType' => 'application/pdf']],
+            (string) ($ctx['org']['email'] ?? '') !== '' ? (string) $ctx['org']['email'] : null,
+        );
+
+        if ($sent) {
+            // Sent to a customer means it's no longer a draft — see
+            // Invoice::markFinal()'s own docblock. Only on an actual
+            // delivery; a failed send changes nothing.
+            Invoice::markFinal($id);
+        }
+
+        flash($sent ? 'email_sent' : 'email_failed', $ctx['number']);
+        redirect($fromOrders ? '/orders' : '/invoices?edit=' . $id . '#invoice-form');
+    }
+
+    /** Plain-HTML signature block (name/phone/email/address) appended below the sender's own typed message — sendEmail()'s own use, not shared with pdfFooterHtml() (a different document, different rules). */
+    private function orgSignatureHtml(array $org): string
+    {
+        $lines = array_filter([
+            (string) ($org['name'] ?? ''),
+            (string) ($org['phone'] ?? ''),
+            (string) ($org['email'] ?? ''),
+            (string) ($org['address'] ?? ''),
+        ], static fn(string $v): bool => $v !== '');
+
+        return '<div style="color:#555;font-size:13px;border-top:1px solid #ddd;padding-top:8px;">'
+            . implode('<br>', array_map('e', $lines))
+            . '</div>';
     }
 
     /**

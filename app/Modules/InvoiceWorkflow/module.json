@@ -1,0 +1,6 @@
+{
+  "name": "module.invoiceworkflow.name",
+  "description": "module.invoiceworkflow.description",
+  "version": "1.0.0",
+  "enabled_by_default": false
+}

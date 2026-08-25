@@ -46,6 +46,7 @@ $router->post('/invoices', [InvoiceController::class, 'store']);
 $router->get('/invoices/view', [InvoiceController::class, 'show']);
 $router->get('/invoices/export-pdf', [InvoiceController::class, 'exportInvoicePdf']);
 $router->get('/invoices/preview', [InvoiceController::class, 'preview']);
+$router->post('/invoices/send-email', [InvoiceController::class, 'sendEmail']);
 $router->get('/orders', [InvoiceController::class, 'orders']);
 $router->get('/orders/export-pdf', [InvoiceController::class, 'exportOrdersPdf']);
 

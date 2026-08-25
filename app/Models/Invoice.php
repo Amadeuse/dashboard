@@ -18,12 +18,60 @@ use App\Core\Db;
  */
 final class Invoice
 {
-    public const STATUSES = ['draft', 'final', 'due', 'paid'];
+    public const DOCUMENT_STATES = ['draft', 'final'];
 
-    /** "{prefix} {issue_date} {0004}" — the one place this format is written, every view calls this instead of re-formatting. */
+    /**
+     * "{prefix} {issue_date} {0004}" — the one place this format is written,
+     * every view calls this instead of re-formatting. The number itself is
+     * $row['sequence_number'] (migrations/032) — a per-tenant counter set
+     * once at creation (see save()'s $editingId === null branch), not the
+     * row's own id (one global AUTO_INCREMENT shared by every tenant in the
+     * whole table, meaningless as a "your Nth invoice" count). Falls back to
+     * id only for the legacy sliver of rows sequence_number couldn't be
+     * backfilled for — an unresolvable tenant (no created_by, predates
+     * migrations/021) — same edge case itemsFor()/orders.php already treat
+     * as "no better data available", not a regression.
+     */
     public static function number(array $row, string $prefix): string
     {
-        return sprintf('%s %s %04d', $prefix, $row['issue_date'], (int) $row['id']);
+        $n = $row['sequence_number'] ?? $row['id'];
+
+        return sprintf('%s %s %04d', $prefix, $row['issue_date'], (int) $n);
+    }
+
+    /**
+     * What a brand-new invoice's number *would* be right now — invoices.php's
+     * card-header shows this before anything is actually saved, purely a
+     * preview. No FOR UPDATE (that's save()'s own, real-insert-only lock) —
+     * a display value can tolerate a stale read; the real number, decided at
+     * actual save time, is still race-safe on its own.
+     *
+     * @param list<int> $tenantMemberIds
+     */
+    public static function previewNextSequenceNumber(array $tenantMemberIds, int $startNumber): int
+    {
+        if ($tenantMemberIds === []) {
+            return $startNumber;
+        }
+
+        $ph  = implode(',', array_fill(0, count($tenantMemberIds), '?'));
+        $max = Db::all("SELECT MAX(sequence_number) AS m FROM invoices WHERE created_by IN ($ph)", $tenantMemberIds)[0]['m'] ?? null;
+
+        return $max !== null ? max((int) $max + 1, $startNumber) : $startNumber;
+    }
+
+    /**
+     * Sending an invoice to a customer means it's no longer a work-in-progress
+     * draft — InvoiceController::sendEmail() calls this once the email is
+     * actually delivered (not on a failed send). A no-op if already final
+     * (the WHERE just avoids an unnecessary write, not a guard against
+     * anything unsafe).
+     */
+    public static function markFinal(int $id): void
+    {
+        Db::conn()
+            ->prepare("UPDATE invoices SET document_state = 'final' WHERE id = ? AND document_state = 'draft'")
+            ->execute([$id]);
     }
 
     /**
@@ -38,12 +86,13 @@ final class Invoice
      *   a customer's full invoice history is relevant there regardless of
      *   who created each one.
      * @return array<int, array<string, mixed>> newest first, with the customer's
-     *   name/tax id and the creator's name (orders.php's table) joined in.
-     *   creator_name is NULL for invoices predating created_by (migrations/021).
+     *   name/tax id/email and the creator's name (orders.php's table, and its
+     *   "მეილზე გაგზავნა" prefill) joined in. creator_name is NULL for invoices
+     *   predating created_by (migrations/021).
      */
     public static function all(?array $createdByIds = null): array
     {
-        $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, u.name AS creator_name
+        $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, c.customer_email, u.name AS creator_name
                   FROM invoices i
                   JOIN customers c ON c.id = i.customer_id
                   LEFT JOIN users u ON u.id = i.created_by';
@@ -103,7 +152,7 @@ final class Invoice
     }
 
     /**
-     * @param array{customer_id:string,status:string,is_zero:int,is_recurring:int,notes:string,items:list<array{product_id:string,unit_id:string,quantity:string,unit_price:string}>} $clean
+     * @param array{customer_id:string,document_state:string,is_zero:int,is_recurring:int,notes:string,items:list<array{product_id:string,unit_id:string,quantity:string,unit_price:string}>} $clean
      * @param string|null $expectedUpdatedAt for an edit: the `updated_at` the
      *   form was loaded with (a hidden field — see invoices.php). Ignored
      *   when $editingId is null (a brand new row has nothing to conflict with).
@@ -125,9 +174,31 @@ final class Invoice
      * A random view_token is generated on every INSERT (never on UPDATE, never
      * regenerated) — InvoiceController::show()'s no-login "share this invoice
      * with the customer" path checks it, see handoff.md.
+     *
+     * @param list<int>|null $tenantMemberIds only needed when $editingId is
+     *   null — see sequence_number below. Ignored on an edit (an existing
+     *   invoice keeps whatever number it was given at creation, forever).
+     * @param int|null $startNumber organization.invoice_start_number, same
+     *   "only for a new row" rule as $tenantMemberIds.
+     *
+     * sequence_number (migrations/032) is this tenant's own "1, 2, 3, ..."
+     * counter — number()'s actual display value, not the row's shared-table
+     * id. Computed here, inside the transaction, as `MAX(...) FOR UPDATE`:
+     * two concurrent "new invoice" submits from the same tenant lock against
+     * each other on that SELECT, so neither can read a stale max and hand
+     * out a duplicate — the same race protection the edit branch's own
+     * FOR UPDATE gives $expectedUpdatedAt, just for a different column.
+     * Never below the tenant's current max + 1, even if $startNumber was
+     * just lowered — a business/accounting number must never repeat.
      */
-    public static function save(array $clean, ?int $editingId, ?string $expectedUpdatedAt = null, ?int $createdBy = null): ?int
-    {
+    public static function save(
+        array $clean,
+        ?int $editingId,
+        ?string $expectedUpdatedAt = null,
+        ?int $createdBy = null,
+        ?array $tenantMemberIds = null,
+        ?int $startNumber = null,
+    ): ?int {
         $total = 0.0;
         foreach ($clean['items'] as $item) {
             $total += (float) $item['quantity'] * (float) $item['unit_price'];
@@ -149,19 +220,26 @@ final class Invoice
                 return null;
             }
 
-            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, status = ?, is_zero = ?, is_recurring = ?, notes = ? WHERE id = ?')
+            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, document_state = ?, is_zero = ?, is_recurring = ?, notes = ? WHERE id = ?')
                 ->execute([
-                    (int) $clean['customer_id'], $total, $clean['status'],
+                    (int) $clean['customer_id'], $total, $clean['document_state'],
                     $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $editingId,
                 ]);
             $conn->prepare('DELETE FROM invoice_items WHERE invoice_id = ?')->execute([$editingId]);
             $invoiceId = $editingId;
         } else {
+            $memberIds = $tenantMemberIds ?: [$createdBy];
+            $ph  = implode(',', array_fill(0, count($memberIds), '?'));
+            $max = $conn->prepare("SELECT MAX(sequence_number) AS m FROM invoices WHERE created_by IN ($ph) FOR UPDATE");
+            $max->execute($memberIds);
+            $maxSeq = $max->fetchColumn();
+            $sequenceNumber = $maxSeq !== false && $maxSeq !== null ? max((int) $maxSeq + 1, (int) $startNumber) : (int) $startNumber;
+
             $conn->prepare(
-                'INSERT INTO invoices (customer_id, issue_date, total, status, is_zero, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO invoices (sequence_number, customer_id, issue_date, total, document_state, is_zero, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
-                (int) $clean['customer_id'], date('Y-m-d'), $total,
-                $clean['status'], $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $createdBy,
+                $sequenceNumber, (int) $clean['customer_id'], date('Y-m-d'), $total,
+                $clean['document_state'], $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $createdBy,
                 bin2hex(random_bytes(32)),
             ]);
             $invoiceId = (int) $conn->lastInsertId();
@@ -184,22 +262,21 @@ final class Invoice
 
     /**
      * @return array{0: array<string,mixed>, 1: array<string,string>} [clean, errors]
-     *   clean = ['customer_id','status','is_zero','is_recurring','notes',
+     *   clean = ['customer_id','document_state','is_zero','is_recurring','notes',
      *            'items' => list of ['product_id','unit_id','quantity','unit_price']]
      *   notes is free text, no validation — an empty textarea just stores ''.
      */
     public static function validate(array $input): array
     {
-        $status = (string) ($input['status'] ?? '');
+        $documentState = (string) ($input['document_state'] ?? '');
+        $documentState = in_array($documentState, self::DOCUMENT_STATES, true) ? $documentState : self::DOCUMENT_STATES[0];
+
         $clean = [
-            'customer_id'  => trim((string) ($input['customer_id'] ?? '')),
-            // An unrecognized value (missing field, tampered request) just falls
-            // back to 'draft' rather than rejecting the whole submission — status
-            // isn't required input, it's a picklist with a sensible default.
-            'status'       => in_array($status, self::STATUSES, true) ? $status : self::STATUSES[0],
-            'is_zero'      => isset($input['is_zero']) ? 1 : 0,
-            'is_recurring' => isset($input['is_recurring']) ? 1 : 0,
-            'notes'        => trim((string) ($input['notes'] ?? '')),
+            'customer_id'    => trim((string) ($input['customer_id'] ?? '')),
+            'document_state' => $documentState,
+            'is_zero'        => isset($input['is_zero']) ? 1 : 0,
+            'is_recurring'   => isset($input['is_recurring']) ? 1 : 0,
+            'notes'          => trim((string) ($input['notes'] ?? '')),
         ];
         $errors = [];
 

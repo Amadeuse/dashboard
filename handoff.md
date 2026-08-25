@@ -3353,6 +3353,796 @@ user-მა შეამჩნია: 10 გვერდზე (`customers`, `pr
 card-header-ის `4.48`-ის საკუთარი "ახალი ინვოისი"/"ინვოისის
 რედაქტირება" უცვლელად მუშაობს. Console error არცერთგან.
 
+### 4.50 `InvoiceWorkflow` — გადახდის/გაუქმების ცალკე ტრექინგი, Warehouse-ის მსგავს მოდულად
+
+user-მა თავად შემოგვთავაზა ინვოისის სტატუსის კლასიფიკაცია (პირველადი/
+საბოლოო/გადასახდელი/გადახდილი), ვკითხე რჩევა — `invoices.status` აღმოჩნდა
+წმინდა კოსმეტიკური (`ENUM`, ვალიდაცია მხოლოდ 4 მნიშვნელობიდან ერთს
+ამოწმებდა, transition-წესი/history არსად). ჩემი რჩევა (document_state/
+payment_state core-ში გამოყოფა) → user-მა ცალკე მოიტანა უფრო მძიმე,
+ERP-დონის პრომპტი (სრული transition-engine + `invoice_state_history`
+აუდიტი + `fulfillment_state` + actor/role) — შევაფასე overkill-ად ამ
+პროექტისთვის, user-მა აირჩია შუალედური გზა: **მოდულად, Warehouse-ის
+მსგავსად**, სთხოვა არქიტექტურული გამარტივება. სრული გეგმა (Plan mode-ში
+დამტკიცებული): `C:\Users\CHIEF\.claude\plans\floofy-enchanting-oasis.md`.
+
+**ერთი პრინციპული განსხვავება Warehouse-თან**, `AskUserQuestion`-ით
+გადაწყვეტილი: Warehouse-ის მონაცემები (ტიპი/რაოდენობა/სურათი) core
+Products-ის ფორმას საერთოდ არ სჭირდება — 100% განცალკევებული, საკუთარ
+გვერდზეა. გადახდის/გაუქმების მდგომარეობა კი ზუსტად იმ გვერდებზეა საჭირო,
+სადაც უკვე ინვოისებზეა საუბარი (`/orders`, `/invoices`) — user-მა აირჩია
+**პატარა, ცხადი დამატება core-გვერდებზე**, არა ცალკე გვერდი, არა ზოგადი
+Hooks-სისტემა (Warehouse-ის დროს პირდაპირ უარყოფილი).
+
+**მოდულის სქელეტი** (`app/Modules/InvoiceWorkflow/`, Warehouse-ის ზუსტი
+ფორმით) — `module.json` (`enabled_by_default: false`, სხვაობით
+Warehouse-ისგან: ეს არჩევითი გაფართოებაა, არა დეფოლტად ჩართული ბირთვული
+ფუნქცია), `Module.php` (მხოლოდ 3 POST route, GET გვერდი **არ არსებობს**
+— ვიზუალი inline-ია), `Models/InvoiceWorkflow.php`, `Controllers/
+InvoiceWorkflowController.php`, `migrations/001_create_invoice_workflow.sql`.
+
+**სქემა** — ერთი ცხრილი, 1:1 `invoices`-თან (`ProductWarehouse`-ის იგივე
+idiom): `invoice_workflow(invoice_id PK+FK ON DELETE CASCADE, payment_state
+ENUM('unpaid','partial','paid') DEFAULT 'unpaid', paid_amount DECIMAL(12,2),
+cancelled_at TIMESTAMP NULL)`. **ბექფილი არ სჭირდება** — მწკრივი იქმნება
+ლენივად, `upsert()`-ით; `InvoiceWorkflow::forMany()`/`::for()` აკლდება
+default-ს ყოველი მოთხოვნილი invoice_id-სთვის (row რომ არ არსებობდეს
+ბაზაში), ისე რომ view-ის მხარეს "row არ არსებობს"-ის სპეციალური
+შემთხვევა არასდროს გამოჩნდეს.
+
+**core-ის touch point** — ერთი, `ds_menu()`-ს (`helpers.php`) იგივე
+სულისკვეთებით (ეს უკვე ერთადერთი პრეცედენტია, სადაც core შეგნებულად
+იცნობს module-სისტემას): `InvoiceController::index()`/`::orders()`-ში
+`if (in_array('InvoiceWorkflow', ModuleRegistry::enabledCodes(), true) &&
+class_exists(\App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::class))`
+— `class_exists()` guard-ი დამატებითი დაცვაა (`enabled` flag ბაზაში რომ
+დარჩენილიყო, ფაილები კი წაშლილიყო). `InvoiceWorkflow`-ის კლასი **არასდროს
+`use`-ით არ არის იმპორტირებული** core ფაილში — მხოლოდ FQCN ამ guard-ის
+შიგნით, ცხადად ერთჯერადი, არა ზოგადი მექანიზმი. `orders.php`-ს ამავე
+დროს დაემატა **სტატუსის სვეტიც** (მანამდე საერთოდ არ ჰქონდა — მხოლოდ
+dashboard.php-ს ჰქონდა, `$statusBadgeClass`-ის იგივე map გამეორებულია)
+— workflow-ბეჯი მის გვერდით ჩნდება, მხოლოდ თუ მოდული ჩართულია.
+`invoices.php`-ს სტატუს-select-ის ქვემოთ: მიმდინარე payment-ბეჯი, პატარა
+`<select>`+`paid_amount`+submit ფორმა, cancel/uncancel ღილაკი — სამივე
+`/invoice-workflow/*`-ზე, ცალკე `<form>`-ებად (არა `invoiceMainForm`-ის
+ნაწილი).
+
+core-ის სხვა არცერთი ფაილი არ იცვლება — `status` (draft/final/due/paid)
+თავისუფლად რჩება payment_state-ისგან სრულიად დამოუკიდებელი, **განზრახ
+არავითარი cross-validation არ არის** ორ ველს შორის (ორიგინალ პრომპტში
+ცენტრალური მოთხოვნა იყო, აქ შეგნებულად გამოტოვებული — ორივეს ხელით ავსებს
+იგივე ბიზნესის მფლობელი).
+
+**Controller-ის დაცვის ჯაჭვი** (სამივე action-ზე ერთნაირად): `csrf_verify()`
+→ `Auth::requireNotImpersonating()` (SuperUser-ის view-only წესი, `4.41`,
+ამ ახალ write-გზასაც ეხება) → tenant-საკუთრების საკუთარი, დამოუკიდებელი
+შემოწმება (`InvoiceWorkflow::invoiceOwnedBy()`, `User::tenantMemberIds()`-
+ზეა აგებული — არ იზიარებს `InvoiceController`-ის კოდს, Warehouse-ის
+`ProductWarehouse::validate()`-ის იგივე პრინციპი) → `redirect($this->
+backTo())` (`ModuleController::backTo()`-ს იდენტური, დუბლირებული,
+open-redirect-დაცული).
+
+**გადამოწმებულია ცოცხლად**, test1-ით (id 31, temp password, სესიის
+ბოლოს აღდგენილია): install → migration გაეშვა, `invoice_workflow`
+ცხრილი შეიქმნა · disabled → `/orders`/`/invoices?edit=N`-ზე workflow
+UI არ ჩანს, `/invoice-workflow/payment` POST-ზე ცოცხლი სესიითაც 404 ·
+enable (`/settings/modules`-იდან, რეალური დაწკაპებით) → ბეჯი "გადაუხდელი"
+default-ად გამოჩნდა ორივე გვერდზე (row არ არსებობდა ჯერ ბაზაში) ·
+payment_state → `partial` + `paid_amount=500` → DB-ში ზუსტად აისახა,
+ბეჯი ორივე გვერდზე განახლდა · cancel → "გაუქმებული" ბეჯი, ღილაკი
+"გაუქმების მოხსნა"-დ გადაიქცა · uncancel → დაბრუნდა · **cross-tenant
+დაცვა**: tenant-1-ის რეალურ ინვოისზე (`id=5`) პირდაპირი POST fetch-ით
+(admin-ს CSRF token-ითურთ) → **უარყოფილია**, `invoice_workflow`-ში
+row არ შექმნილა (`SELECT` დაადასტურა) — tenant-1-ის მონაცემი ხელუხლებელი
+დარჩა. SuperUser-ის `requireNotImpersonating()` ცალკე არ გადამოწმებულა
+ამ მოდულზე — იგივე, უკვე სხვაგან ამომწურავად დამტკიცებული ერთსტრიქონიანი
+guard-ია (`4.41`), არა ახალი კოდი. ტესტ-ინვოისის (`id=12`, tenant 31)
+`invoice_workflow` row წაშლილია სესიის ბოლოს.
+
+⚠️ **user-მა მოითხოვა მოდულის გამორთვა** ("ჯერ-ჯერობით გაფართოებული
+ინვოისის მოდელი ყველგან იყოს გამორთული, ჯერ ვიმუშაოთ სტანდარტულ
+ინვოისზე") — გამორთულია `/settings/modules`-იდან (ინსტალაცია
+**დარჩა**, მხოლოდ `enabled=0`; `invoice_workflow` ცხრილი/მონაცემები
+არ წაშლილა, disable მონაცემებს არ შლის, `4.19`-ის კონვენციის
+თანახმად). ცოცხლად გადამოწმებულია disable-ის შემდეგ: `/orders`-ზე
+workflow-ბეჯი აღარ ჩანს, მხოლოდ core-ის სტატუსი. ჩართვა ისევ ერთი
+დაწკაპებით შესაძლებელია, თუ/როცა user მზად იქნება.
+
+### 4.51 `invoices.php`-ის სტატუსი — `<select>`-იდან 4 გადამრთველ switch-ზე
+
+user-მა მოითხოვა: ინვოისის სტატუსის (draft/final/due/paid) არჩევა
+"ნულოვანი"/"განმეორებადი"-ის იგივე checkbox-ვიზუალით გაკეთდეს, plain
+`<select>`-ის მაგივრად. დავაზუსტე (`AskUserQuestion`) — 4 `form-switch`
+checkbox, ერთის ჩართვა დანარჩენებს ავტომატურად თიშავს (არა 4 radio ღილაკი).
+
+- `<select>`/`<option>×4` მოშორდა; ამის მაგივრად: `<input type="hidden"
+  id="invoice_status" name="status" form="invoiceMainForm">` (ეს ისევეა
+  `invoiceMainForm`-ზე მიბმული, როგორც select იყო — submit-ის ლოგიკა
+  უცვლელია) + `\App\Models\Invoice::STATUSES`-ზე loop, თითო მნიშვნელობაზე
+  `form-check form-switch` checkbox (`class="invoice-status-toggle"
+  data-status-value="…"`), ზუსტად `invoice_zero`/`invoice_recurring`-ის
+  markup-ის იდენტური.
+- დეფოლტი გამოთვლილია PHP-ში (`$statusValue`), არა JS-ში — `$old['status']`
+  თუ ცარიელი/არასწორია, `Invoice::STATUSES[0]` ('draft') გამოიყენება,
+  ზუსტად ისე, როგორც ცარიელი `<select>` პირველ `<option>`-ს ავტომატურად
+  ირჩევდა.
+- JS (`$scripts`-ის იმავე IIFE-ში, invoices.php-ის ბოლოში): `change`
+  listener ყველა `.invoice-status-toggle`-ზე — თუ ჩართულია, დანარჩენებს
+  თიშავს და hidden ველს ანახლებს; თუ **გამორთვას** ცდილობ (დააჭირე უკვე
+  აქტიურს) — უკან ირთვება იმავე დაწკაპებაში (`box.checked = true`), რადგან
+  ერთი მნიშვნელობა ყოველთვის აქტიური უნდა დარჩეს.
+
+**გადამოწმებულია ცოცხლად**, test1-ით: ახალი ინვოისის გვერდზე დეფოლტად
+"პირველადი" აქტიურია, hidden ველიც `draft`; "საბოლოო"-ზე დაწკაპებით
+დანარჩენი 3 ავტომატურად გამოირთო, hidden → `final`; უკვე აქტიურზე
+ხელახლა დაწკაპებამ ვერ გამორთო (`checked` დარჩა `true`); სრული, ახალი
+ინვოისის შექმნა (`customer_id`+item row-ითურთ) `status=final`-ით →
+ინვოისი წარმატებით შეიქმნა, DB-ში `status='final'` ზუსტად დაფიქსირდა
+(SQL-ით გადამოწმებული). ჩავარდნილი ვალიდაციის resubmit-საც სწორად
+გადარჩა არჩეული მნიშვნელობა (`$old['status']`-იდან). ტესტ-ინვოისი
+წაშლილია, temp password აღდგენილია.
+
+⚠️ **გვერდითი დაკვირვება ამ ტესტირებისას, არ ეხება ამ ცვლილებას**: invoice
+`id=12`-ის ერთადერთ item-row-ს `unit_id` ცარიელი აღმოჩნდა (ერთეულის
+ველის დამატებამდელი, legacy ჩანაწერია — `4.42`-ის დოკუმენტირებული
+NULL-safe შემთხვევა) — ამ კონკრეტული ინვოისის resubmit ყოველთვის
+ვალიდაციას ჩაუვარდება ერთეულის არჩევამდე. ინვოისი `id=12` ხელუხლებელი
+დარჩა (ჩავარდნილმა validate-მა write საერთოდ არ დაუშვა).
+
+### 4.52 `status` (ENUM 4 მნიშვნელობა) → `document_state` + `payment_state` (ორი ცალკე ველი)
+
+`4.51`-ის (4 გადამრთველი, ერთდროულად ერთი აქტიური) მერე user-მა ახალი
+წესები ჩამოწერა: "პირველადი ჩართული ⇒ გადასახდელიც ჩართული",
+"პირველადი გამორთული ⇒ საბოლოო ჩართული", "გადასახდელი ⇔ გადახდილი".
+ეს რეალურად აღწერს **ორ ერთდროულად ჩართულ switch-ს** (მაგ. "საბოლოო"+
+"გადასახდელი") — ერთ `status` ENUM-ში ეს ფიზიკურად ვერ ეტევა.
+დავადასტურე (`AskUserQuestion`) — **ორ ცალკე ველად გავყავი core-ში**
+(`invoices` ცხრილი, არა InvoiceWorkflow მოდული, რომელიც ჯერ გამორთულია).
+ეს ზუსტად ის დაყოფაა, რასაც პირველივე exploratory კითხვაზე ვურჩიე —
+user დამოუკიდებლად იმავე დასკვნამდე მივიდა, checkbox-ების წესებით.
+
+**სქემა** — `migrations/031_split_invoice_status.sql`, ერთ ფაილში
+add+backfill+**drop** (`status` **შეუქცევადად წაშლილია** — ამ ცვლილებაშივე
+განახლდა ყველა წამკითხველი/ჩამწერი, ნახევრადმზა მდგომარეობა აზრი არ
+ჰქონდა, Warehouse-ის `product_type_id` DROP-ის იგივე პრეცედენტი, `4.19`):
+```sql
+ADD COLUMN document_state ENUM('draft','final') DEFAULT 'draft',
+ADD COLUMN payment_state  ENUM('due','paid')    DEFAULT 'due';
+UPDATE invoices SET
+  document_state = IF(status IN ('final','due','paid'), 'final', 'draft'),
+  payment_state  = IF(status = 'paid', 'paid', 'due');
+DROP COLUMN status;
+```
+**გადამოწმებული backfill** (read-only query მიგრაციამდე): ბაზაში
+რეალურად მხოლოდ `draft`(7)/`final`(1) იყო გამოყენებული — `due`/`paid`
+საერთოდ არ არსებობდა, დაბალრისკიანი გადასვლა. მიგრაციის შემდეგ
+დადასტურდა: 7× draft/due, 1× final/due — ზუსტად მოსალოდნელი.
+
+**`Invoice::STATUSES`** → `DOCUMENT_STATES = ['draft','final']` +
+`PAYMENT_STATES = ['due','paid']`. **`Invoice::validate()`-ში ცენტრალური
+cross-rule, server-side** (client-JS მხოლოდ UX-ია):
+```php
+if ($documentState === 'draft') { $paymentState = 'due'; }
+```
+ერთი ხაზი — ორიგინალური მძიმე პრომპტის "cross-dimension ვალიდაცია"
+მოთხოვნა აქ ზუსტად ამდენივეა, რამდენიც რეალურად საჭირო.
+
+**`invoices.php`** — 4 checkbox 2 დამოუკიდებელ ჯგუფად
+(`.document-state-toggle`/`.payment-state-toggle`), თითო ჯგუფი
+`4.51`-ის იგივე exclusive-switch ლოგიკით (ცალკე hidden ველი თითო
+ჯგუფზე). ახალი cross-rule JS: `draft`-ზე გადართვისას "გადახდილი"
+**დისეიბლდება** + უკან "გადასახდელი"-ზე გადადის ავტომატურად;
+`final`-ზე დაბრუნებისას ისევ enable-დება. "გასუფთავება"-ს
+reset-handler-საც ემატება იგივე დეფოლტების ხელით დაბრუნება.
+
+**ყველგან, სადაც ერთი ბეჯი/ლეიბლი იყო, ორი გახდა** — იმეორებს ერთ
+პატერნს 6 ადგილას: `orders.php`/`dashboard.php` (ორი badge, ცალკე
+`$documentStateBadgeClass`/`$paymentStateBadgeClass` map, InvoiceWorkflow
+მოდულის საკუთარი `$paymentBadgeClass`-ისგან დამოუკიდებელი — სახელები
+განზრახ განსხვავებულია, კოლიზია არ არის), `pdf/orders.php` (ერთი
+კომბინირებული ლეიბლი, "საბოლოო · გადასახდელი"), `ds_invoice_preview_script()`
+(`helpers.php` — ორი badge, `fillBadge()` helper), `invoice-preview-modal.php`
+(მეორე `<span id="ipModalPaymentStatus">`). Preview-ღილაკების
+`data-invoice-status` ყველგან ორ `data-invoice-document-state`/
+`data-invoice-payment-state` атрибут-ად გაიყო.
+
+**ენა უცვლელი** — `inv.status_draft/final/due/paid` იგივე ტექსტებით,
+უბრალოდ ორ ჯგუფშია გამოყენებული ერთის მაგივრად, ახალი key არ დასჭირდა.
+
+**გვერდითი დაკვირვება, არაფერი შეცვლილა**: InvoiceWorkflow მოდულს
+(`4.50`, გამორთული) აქვს **საკუთარი** `payment_state`
+(`unpaid`/`partial`/`paid`, `invoice_workflow` ცხრილში) — ახლა core-შიც
+გაჩნდა მსგავსი-სახელიანი ველი (`due`/`paid`, `invoices`-ში), სხვადასხვა
+მნიშვნელობებით/დანიშნულებით. სახელობრივი დამთხვევა შესაძლოა
+დამაბნეველი გახდეს მომავალში — out of scope ამ ცვლილებისთვის.
+
+**გადამოწმებულია ცოცხლად**, test1-ით: default draft+due, "გადახდილი"
+disabled; "საბოლოო"-ზე → "გადახდილი" enable; "გადახდილი"-ზე → due
+unchecked; "პირველადი"-ზე უკან → due ავტომატურად ჩაირთო, paid
+unchecked+disabled — ყველა client-side rule მუშაობს. სრული ახალი
+ინვოისი (customer+item+final+paid) → DB-ში `document_state='final',
+payment_state='paid'` ზუსტად. **სერვერული დაცვა ცალკე გადამოწმებული**:
+UI-ის გვერდის ავლით, hidden ველები პირდაპირ `document_state=draft,
+payment_state=paid`-ზე დაყენებული JS-ით submit-მდე → DB-ში მაინც
+`payment_state=due` შენახულია (server-side rule-მა გადაფარა tampered
+მნიშვნელობა). "გასუფთავება" სწორად აბრუნებს draft+due-ს, `paid`
+ისევ disabled. `/orders`-ზე ორივე ბეჯი ორივე ტესტ-ინვოისზე სწორად
+("საბოლოო გადახდილი", "პირველადი გადასახდელი"). "ნახვა"-მოდალის ორივე
+badge სწორი ტექსტით/ფერით. `/orders/export-pdf` — 200, `application/pdf`,
+mPDF კომბინირებული ლეიბლით შეცდომის გარეშე დარენდერდა. ტესტ-ინვოისები
+(id 23, 24) წაშლილია, temp password აღდგენილია.
+
+### 4.53 `/invoices/view`-ის "PDF შენახვა" — რეალური PDF ექსპორტი, `window.print()`-ის მაგივრად
+
+user-მა მოითხოვა: `/invoices/view`-ის (ბეჭდვადი/გასაზიარებელი გვერდი)
+"PDF შენახვა" ღილაკმა რეალურად "ექსპორტი PDF" გააკეთოს. **ძველი კოდის
+docblock მოძველებული აღმოჩნდა** — წერდა "პროექტს PDF ბიბლიოთეკა არა
+აქვს" (`4.25`-მდელი მდგომარეობა), მაშინ როცა mPDF უკვე დიდი ხანია
+დამატებულია (`4.37`) — ორივე ღილაკი ("PDF შენახვა"/"ბეჭდვა") უბრალოდ
+`window.print()`-ს იძახებდა, ბრაუზერის "Save as PDF"-ზე დამოკიდებული.
+
+**გამოწვევა**: `/invoices/view` წვდომადია **ორნაირად** — ლოგინირებული
+tenant-წევრისთვის (`Auth`) **და** ანონიმური, `?token=`-იანი გაზიარებული
+ბმულით (დამკვეთი, ანგარიშის გარეშე — `view_token`, `InvoiceController::show()`).
+არსებული `InvoiceController::exportInvoicePdf()` (`/orders`-ის საკუთარი
+ღილაკი) კი **ყოველთვის** `Auth::requireUser()`-ს მოითხოვდა, token-ის
+გვერდის ავლის გარეშე — პირდაპირ მიბმა ანონიმურ დამკვეთს login-ზე
+გადაისვრიდა, სრულიად დაარღვევდა გაზიარების feature-ს.
+
+**გადაწყვეტა**: `show()`-ის access-check ლოგიკა (`token` ან
+ლოგინირებული+იგივე-tenant) გავიტანე საერთო `private
+resolveInvoiceForView(int $id, string $token): ?array`-ში — იძახებს
+ორივე `show()` და ახლა **`exportInvoicePdf()`-იც**. `exportInvoicePdf()`-ის
+არსებული გამომძახებელი (`/orders`-ის ღილაკი, token-ის გარეშე) **უცვლელად
+მუშაობს** (იგივე ძველი ქცევა, უბრალოდ ახალი საერთო მეთოდით) — მხოლოდ
+**დაემატა** ახალი, token-ით bypass-ის შესაძლებლობა. `preview()`
+(`/orders`-ის "ნახვა"-მოდალი) **უცვლელი დარჩა**, საკუთარ
+`loadOwnedInvoiceForPdf()`-ს იყენებს კვლავ (ის token-ს არასდროს
+საჭიროებდა — ყოველთვის ლოგინის უკან).
+
+⚠️ **მეორე, დამოუკიდებელი ხარვეზი აღმოვაჩინე ამ დროს**: `public/index.php`-ის
+`PUBLIC_PATHS` (გლობალური login-gate-ის allowlist) შეიცავდა
+`/invoices/view`-ს, მაგრამ **არა** `/invoices/export-pdf`-ს — ანუ
+token-ის ცოდნაც კი არ შველოდა, გლობალური gate-ი კონტროლერამდე
+მისვლამდე უკვე `/login`-ზე გადაისროდა request-ს. დავამატე
+`/invoices/export-pdf`-იც `PUBLIC_PATHS`-ში (`show()`-ის იგივე
+დოკუმენტირებული პრინციპი: ეს **არ** ხდის route-ს რეალურად საჯაროდ —
+`resolveInvoiceForView()` ისევ ითხოვს ან სწორ token-ს, ან
+ლოგინირებულ+იგივე-tenant-ს, allowlist მხოლოდ ბლანკეტურ redirect-ს
+აჩერებს).
+
+`invoice-view.php`-ის "PDF შენახვა" — `window.print()`-ის მაგივრად
+რეალური `<a href="/invoices/export-pdf?id=N&token=...">` — ყოველთვის
+**ინვოისის საკუთარი** `view_token`-ით (არა `$_GET['token']`-ით პირდაპირ),
+რომ ლოგინირებული ნახვისასაც იმუშაოს (URL-ში token არ ეწერება). "ბეჭდვა"
+**უცვლელი** — `window.print()` ისევ სწორია print-ისთვის.
+
+**გადამოწმებულია ცოცხლად**: (1) ლოგინირებული ნახვისას (`?id=12`, token
+URL-ში არაა) — ღილაკის href-ს **ავტომატურად** ჰქონდა სწორი token,
+fetch → 200 `application/pdf`; (2) `curl`-ით, **cookie-ის გარეშე** (ნამდვილი
+ანონიმური მოთხოვნა) იგივე ბმულზე → 200, ნამდვილი 983KB PDF
+(`file`-მა დაადასტურა "PDF document, version 1.4"); (3) **უარყოფითი
+ტესტები** — არასწორი token → `/login` redirect; token საერთოდ არაა →
+`/login`; **სხვა ინვოისის token** ამ ინვოისზე (cross-invoice, tenant-1-ის
+რეალურ `id=5`-ზე) → **უარყოფილია**, `/login` redirect, არაფერი გაჟონა.
+Console error/რეგრესია არსად. `/orders`-ის ძველი "ექსპორტი PDF" ღილაკიც
+(token-ის გარეშე) ცოცხლად გადამოწმდა — უცვლელად მუშაობს.
+
+### 4.54 სამუშაო მაგიდის stat-ბარათები — hover-ეფექტი + დაწკაპებით შესაბამის გვერდზე
+
+user-მა მოითხოვა: 4 stat-ბარათს (დამკვეთები/პროდუქტები/ინვოისები/
+შემოსავალი) hover-ზე პატარა ჩრდილი+ოდნავი "აწევა" დაემატოს, დაწკაპებით
+კი შესაბამის გვერდზე გადავიდეს.
+
+- **CSS**, `design-system.css`-ში, `.ds-card`-ის გვერდით — ახალი
+  `.ds-card-link` კლასი (`display:block`, `color:inherit`,
+  `text-decoration:none`, `transition: transform .15s, box-shadow .15s`),
+  hover/focus-visible-ზე `transform: translateY(-3px)` თავად + შვილი
+  `.ds-card`-ზე `box-shadow: var(--ds-shadow-md)` (უკვე არსებული, light/dark
+  ორივესთვის განსაზღვრული token, `--ds-shadow-sm`-ის იგივე ოჯახიდან).
+- **`dashboard.php`** — თითო stat-ბარათი (`$stats`-ის loop) გაეხვია
+  `<a href="..." class="ds-card-link">`-ში. ახალი `$statUrl` map (key →
+  url): `stat.customers`→`/customers`, `stat.products`→`/products`,
+  `stat.invoices`→`/orders`, `stat.revenue`→`/orders` (ორივე ბოლო ორი
+  ერთსა და იმავე გვერდზე მიდის — "ინვოისები" და "შემოსავალი" ორივე
+  ინვოისების სიიდან გამომდინარეობს, ცალკე "შემოსავლის" გვერდი არსად
+  არსებობს).
+
+**გადამოწმებულია ცოცხლად**: ოთხივე ბარათის href სწორია (JS-ით
+დადასტურებული), დაწკაპებით ნავიგაცია მუშაობს (`/customers`-ზე
+გადამოწმებული, page title/content სწორად შეიცვალა). ⚠️ **hover-ის
+ვიზუალური ეფექტი (`transform`) ვერ დავადასტურე ავტომატურად ამ
+გარემოში** — `box-shadow`-ის ცვლილება (იგივე `:hover` წესის ნაწილი)
+სწორად ფიქსირდება `getComputedStyle`-ით, `transform` კი inline
+style-ითაც კი (`el.style.transform = '...'`) `matrix(1,0,0,1,0,0)`-ს
+აბრუნებდა — თავად `computer{action:"screenshot"}`-იც ამბობს "the
+Browser pane is not displayed, so the page is not compositing frames"
+ამ სესიაში, რაც GPU-კომპოზიტირებულ `transform`-ს (განსხვავებით
+paint-დროინდელი `box-shadow`-ისგან) ვერ ასახავს headless/non-composited
+გარემოში — არა კოდის ბაგი, tooling-შეზღუდვა. CSS პატერნი
+(`a:hover { transform: translateY(-Npx) }`) სტანდარტული და
+ფართოდ-გამოცდილია; **user-ს თავად სჭირდება ცოცხლი ბრაუზერით ვიზუალურად
+გადამოწმება**.
+
+### 4.55 `invoices.php`-ის "მეილზე გაგზავნა" — რეალური ფუნქციონალი, attachment-ით
+
+`inv.action_email` ღილაკი (`4.40`-მდე unwired placeholder) ახლა რეალურად
+აგზავნის ინვოისს მეილზე: მისამართი დამკვეთის მონაცემებიდან, დაერთვება
+ინვოისის PDF, ხელმოწერაში ორგანიზაციის მონაცემები + გამომგზავნის
+ტექსტი. Plan mode-ში დამტკიცებული (`C:\Users\CHIEF\.claude\plans\
+floofy-enchanting-oasis.md`).
+
+**აღმოჩენილი ტექნიკური შეზღუდვა**: მთელი აპი ერთ, გაზიარებულ Gmail SMTP
+ანგარიშზეა (`.env`) — ორგანიზაციის რეალური მეილიდან პირდაპირი "From"
+Gmail-ის anti-spoofing-ს ჩავარდებოდა (reject/spam რისკი). დავადასტურე
+user-თან — **Reply-To ორგანიზაციის მეილზე**, ტექნიკური "From" რჩება
+`MAIL_FROM`-ზე (`noreply@invoice.net`).
+
+**Core-ის გაფართოებები** (ბირთვული ფუნქციაა, არა module):
+- `App\Core\Mailer::send()` — ახალი `$attachments`/`$replyTo` პარამეტრები.
+  Attachment-ის შემთხვევაში `multipart/mixed` (random hex boundary),
+  base64 (`chunk_split()`-ის default 76-char wrap), dot-stuffing ვრცელდება
+  **მთელ** multipart body-ზე. ძველი გამომძახებლები (OTP/reset მეილები)
+  უცვლელად მუშაობენ (ორივე ახალი პარამეტრი default-ით).
+- `App\Core\Pdf` — საერთო mpdf-აწყობა გავიტანე `private buildMpdf()`-ში,
+  `download()` (უცვლელი ქცევა) და ახალი `render(): string`
+  (`Destination::STRING_RETURN`, ბრაუზერში არაფერს არ აგზავნის) ორივე
+  მას იყენებენ.
+
+**`InvoiceController::sendEmail()`** (ახალი, `POST /invoices/send-email`) —
+`csrf_verify()` → `requireNotImpersonating()` → `loadOwnedInvoiceForPdf()`
+(ყოველთვის ლოგინის უკან, `resolveInvoiceForView()`-ის token-გზა **არ**
+გამოიყენება — გაგზავნა ანონიმურად არასდროს ხდება). ვალიდაცია
+(`FILTER_VALIDATE_EMAIL` + არაცარიელი `message`) ჩავარდნისას
+`flash('email_errors'/'email_old')` + redirect `?edit=N&email=1` —
+`preview`/`4.46`-ის ზუსტად იგივე auto-reopen პატერნი. წარმატებისას:
+`pdf/invoice.php` იგივე HTML (`exportInvoicePdf()`-ის იდენტური) →
+`Pdf::render()` → bytes → `Mailer::send()` attachment+Reply-To-ით.
+`store()`-ს დაემატა მესამე `submit_action==='email'` branch, `preview`-ის
+იდენტური (`?edit=N&email=1` redirect ახალი/შეუნახავი ინვოისისთვის).
+
+**`invoices.php`** — ღილაკი `4.46`-ის ორ-მდგომარეობიანი პატერნი
+($editingInvoice !== null → მოდალ-ტრიგერი, else → submit_action=email).
+ახალი `#invoiceEmailModal` (ამ გვერდის საკუთარი, **არა** გაზიარებული —
+ერთადერთი გამომძახებელია). "to"-ს ავტომატური შევსება **იყენებს უკვე
+არსებულ** `customersById` JS ობიექტს (`renderCustomerInfo()`-ს იგივე
+მონაცემი) — ახალი data-* ატრიბუტი არ დასჭირდა. Auto-reopen script
+`?email=1` **ან** `$emailErrors !== []`-ზეა პირობითი (ვალიდაციის
+ჩავარდნისას query flag საერთოდ არ ჩნდება URL-ში, `sendEmail()` პირდაპირ
+`&email=1`-ით აბრუნებს). `$emailErrors`/`$emailOld` **ცალკეა** მთავარი
+ფორმის `$errors`/`$old`-ისგან. `.is-invalid`-ის ავტომატური გასუფთავება
+`4.47`-ის `clearInvalid`-იდან **უფასოდ** მუშაობს ახალ ველებზეც, ცალკე
+კოდი არ დასჭირდა.
+
+**გადამოწმებულია ცოცხლად**, test1-ით: (1) standalone სკრიპტით,
+`Mailer::send()`-ის attachment+Reply-To პირდაპირ (browser-ის გარეშე) —
+SMTP transcript დაასრულა წარმატებით (`bool(true)`), Gmail-მა
+multipart+attachment მიიღო; (2) UI-დან, შენახულ ინვოისზე (`id=12`) —
+მოდალი გაიხსნა, `to` ავტომატურად `client31.8@example.test`-ით შეივსო,
+შეტყობინების ტექსტით submit → **წარმატების flash** გამოჩნდა
+(„ინვოისი „TS1 2026-08-16 0012" გაიგზავნა მეილზე."), რეალურად გაიგზავნა
+`giviberdzenishvili@gmail.com`-ზე (იგივე SMTP ანგარიშის მფლობელი); (3)
+ვალიდაცია — არასწორი `to` + ცარიელი `message` (raw POST-ით) → მოდალი
+ავტომატურად ხელახლა გაიხსნა, ორივე ველზე `.is-invalid` + სწორი
+`terr()`-შეტყობინება, `to`-ს მნიშვნელობა შენარჩუნებული; ველის
+გასწორებამ (`input` event) `.is-invalid` წამოშალა უცვლელი
+`clearInvalid`-ით; (4) ახალი (შეუნახავი) ინვოისი → submit_action=email →
+შეინახა (`id=25`), redirect `?edit=25`-ზე, მოდალი ავტომატურად გაიხსნა,
+`to` სწორად შეივსო. ტესტ-ინვოისი (`id=25`) წაშლილია, temp password
+აღდგენილია. SuperUser `requireNotImpersonating()` ცალკე არ
+გადამოწმებულა ცოცხლად — იგივე, სხვაგან უკვე ამომწურავად დამტკიცებული
+ერთსტრიქონიანი guard-ია (`4.41`), არა ახალი კოდი.
+
+⚠️ **user-მა დამატებით მოითხოვა**: მეილზე გაგზავნამ ავტომატურად უნდა
+გადაიყვანოს `document_state` `draft`-იდან `final`-ზე (ლოგიკური წესი —
+გაგზავნილი ინვოისი აღარაა "სამუშაო ვერსია"). დამატებულია
+`Invoice::markFinal(int $id): void` (`app/Models/Invoice.php`) —
+`UPDATE ... WHERE id = ? AND document_state = 'draft'` (no-op თუ უკვე
+final), გამოძახებულია `sendEmail()`-დან **მხოლოდ** `Mailer::send()`-ის
+წარმატებისას (ჩავარდნილი გაგზავნა არაფერს არ ცვლის). `payment_state`
+ხელუხლებელია — გაგზავნას გადახდასთან კავშირი არა აქვს.
+
+**გადამოწმებულია ცოცხლად**: `id=12` (draft) → მეილის გაგზავნა →
+წარმატების flash → გვერდის refresh-ის შემდეგ checkbox-ებში "საბოლოო"
+ავტომატურად აქტიურდა, "პირველადი" გამორთულია — DB-ითაც დადასტურებული
+(`document_state='final', payment_state='due'` უცვლელი). ტესტის შემდეგ
+`id=12` ხელით დაბრუნებულია `draft`-ზე (გაზიარებული ტესტ-ფიქსტურაა,
+სხვა ტესტებიც მას იყენებენ draft-მდგომარეობით).
+
+### 4.56 ინვოისის ნომერი — `id`-დან ნამდვილ per-tenant თანმიმდევრობაზე + "საწყისი ნომერი"
+
+user-მა მოითხოვა: `/settings/organization`-ში, პრეფიქსის შემდეგ,
+"ინვოისის საწყისი ნომერი" (default `001`).
+
+**გამოკვლევით აღმოჩენილი, გადამწყვეტი დეტალი**: `Invoice::number()`
+დღემდე ნომერს პირდაპირ `invoices.id`-იდან იღებდა — ეს ერთი **გლობალური**
+`AUTO_INCREMENT`-ია მთელი ცხრილისთვის (`migrations/013`,
+`ruler`/tenant-სვეტის გარეშე), **არა** tenant-ის საკუთარი
+თანმიმდევრობა. რეალურ მონაცემებზე გადამოწმებით: tenant 1-ის 9 ინვოისს
+ჰქონდა id-ები `3,5,11,14,18,20,21,26,27` — არათანმიმდევრული, სხვა
+tenant-ების ინვოისების ჩარევის გამო. "საწყისი ნომრის" ამოცანა ამ
+სქემაში საერთოდ არ მუშაობდა — საჭირო გახდა **ნამდვილი per-tenant
+თანმიმდევრული ნომრაცია**, რასაც ეს ცვლილება ამავე დროს აფუძნებს. Plan
+mode-ში დამტკიცებული.
+
+**დადასტურებული user-თან** (`AskUserQuestion`): საწყისი ნომრის
+შეცვლა არსებული ინვოისების შემდეგ **არასდროს დააცდება უკან** — ახალი
+ნომერი = `max(tenant-ის არსებული მაქსიმუმი + 1, ახალი საწყისი ნომერი)`.
+
+**სქემა** — `migrations/032_add_invoice_sequence_number.sql`:
+`organization.invoice_start_number` (default `1`), `invoices.sequence_number`
+(NULL-abble). Backfill — `ROW_NUMBER() OVER (PARTITION BY
+COALESCE(creator.created_by, creator.id) ORDER BY id)`, MySQL 8.4-ის window
+function-ით, ერთ `PDO::exec()`-ში (`031`-ის იგივე multi-statement
+პრეცედენტი). Unresolvable-tenant legacy rows (`created_by IS NULL`) →
+`sequence_number` NULL რჩება, `number()` მათთვის `id`-ზე უბრუნდება
+(იგივე, უკვე დოკუმენტირებული edge case, არა რეგრესია).
+
+**`Invoice::number()`** — `$row['id']` → `$row['sequence_number'] ??
+$row['id']`. ერთადერთი choke point (8 caller, ყველა `SELECT i.*`-დან
+იღებს მონაცემს) — **არცერთ caller-ში ცვლილება არ დასჭირდა**.
+
+**`Invoice::save()`** — ახალი `?array $tenantMemberIds, ?int $startNumber`
+პარამეტრები (მხოლოდ ახალ ინვოისზე საჭირო). სექვენციის გამოთვლა
+**იმავე ტრანზაქციაშია**, რაც optimistic-locking-საც იყენებს —
+`SELECT MAX(sequence_number) ... FOR UPDATE` — ორი პარალელური "ახალი
+ინვოისის" submit იმავე tenant-იდან ვერ მიიღებს ერთსა და იმავე ნომერს
+(row-lock სერიალიზებს). `InvoiceController::store()`-ში `$org`-ის
+საპოვნელი query უბრალოდ უფრო ადრე გადავიდა (იმავე ცვლადს იმეორებს
+success-flash-ის ნომრისთვისაც, ორმაგი query არაა).
+
+**`Organization`** — ახალი `invoice_start_number` ველი
+`validate()`/`save()`-ში (`ctype_digit`, `>= 1`), `organization.php`-ში
+ახალი number input, `org.invoice_prefix`-ის გვერდით.
+
+**გადამოწმებულია**: (1) მიგრაცია `032` გაეშვა, backfill ზუსტად
+მოსალოდნელი გამოვიდა (tenant 1: 9 ინვოისი → `1-9`, id-რიგით; tenant 31:
+1 ინვოისი → `1`); (2) HTTP-ით ცოცხლად, test1-ით — `/settings/organization`-ზე
+ახალი ველი default `1`-ით ჩანს, ახალი ინვოისის შექმნამ (id=28)
+სწორად მიიღო `sequence_number=2` (არსებული მაქსიმუმის გაგრძელება),
+`/orders`-ზე ნომრებმა `TS1 2026-08-16 0001`/`TS1 2026-08-23 0002`
+სწორად აჩვენა (ძველი, id-დაფუძნებული "0012"-ის მაგივრად); (3)
+**პირდაპირ, model-level სკრიპტებით** (browser session-ის მოულოდნელი
+ამოწურვის გამო, ტესტირების შუაში, `SESSION_TIMEOUT_MINUTES=30`-ს
+მიუხედავად — გარემოს/ტესტ-tooling-ის თავისებურებაა, `Organization::save()`-ის
+პირდაპირმა გამოძახებამ დაადასტურა შეცდომის არარსებობა, არა კოდის
+ბაგი): "არასდროს უკან" წესი — `startNumber=1` მაშინ, როცა tenant-ის
+მაქსიმუმი უკვე `2` იყო → ახალმა ინვოისმა მაინც `3` მიიღო, არა `1`;
+"წინ ახტომა" წესი — `startNumber=50` → ახალმა ინვოისმა `50` მიიღო
+ზუსტად. ყველა ტესტ-ინვოისი წაშლილია, `organization.invoice_start_number`
+დაბრუნებულია `1`-ზე (tenant 31), temp password აღდგენილია.
+
+### 4.57 "მეილის შეტყობინების ტექსტი" — ორგანიზაციის საკუთარი, რედაქტირებადი default
+
+თავდაპირველად (`4.56`-ის ბოლოს) "მეილზე გაგზავნა"-ს default ტექსტი
+მხოლოდ hardcoded lang-key იყო (`inv.email_message_default`). user-მა
+დააზუსტა: default **ჩანდეს და რედაქტირებადი იყოს** `/settings/organization`-ზე,
+არა მხოლოდ კოდში ჩაშენებული — ანუ ეს არის ორგანიზაციის საკუთარი
+პარამეტრი, `ინვოისის საწყისი ნომრის` იმავე ნიმუშით.
+
+**სქემა** — `migrations/033_add_org_email_message_default.sql`:
+`organization.email_message_default TEXT NULL`. ცარიელი/`NULL` ნიშნავს
+"ჩაშენებული default-ი გამოიყენე" — არა ცალკე ვალიდაცია (თავისუფალი
+ტექსტია, `invoice_prefix`-ის იგივე optional-ველის კონვენცია).
+
+**`organization.php`** — ახალი `<textarea>`, `invoice_start_number`-ის
+გვერდით. **წინასწარ ივსება** hardcoded default-ით კიდეც მაშინაც, როცა
+ორგანიზაციას საკუთარი ტექსტი ჯერ არ აქვს შენახული (`$emailMessageDefaultVal`,
+`$old ?? $org ?? t('inv.email_message_default')`) — user ხედავს
+ზუსტად იმას, რაც რეალურად გაეგზავნება, ცარიელი textarea-ს მაგივრად.
+
+**`invoices.php`-ის მოდალი** — `$emailDefaults['message']` ახლა
+`$org['email_message_default'] ?: t(...)` — ორგანიზაციის საკუთარი
+ტექსტი უპირატესია, ჩაშენებული მხოლოდ fallback-ია. ჩავარდნილი submit-ის
+`$emailOld` კვლავ ორივეზე მაღლა დგას (`4.56`-ის კონვენცია უცვლელი).
+
+**გადამოწმებულია**: (1) `/settings/organization`-ზე ველი ჩანს,
+default-ითურთ წინასწარ შევსებული; (2) **პირდაპირ, `curl`-ით** (cookie
+jar-ით, `enctype="multipart/form-data"` ფორმის სწორი გაგზავნით) —
+custom ტექსტის შენახვა → 302 success (არა `/login`) → შემდეგ GET-მა
+შენახული ტექსტი დაადასტურა; (3) ველის დაბრუნების (`NULL`) შემდეგ,
+`/invoices`-ის მოდალმა კვლავ ჩაშენებულ default-ზე დაბრუნდა სწორად.
+
+⚠️ **ცოცხლი ბრაუზერით (`Claude_Browser`) ამ ერთი ფორმის submit-ი
+სისტემატურად `/login`-ზე აგდებდა** (session დაკარგული) — მხოლოდ ამ
+კონკრეტულ, `multipart/form-data` ფორმაზე, სხვა ყველა ფორმა (ინვოისი,
+მეილის გაგზავნა, workflow) იმავე სესიაში გამართულად მუშაობდა. `curl`-ით
+(cookie jar-ით, headers/redirect ხელით შემოწმებული) ზუსტად იგივე
+request-მა 100%-იანად იმუშავა (302 → success, არა 419/403/`/login`) —
+ეს ადასტურებს, რომ **კოდი გამართულია**, პრობლემა tooling-ისაა
+(სავარაუდოდ headless ბრაუზერის `requestSubmit()`-ის ქცევა multipart
+ფორმებზე ამ გარემოში), არა აპლიკაციის ბაგი. თუ მომავალში ეს ხელახლა
+გამოჩნდება — `curl`-ით/cookie jar-ით გადამოწმება პირველი ნაბიჯი უნდა
+იყოს, არა კოდის ეჭვქვეშ დაყენება.
+
+⚠️ **ამ `curl`-ტესტმა თავად გამოიწვია რეალური მონაცემის დაზიანება**,
+რომელიც user-მა შემდეგ შენიშნა: Georgian ტექსტი (`name`/`address`)
+`-F` ველებში, ტერმინალიდან პირდაპირ გადაცემული (Windows Git-Bash-ის
+codepage-პრობლემა argv-ში, არა PHP/MySQL-ის მხარეს — `charset=utf8mb4`
+ყველგან სწორია) → tenant 31-ის `name`/`address` "?"-ებით ჩაიწერა
+ბაზაში. **user-მა შენიშნა და მკითხა** ("მისამართი რატომ არის
+კითხვის ნიშნებში?"). გასწორებულია — ორივე ველი აღდგენილია სწორი
+ტექსტით (`Write`-ით შექმნილი ერთჯერადი PHP სკრიპტით, არა shell
+argv-ით, რომ იგივე codepage-პრობლემა არ განმეორდეს). **tenant 1-ის
+(user-ის რეალური) მონაცემი არასდროს შეხებია** — მხოლოდ ტესტ-tenant
+31 დაზიანდა და აღდგა. გაკვეთილი: **Georgian/multi-byte ტექსტი
+ბაზაში არასდროს გადავცე shell argv-ით (`curl -F`/`-d`, ბრძანების
+პარამეტრები)** — მხოლოდ PHP ფაილში (`Write` tool) ჩაწერილი heredoc/
+სტრიქონი, რომელსაც თავად სკრიპტი კითხულობს.
+
+### 4.58 `/settings/organization` — ფულის ერთეულის select → `ds-select`
+
+user-მა მოითხოვა: "ფულის ერთეულის select უნდა იყოს form-floating".
+გამოკვლევით: **სტრუქტურულად** `.form-floating`-ში უკვე იყო გახვეული
+(plain Bootstrap native-select floating), მაგრამ **ერთადერთი დარჩენილი
+select იყო მთელს აპში `data-ds-select`-ის გარეშე** — `4.x`-ის
+"ds-select ყველგან" სტანდარტული წესის (`feedback-ds-select-everywhere`
+memory) გამონაკლისი, დავიწყებული. ამიტომ ვიზუალურად/ქცევით
+გამოირჩეოდა ყველა დანარჩენი floating-select-ისგან (ds-select-ს
+საკუთარი, JS-დაფუძნებული floating მექანიზმი აქვს, არა სუფთა CSS).
+
+დამატებულია `data-ds-select data-search-placeholder/no-results/clear-label`
+— ზუსტად `users.php`-ის "როლის" select-ის იგივე პრეცედენტი (required,
+ყოველთვის აქვს დეფოლტი `GEL`, **ცარიელი `<option>` განზრახ არ
+დამატებულა** — `role`-საც არა აქვს, ეს უკვე მიღებული პატერნია
+required+has-default ველებისთვის, `product_type_id`/`unit_id`-ის
+საწინააღმდეგოდ, რომლებსაც ნამდვილად არა აქვთ გონივრული default და
+ცარიელი option სჭირდებათ).
+
+**გადამოწმებულია ცოცხლად**: `#org_currency` ახლა რეალურ ds-select-შია
+(`.ds-select.ds-select-floating.ds-select-has-value`), trigger-ი
+სწორად აჩვენებს "ლარი (₾)"-ს, ძებნადი dropdown იხსნება.
+
+### 4.59 `/settings/organization` — უფრო კომპაქტური განლაგება
+
+user-მა მოითხოვა: გვერდი ცოტა უფრო კომპაქტურად დალაგდეს (`4.56`/`4.57`-ის
+ახალი ველების დამატებამ — `invoice_start_number`, `email_message_default`
+— გვერდი საგრძნობლად დააგრძელა).
+
+- `row g-4`/`mb-4` → `row g-3`/`mb-3` მთელ ფორმაზე (მოკლე ველების
+  ჯგუფებზე — მჭიდრო, მაგრამ არა ერთმანეთზე მიდებული).
+- **ხელახლა დაჯგუფებული სიგანეების მიხედვით**, არა თანმიმდევრობით:
+  მოკლე ველები (`tax_id`, `phone`) ერთ მწკრივზე `name`-თან ერთად
+  (`col-md-6`+`col-md-3`+`col-md-3`); ოთხივე ყველაზე მოკლე ველი
+  (`invoice_prefix`, `invoice_start_number`, `vat_rate`, `currency`) —
+  ერთ მწკრივზე ოთხივე (`col-md-3` თითო, მანამდე 2 ცალკე მწკრივზე
+  იყო `col-md-6`-ებად); გრძელი ველები (`email`/`website`, `address`,
+  `email_message_default`) უცვლელად თავიანთ სივრცეს ინარჩუნებენ.
+- `email_message_default`-ის textarea: `6rem` → `4.5rem`.
+
+ლოგო/ხელმოწერის ატვირთვის ბლოკი, საბანკო ანგარიშების სექცია და
+ყველა ველის ვალიდაცია/JS **უცვლელი** — მხოლოდ განლაგება/spacing.
+
+**გადამოწმებულია ცოცხლად**: ფორმის სიმაღლე შემცირდა, ოთხივე მოკლე
+ველი ერთ მწკრივზეა (`getBoundingClientRect().top` ოთხივესთვის
+იდენტური), `name`/`tax_id`/`phone`-იც ერთ მწკრივზეა, ds-select
+(`4.58`) და ყველა ველის მონაცემი უცვლელად სწორია, console error
+არსად.
+
+### 4.60 `/invoices`-ის card-header — რეალური, პროგნოზირებული ინვოისის ნომერი "ახალი"-ს მაგივრად
+
+user-მა მოითხოვა: ახალი ინვოისის ფორმის ზედა-მარჯვენა კუთხეში
+გამოჩნდეს რეალური ინვოისის ნომერი (პრეფიქსი+თარიღი+ნომერი), არა
+სტატიკური "ახალი" placeholder. `4.56`-ის per-tenant sequence-ნომრაციის
+წყალობით ეს ახლა შესაძლებელია — შემდეგი ნომერი წინასწარ გამოსათვლელია
+save-ის გარეშეც.
+
+**`Invoice::previewNextSequenceNumber(array $tenantMemberIds, int
+$startNumber): int`** (ახალი) — `save()`-ის იგივე `MAX(sequence_number)`
+ლოგიკა, **`FOR UPDATE`-ის გარეშე** (ეს მხოლოდ ჩვენებაა, არა ნამდვილი
+insert — row-ის დაბლოკვა აქ არ სჭირდება; ნამდვილი, race-safe ნომერი
+მაინც `save()`-შივე გამოითვლება save-ის მომენტში). `InvoiceController::index()`-ში
+ყოველთვის გამოითვლება (`$previewNumber`, `Invoice::number()`-ის
+თანაბარი გამოძახება, synthetic `['sequence_number'=>..,'issue_date'=>..]`
+row-ით — `number()` ხომ მხოლოდ ამ ორ key-ს კითხულობს) და გადაეცემა
+view-ს.
+
+**`invoices.php`** — `invoiceFormNumber`-ის ახალი-ინვოისის branch-მა
+`t('inv.new_number_pending')` (`"ახალი"`) `$previewNumber`-ით ჩაანაცვლა.
+ცალკე `invoiceFormDate` span **მოშორდა** — `Invoice::number()`-ის
+ფორმატი უკვე თავადვე შეიცავს თარიღს ერთ სტრიქონში
+(`"{prefix} {date} {0004}"`), ამიტომ ცალკე თარიღის ჩვენება
+რედუნდანტული გახდა (`$editingInvoice`-იანი შემთხვევისთვის ეს ისედაც
+ასე იყო). "გასუფთავება"-ს reset-handler-იც ამ ერთივე `data-new-label`-ს
+იყენებს (server-side წინასწარ გამოთვლილი, არა client-side ხელახლა
+გამოთვლადი) — edit-დან "ახალზე" დაბრუნებისას ნამდვილი, მიმდინარე
+პროგნოზი ჩნდება, არა ძველი სტატიკური ტექსტი. Dead lang-key
+`inv.new_number_pending` წაშლილია (ka+en) — აღარსად გამოიყენებოდა.
+
+**გადამოწმებულია ცოცხლად**: ახალი ინვოისის გვერდზე card-header-მა
+`TS1 2026-08-24 0002` აჩვენა (tenant-ის მაშინდელი მაქსიმუმი 1-ი
+იყო) → ინვოისი შენახვის შემდეგ **DB-ში ზუსტად** ეს ნომერი დაფიქსირდა
+(`/orders`-ითაც დადასტურებული) → ახალი, ცარიელი ფორმის header-მა
+ავტომატურად განაახლა შემდეგი პროგნოზი `0003`-ზე; `?edit=12`-დან
+"გასუფთავება"-მ სწორად აჩვენა იგივე მიმდინარე პროგნოზი (`0003`), არა
+ძველი placeholder. ტესტ-ინვოისი წაშლილია, temp password აღდგენილია.
+
+### 4.61 CORE ინვოისიდან `payment_state` (გადასახდელი/გადახდილი) მთლიანად ამოღებულია
+
+user-მა (`4.52`-ის two-axis split-ის შემდეგ, დისკუსიის შემდეგ) გადაწყვიტა:
+სტანდარტული/მსუბუქი ინვოისი მხოლოდ `document_state`-ს (პირველადი/
+საბოლოო) ინარჩუნებს — "გადასახდელი/გადახდილი" მცნება, ყველა მასთან
+დაკავშირებულ UI ელემენტთან და კოდთან ერთად, **CORE-დან** მთლიანად
+გაქრა. გადახდის tracking-ის იდეა (არქივის ღილაკი და სხვ.) მხოლოდ
+განიხილებოდა — ცალკე, მომავალი გადაწყვეტილებაა, ახლა **არ** აშენებულა.
+
+**⚠️ scope**: ეს მხოლოდ **core**-ს ეხება. ცალკე, disabled
+`InvoiceWorkflow` მოდულს (`app/Modules/InvoiceWorkflow/*`, საკუთარი
+`invoice_workflow` ცხრილი, საკუთარი `payment_state` ENUM
+unpaid/partial/paid + `paid_amount` + `cancelled_at`) **საერთოდ არ
+შეხებია** — ტექსტურად მსგავსი სახელი, კონცეპტუალურად სხვა ფუნქცია.
+
+- **`migrations/034_drop_invoice_payment_state.sql`** — `ALTER TABLE
+  invoices DROP COLUMN payment_state`. გაშვებულია.
+- **`Invoice.php`** — `PAYMENT_STATES` კონსტანტა წაშლილია (`DOCUMENT_STATES`
+  რჩება); `validate()`-დან `$paymentState`-ის წაკითხვა/ვალიდაცია/
+  "draft⇒due" cross-rule მოშორდა; `save()`-ის INSERT/UPDATE SQL-დან
+  `payment_state` სვეტი გაქრა.
+- **`InvoiceController::index()`** — edit-preload `$old`-დან
+  `payment_state` წაშლილია.
+- **`invoices.php`** — მთლიანი due/paid checkbox-toggle loop,
+  `$paymentState` ცვლადი, hidden `invoice_payment_state` input, მათი JS
+  (`paymentToggles`/`paymentInput`/draft⇒due cross-rule listener-ები,
+  reset-handler-ის შესაბამისი ხაზები) — ყველა წაშლილია. მხოლოდ
+  `document_state`-ის toggle-ჯგუფი რჩება.
+- **`orders.php`, `dashboard.php`** — მეორე (payment) badge და მისი
+  `$paymentStateBadgeClass` მასივი წაშლილია, თითო row-ს ერთი badge
+  (document_state) რჩება.
+- **`pdf/orders.php`** — `$combinedStatus` closure ("draft · due" ტიპის
+  გაერთიანებული სტრიქონი) მოშორდა, სტატუსის სვეტი უბრალო
+  `document_state` label-ს აჩვენებს.
+- **`helpers.php` (`ds_invoice_preview_script()`)** — `due`/`paid` badge
+  class/label წყვილები და `ipModalPaymentStatus`-ის fill-ლოგიკა
+  წაშლილია.
+- **`invoice-preview-modal.php`** — მეორე `<span id="ipModalPaymentStatus">`
+  badge მოშორდა.
+- **`ka.php`/`en.php`** — `inv.status_due`/`inv.status_paid` lang-key-ები
+  წაშლილია.
+
+**Grep-ით დადასტურებული**: core-ში აღარსად რჩება `payment_state` /
+`PAYMENT_STATES` / `status_due` / `status_paid` — დარჩენილი ყველა match
+(`workflow.*` lang-key-ები, `$paymentBadgeClass`, `$workflow['payment_state']`)
+`InvoiceWorkflow` მოდულს ეკუთვნის.
+
+**გადამოწმებულია ცოცხლად** (tenant 31, temp password): `/invoices`
+(ახალი) — მხოლოდ პირველადი/საბოლოო checkbox, due/paid აღარ ჩანს,
+console-შეცდომების გარეშე; `/invoices?edit=12` — იგივე, checkbox-ები
+სწორია; `/orders` — თითო row-ს ერთი badge; dashboard-ის ბოლო-ინვოისების
+ცხრილი — იგივე; preview modal (`/orders`-იდანაც) — ერთი badge,
+`ipModalPaymentStatus` აღარ არსებობს, JS error არ ჩნდება;
+`/orders/export-pdf` (curl+cookie jar) — `200 OK`, ვალიდური PDF, სტატუსის
+სვეტი მხოლოდ document_state label-ს აჩვენებს. `Invoice::save()`-ის
+UPDATE branch პირდაპირ, PHP-ით ტესტირებულია — `payment_state`-ის
+გარეშე SQL შეცდომის გარეშე მუშაობს, invoice id=12 `document_state='draft'`
+უცვლელი დარჩა. ტესტ-მონაცემები არ შექმნილა (არსებული id=12 თავის
+თავდაპირველ მდგომარეობაზე დაბრუნდა), temp password აღდგენილია.
+
+**⚠️ ამ სექციის ტესტირებისას აღმოჩენილი, თვითონ-გამოწვეული ბაგი**
+(დაფიქსირდა მხოლოდ `4.62`-ის ცოცხლი გადამოწმებისას, `total`-ის `0.00`-ად
+ჩვენებით `/orders`-ზე): ზემოთ, "`Invoice::save()`-ის UPDATE branch
+პირდაპირ ტესტირებულია" ნაბიჯზე, `save()`-ს `'items'` key-ის გარეშე
+გამოვუძახე — `save()` კი `total`-ს **ყოველთვის** `$clean['items']`-იდან
+ხელახლა ითვლის და ძველ `invoice_items` row-ებს უპირობოდ შლის, ახლით
+ჩანაცვლების წინ (`Invoice.php:202-256`). `'items'`-ის არარსებობამ
+`total`-ი 0-ზე დააყენა და tenant 31-ის ერთადერთი ტესტ-ინვოისის (id=12)
+line item საერთოდ წაშალა — PHP warning-ებად გამოჩნდა, magically-გავლილი
+ჩავთვალე. **გასწორებულია**: `test-data.sql`-ის ფიქსტურის ორიგინალი
+მნიშვნელობებით აღდგენილია (`total=1656.00`, `invoice_items` row
+`id=21, product_id=20, unit_id=NULL, qty=10.000, price=165.60`), ხელით,
+პირდაპირ SQL-ით. **დასკვნა**: `Invoice::save()` არასდროს გამოსაძახებელია
+ნაწილობრივი/სინთეზური `$clean`-ით — თუნდაც სქემის დონეზე გადამოწმებისთვის
+— აუცილებლად სჭირდება ნამდვილი `'items'` მასივი, თორემ ჩუმად შლის
+line item-ებს.
+
+### 4.62 `/orders`-ის row-actions — "მეილზე გაგზავნა" ყოველ შეკვეთაზე
+
+user-მა მოითხოვა: `/orders`-ის თითოეულ row-ს ჰქონდეს "მეილზე გაგზავნა"
+მოქმედება, ზუსტად იმავე პრინციპით, რაც `/invoices`-ის ფორმას აქვს
+(`4.55`). ახალი endpoint/მოდალი აშენების ნაცვლად, **იგივე** route
+(`POST /invoices/send-email`, `InvoiceController::sendEmail()`) და
+**იგივე** მოდალის მარკაპი გამოიყენება — orders.php-ზე ერთი გაზიარებული
+`#invoiceEmailModal`, თითო row-ს საკუთარი trigger button-ით
+(`data-invoice-id`, `data-customer-email`), invoices.php-ს
+customer-select-დან prefill-ის ნაცვლად.
+
+- **`Invoice::all()`** — SELECT-ს `c.customer_email` დაემატა (მანამდე
+  მხოლოდ `find()` კითხულობდა), "to"-ს row-დანვე prefill-ისთვის.
+- **`InvoiceController::orders()`** — `$org` (default-message text-ისთვის)
+  და `email_errors`/`email_old`/`email_sent`/`email_failed` flash-ები
+  view-ს გადაეცემა — ზუსტად იგივე flash key-ები, რასაც `sendEmail()`
+  უკვე იყენებდა `/invoices`-სთვის (ერთდროულად ორივეს არასდროს სჭირდება,
+  ერთი redirect ერთ გვერდზე მიდის).
+- **`sendEmail()`** — ახალი `$fromOrders = ($_POST['redirect'] ?? '')
+  === '/orders'` whitelist-შემოწმება (**არა** open-redirect — ფორმის
+  hidden `redirect` ველი მუდამ ერთ, hardcoded მნიშვნელობას აგზავნის).
+  ორივე redirect ტოტი (validation-error და success/failure) ამ დროშის
+  მიხედვით ირჩევს `/orders`-ს ან ძველ `/invoices?edit=N`-ს — `redirect`
+  POST-ველის არარსებობისას (invoices.php-ს მოდალს ეს ველი საერთოდ არ
+  აქვს) ქცევა ზუსტად ძველია, `4.55`-ის ცვლილება არ შეხებია.
+- **`orders.php`** — თითო row-ს ახალი `bi-envelope` ღილაკი; მოდალის
+  markup (invoices.php-ს იდენტური, `redirect` hidden ველი `/orders`-ით);
+  `$emailDefaults`/`$emailVal`/`$emailBad` closures (იგივე კონვენცია,
+  4.55-დან გადმოღებული); success/failure alert-ები page-ის თავში.
+  JS: `show.bs.modal`-ზე "to" prefill მხოლოდ ცარიელზე (`data-customer-
+  email`-იდან) — server-rendered `$emailOld` არასდროს ილუპება;
+  reopen-on-error `?email_error=<id>`-ით (invoices.php-ს `?email=1`-ის
+  row-ისთვის ცნობადი ვარიანტი — ერთი `#invoiceEmailTrigger`-ის ნაცვლად
+  სწორი row-ის trigger button-ს პოულობს `data-invoice-id`-ით).
+
+**გადამოწმებულია ცოცხლად** (tenant 31): row-ის ღილაკმა მოდალი გახსნა,
+"to" სწორად `client31.8@example.test`-ით (customer_email) გაივსო,
+"შეტყობინება" org-ის default-ით (`4.57`-ის fallback-ი); ნამდვილი გაგზავნა
+(Gmail SMTP, ფეიკ `.test` domain-ზე) SMTP-დონეზე უარყოფილია, სწორად
+დაბრუნდა `/orders`-ზე (არა `/invoices`) `email_failed` flash-ით, სტატუსი
+"პირველადი" **დარჩა** უცვლელი (`markFinal()` მხოლოდ წარმატებულ send-ზე
+ეშვება — სწორი ქცევა). ვალიდაციის შეცდომა (curl-ით, `to=not-an-email`,
+`message=` ცარიელი) → `/orders?email_error=12`-ზე გადამისამართდა,
+`is-invalid`/`invalid-feedback` სწორად გამოჩნდა, JS-მა სწორი row-ის
+მოდალი გახსნა `data-invoice-id="12"`-ით და query flag URL-დან წაშალა.
+Console error არცერთ ეტაპზე არ ყოფილა. Invoice id=12-ის მონაცემები
+(ზემოთ აღწერილი restore-ის შემდეგ) დაცული დარჩა. Temp password
+აღდგენილია.
+
+### 4.63 "ექსპორტი PDF" → dropdown: ხელმოწერით / ხელმოწერის გარეშე (`/invoices` + `/orders`)
+
+user-მა მოითხოვა: ორივე გვერდის ("ახალი ინვოისი" და "ყველა შეკვეთა")
+"ექსპორტი PDF" ღილაკი ჩამოსაშლელ მენიუდ იქცეს ორი პუნქტით — ხელმოწერით
+და ხელმოწერის გარეშე. თავდაპირველად მხოლოდ ორივე გვერდის **მთავარი**
+ღილაკი (`invoices.php`-ის card-header, `orders.php`-ის page-header)
+გადაკეთდა — მომდევნო შეტყობინებით user-მა დააზუსტა, რომ `/orders`-ის
+**row-დონის** PDF-ხატულაც იგივე dropdown-ი უნდა იყოს, არა ცალკე
+ერთ-კლიკიანი ბმული (იხ. ქვემოთ, addendum). მეილზე თანდართული PDF-იც
+(`sendEmail()`) ყოველთვის ხელმოწერითაა, დროშა მას არ ეხება — ეს
+განზრახ დარჩა უცვლელი, არც არავის უთხოვია.
+
+- **`pdf/invoice.php`** — ახალი `@var bool $signed`; ხელმოწერის `<img>`
+  ბლოკის `if`-ს `$signed &&` დაემატა.
+- **`pdf/orders.php`** — იგივე `$signed`; ცხრილის ქვემოთ ახალი,
+  პირობითი signature-ბლოკი (ორგანიზაციის ხელმოწერის სურათი, `$uploadDir`
+  იგივე კონვენცია, რაც `pdf/invoice.php`-ს აქვს) — მანამდე ეს ფაილი
+  საერთოდ არ აჩვენებდა ხელმოწერას.
+- **`InvoiceController::exportInvoicePdf()`** — კითხულობს `$_GET['sign']`
+  (`'1'` default), გადასცემს `'signed'`-ს template-ს.
+- **`InvoiceController::exportOrdersPdf()`** — იგივე, `$_GET['sign']`-იდან.
+- **`InvoiceController::sendEmail()`** — ცალსახად `'signed' => true`
+  (feature-ს არ ეხება).
+- **`InvoiceController::store()`** — `submit_action === 'export_pdf'`
+  ორ მნიშვნელობად გაიყო: `export_pdf_signed`/`export_pdf_unsigned` —
+  ცალკე "sign" ველის ნაცვლად ორი submit-ღილაკი (JS არ სჭირდება,
+  `dropdown-item`-ებად `<button type="submit" name="submit_action">`).
+  Redirect `/invoices/export-pdf?id=N&sign=1`-ზე ან `&sign=0`-ზე.
+- **`invoices.php`** — card-header-ის ერთი ღილაკი Bootstrap
+  dropdown-ად (`.dropdown` > toggle button + `.dropdown-menu` ორი
+  submit-`.dropdown-item`-ით), იგივე `d-grid gap-2` layout-ში.
+- **`orders.php`** — page-header-ის `<a>` იგივე dropdown-ად, უბრალო
+  `<a href="/orders/export-pdf?sign=1|0">` ბმულებით (ცალკე ინვოისის
+  save აქ არ სჭირდება).
+- **ახალი lang-key-ები** (ka+en): `inv.export_signed`, `inv.export_unsigned`
+  — ორივე გვერდზე გაზიარებული.
+
+**გადამოწმებულია ცოცხლად + curl-ით** (tenant 31, invoice id=12,
+ხელმოწერის ფაილი მართლა არსებობს დისკზე): ორივე dropdown ბრაუზერში
+სწორად იხსნება, ორივე ვარიანტი სწორ href/submit-value-ს იძლევა.
+Byte-დონეზე დადასტურებულია ოთხივე კომბინაცია — invoice PDF
+signed=982943b vs unsigned=486206b, orders-list PDF signed=511889b vs
+unsigned=15131b (სხვაობა ≈ ხელმოწერის jpg-ის ზომის, 496509b — ე.ი.
+სურათი ნამდვილად მხოლოდ "ხელმოწერით" ვარიანტშია ჩართული). `store()`-ის
+ახალი branch-იც პირდაპირ ტესტირებულია (curl, ნამდვილი ფორმის submit
+`submit_action=export_pdf_unsigned`-ით) — სწორად გადამისამართდა
+`/invoices/export-pdf?id=12&sign=0`-ზე და უსწორო (486216b) PDF ჩამოტვირთა.
+ამ ტესტმა temporarily შეცვალა line item-ის `unit_id` (`NULL` → `1`,
+ვალიდაციისთვის საჭირო იყო) — restore-ილია თავდაპირველ `NULL`-ზე. Temp
+password აღდგენილია.
+
+**Addendum** — `orders.php`-ის row-level "მოქმედება" PDF-ხატულაც (თითო
+row-ს, table-ში) იგივე dropdown-ად გადაკეთდა: `<a href="/invoices/
+export-pdf?id=N">` ერთი ბმულის ნაცვლად, `.dropdown d-inline-block` (row-ის
+სხვა icon-ღილაკებთან ერთად ხაზზე დასაყენებლად) — toggle icon-ღილაკი
+(`bi-file-earmark-pdf`) + ორი `dropdown-item` ბმული (`?sign=1`/`?sign=0`),
+ზუსტად იგივე href-ნიმუში, რასაც page-header-ის dropdown-იც იყენებს.
+`php -l` გავლილია; ცოცხლად row-ის dropdown-იც იხსნება, ორივე ბმულს
+სწორი `id`/`sign` აქვს.
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.

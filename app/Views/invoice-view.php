@@ -5,14 +5,18 @@
  * @var array  $items          this invoice's line items, product_name joined in (Invoice::itemsFor())
  * @var array  $org            the organization row (Organization::get())
  * @var array  $bankIbans      organization's bank accounts (Organization::bankIbans())
+ * @var string $viewToken      this invoice's own view_token — always passed
+ *   to "PDF შენახვა"'s link, so it downloads via exportInvoicePdf() whether
+ *   the viewer is logged in or here through an anonymous shared link.
  *
  * A printable document, not a form. The toolbar (number/date + Save PDF/
  * Print) is `.no-print` — design-system.css hides it and the app chrome
- * (sidebar/topbar) together in @media print, so Ctrl+P / the buttons below
- * leave only the card that follows. Neither button generates a real PDF —
- * this project has no PDF library (see handoff.md 4.25/CLAUDE.md's
- * no-Composer stance) — both just call window.print(), and every modern
- * browser's print dialog offers "Save as PDF" as a destination.
+ * (sidebar/topbar) together in @media print, so Ctrl+P / the print button
+ * leave only the card that follows. "Print" still just calls window.print()
+ * (that's genuinely what it should do); "Save PDF" now downloads the real
+ * mPDF file (App\Core\Pdf, see handoff.md 4.37) via exportInvoicePdf(),
+ * same as every other "PDF ექსპორტი" button in the app, instead of relying
+ * on the browser's own print-to-PDF.
  */
 $uploadUrl = '/assets/uploads/organization/';
 $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
@@ -27,9 +31,9 @@ $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
       <span class="text-secondary ms-2"><?= e(ds_date($invoice['issue_date'])) ?></span>
     </div>
     <div class="d-flex gap-3">
-      <button type="button" class="btn btn-link text-decoration-none p-0" onclick="window.print()">
+      <a href="/invoices/export-pdf?id=<?= (int) $invoice['id'] ?>&token=<?= e($viewToken) ?>" class="btn btn-link text-decoration-none p-0">
         <i class="bi bi-file-earmark-pdf me-1"></i><?= t('inv.save_pdf') ?>
-      </button>
+      </a>
       <button type="button" class="btn btn-link text-decoration-none p-0" onclick="window.print()">
         <i class="bi bi-printer me-1"></i><?= t('inv.print') ?>
       </button>
@@ -96,7 +100,7 @@ $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
       </div>
       <div class="col-md-4 text-md-end mt-3 mt-md-0">
         <?php if ($org['signature'] !== null): ?>
-          <img src="<?= e($uploadUrl . $org['signature']) ?>" alt="" style="max-width:160px;max-height:80px;object-fit:contain;">
+          <img src="<?= e($uploadUrl . $org['signature']) ?>" alt="" style="max-width:220px;max-height:220px;object-fit:contain;">
         <?php endif; ?>
       </div>
     </div>

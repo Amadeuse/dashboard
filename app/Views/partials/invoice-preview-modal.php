@@ -1,8 +1,9 @@
 <?php
 /**
  * The "ნახვა" invoice-preview modal — shared markup, `require`d by any page
- * with a button that sets data-invoice-id/data-invoice-number/data-invoice-status
- * and opens #invoicePreviewModal (orders.php's row action, invoices.php's
+ * with a button that sets data-invoice-id/data-invoice-number/
+ * data-invoice-document-state and opens #invoicePreviewModal
+ * (orders.php's row action, invoices.php's
  * "გადახედვა" sidebar button). Pair with ds_invoice_preview_script()
  * (app/Core/helpers.php) for the JS that actually drives it — call that in
  * the including page's own $scripts. Own header/footer chrome (not

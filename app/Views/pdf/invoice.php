@@ -10,6 +10,9 @@
  *                              line item (no unit_id recorded at save time), rendered as blank
  * @var array  $org            the organization row (Organization::get())
  * @var array  $bankIbans      organization's bank accounts (Organization::bankIbans())
+ * @var bool   $signed         whether to show the org's signature image below (4.63 —
+ *                               the "ექსპორტი PDF" dropdown's with/without choice; the
+ *                               emailed copy always passes true, unaffected by it)
  *
  * Single-invoice PDF — the per-row "მოქმედება" export on /orders
  * (InvoiceController::exportInvoicePdf()). Same underlying data as
@@ -291,7 +294,7 @@ $vatAmount = (float) $invoice['total'] * $vatRate / (100 + $vatRate);
     </div>
   <?php endif; ?>
 
-  <?php if ($org['signature'] !== null && is_file($uploadDir . $org['signature'])): ?>
+  <?php if ($signed && $org['signature'] !== null && is_file($uploadDir . $org['signature'])): ?>
     <table class="signature-table">
       <tr>
         <td><img src="<?= e($uploadDir . $org['signature']) ?>" style="max-width:200px;max-height:200px;"></td>

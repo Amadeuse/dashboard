@@ -168,35 +168,35 @@ function ds_invoice_preview_script(): string
         'classes' => [
             'draft' => 'bg-secondary-subtle text-secondary-emphasis',
             'final' => 'bg-info-subtle text-info-emphasis',
-            'due'   => 'bg-warning-subtle text-warning-emphasis',
-            'paid'  => 'bg-success-subtle text-success-emphasis',
         ],
         'labels' => [
             'draft' => t('inv.status_draft'),
             'final' => t('inv.status_final'),
-            'due'   => t('inv.status_due'),
-            'paid'  => t('inv.status_paid'),
         ],
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
 
     return "<script>window.dsOrderStatus = $statusData;</script>\n" . <<<'HTML'
 <script>
 (() => {
-  const modal      = document.getElementById('invoicePreviewModal');
-  const body       = document.getElementById('invoicePreviewBody');
-  const numberEl   = document.getElementById('ipModalNumber');
-  const statusEl   = document.getElementById('ipModalStatus');
-  const printLink  = document.getElementById('ipModalPrintLink');
-  const pdfLink    = document.getElementById('ipModalPdfLink');
-  const loadingHtml = body.innerHTML;
+  const modal        = document.getElementById('invoicePreviewModal');
+  const body         = document.getElementById('invoicePreviewBody');
+  const numberEl     = document.getElementById('ipModalNumber');
+  const statusEl     = document.getElementById('ipModalStatus');
+  const printLink    = document.getElementById('ipModalPrintLink');
+  const pdfLink      = document.getElementById('ipModalPdfLink');
+  const loadingHtml  = body.innerHTML;
+
+  function fillBadge(el, value) {
+    el.textContent = window.dsOrderStatus.labels[value] ?? '';
+    el.className   = 'badge rounded-pill ' + (window.dsOrderStatus.classes[value] ?? '');
+  }
 
   modal.addEventListener('show.bs.modal', async (event) => {
     const btn = event.relatedTarget;
     const id  = btn.dataset.invoiceId;
 
     numberEl.textContent = btn.dataset.invoiceNumber;
-    statusEl.textContent = window.dsOrderStatus.labels[btn.dataset.invoiceStatus] ?? '';
-    statusEl.className   = 'badge rounded-pill ' + (window.dsOrderStatus.classes[btn.dataset.invoiceStatus] ?? '');
+    fillBadge(statusEl, btn.dataset.invoiceDocumentState);
     printLink.href = '/invoices/view?id=' + id;
     pdfLink.href   = '/invoices/export-pdf?id=' + id;
 

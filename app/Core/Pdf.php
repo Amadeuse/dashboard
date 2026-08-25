@@ -57,6 +57,22 @@ final class Pdf
      */
     public static function download(string $html, string $filename, ?string $footerHtml = null): void
     {
+        $mpdf = self::buildMpdf($footerHtml);
+        $mpdf->WriteHTML($html);
+        $mpdf->Output($filename, Destination::DOWNLOAD);
+    }
+
+    /** Same rendering as download(), but returns the raw PDF bytes instead of streaming a browser response — for emailing as an attachment (InvoiceController::sendEmail()). */
+    public static function render(string $html, ?string $footerHtml = null): string
+    {
+        $mpdf = self::buildMpdf($footerHtml);
+        $mpdf->WriteHTML($html);
+
+        return $mpdf->Output('', Destination::STRING_RETURN);
+    }
+
+    private static function buildMpdf(?string $footerHtml): Mpdf
+    {
         $mpdf = self::make($footerHtml !== null
             ? ['margin_bottom' => 25, 'margin_footer' => 10]
             : []);
@@ -65,7 +81,6 @@ final class Pdf
             $mpdf->SetHTMLFooter($footerHtml);
         }
 
-        $mpdf->WriteHTML($html);
-        $mpdf->Output($filename, Destination::DOWNLOAD);
+        return $mpdf;
     }
 }

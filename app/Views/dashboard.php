@@ -13,11 +13,9 @@
  * anywhere else in this app, so they were removed rather than wired to
  * something real that doesn't exist).
  */
-$statusBadgeClass = [
+$documentStateBadgeClass = [
     'draft' => 'bg-secondary-subtle text-secondary-emphasis',
     'final' => 'bg-info-subtle text-info-emphasis',
-    'due'   => 'bg-warning-subtle text-warning-emphasis',
-    'paid'  => 'bg-success-subtle text-success-emphasis',
 ];
 ?>
 
@@ -44,6 +42,14 @@ $statusBadgeClass = [
 <?php endif; ?>
 
 <!-- Stat cards -->
+<?php
+  $statUrl = [
+      'stat.customers' => '/customers',
+      'stat.products'  => '/products',
+      'stat.invoices'  => '/orders',
+      'stat.revenue'   => '/orders',
+  ];
+?>
 <div class="row g-3 mb-3">
   <?php foreach ($stats as $s):
     $toneClass = $s['tone'] === 'primary'
@@ -51,15 +57,17 @@ $statusBadgeClass = [
       : "bg-{$s['tone']}-subtle text-{$s['tone']}-emphasis";
   ?>
   <div class="col-sm-6 col-xl-3">
-    <div class="card ds-card h-100">
-      <div class="card-body d-flex gap-3">
-        <div class="ds-icon-tile <?= $toneClass ?>"><i class="bi <?= $s['icon'] ?>"></i></div>
-        <div>
-          <div class="text-secondary small"><?= t($s['key']) ?></div>
-          <div class="h4 fw-bold mb-0"><?= $s['value'] ?><?= $s['key'] === 'stat.revenue' ? ' ' . e(currency_symbol($currency)) : '' ?></div>
+    <a href="<?= e($statUrl[$s['key']]) ?>" class="ds-card-link">
+      <div class="card ds-card h-100">
+        <div class="card-body d-flex gap-3">
+          <div class="ds-icon-tile <?= $toneClass ?>"><i class="bi <?= $s['icon'] ?>"></i></div>
+          <div>
+            <div class="text-secondary small"><?= t($s['key']) ?></div>
+            <div class="h4 fw-bold mb-0"><?= $s['value'] ?><?= $s['key'] === 'stat.revenue' ? ' ' . e(currency_symbol($currency)) : '' ?></div>
+          </div>
         </div>
       </div>
-    </div>
+    </a>
   </div>
   <?php endforeach; ?>
 </div>
@@ -113,8 +121,8 @@ $statusBadgeClass = [
               <td class="text-secondary" data-order="<?= e($inv['issue_date']) ?>"><?= ds_date($inv['issue_date']) ?></td>
               <td class="fw-semibold" data-order="<?= (float) $inv['total'] ?>"><?= number_format((float) $inv['total'], 2) ?></td>
               <td>
-                <span class="badge rounded-pill <?= $statusBadgeClass[$inv['status']] ?? $statusBadgeClass['draft'] ?>">
-                  <?= t('inv.status_' . $inv['status']) ?>
+                <span class="badge rounded-pill <?= $documentStateBadgeClass[$inv['document_state']] ?>">
+                  <?= t('inv.status_' . $inv['document_state']) ?>
                 </span>
               </td>
             </tr>

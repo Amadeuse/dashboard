@@ -14,6 +14,10 @@
  * @var array   $old            field => value, so a rejected form (or ?edit=N) comes back filled
  * @var ?string $created        formatted number ("PH 2026-08-13 0007") of the invoice just added
  * @var ?string $updated        formatted number of the invoice just edited
+ * @var array   $emailErrors    'to'/'message' => message, from a failed "მეილზე გაგზავნა" submit — separate from $errors, a different form
+ * @var array   $emailOld       'to'/'message' => value, so a rejected email-modal submit comes back filled
+ * @var ?string $emailSent      formatted number of the invoice an email was just sent for
+ * @var ?string $emailFailed    formatted number of the invoice an email failed to send for (SMTP down/misconfigured — see App\Core\Mailer)
  *
  * Create/edit only — the list lives on its own page now (/orders, see
  * orders.php), reached from the sidebar under შეკვეთები > ყველა შეკვეთა.
@@ -35,6 +39,15 @@ $val      = static fn(string $f): string => e((string) ($old[$f] ?? ''));
 $bad      = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
 $selected = static fn(string $f, string $optionValue): string
     => ((string) ($old[$f] ?? '')) === $optionValue ? 'selected' : '';
+
+// Defaults only apply on the modal's first-ever open ($emailOld empty) —
+// a failed submit's own $emailOld (even if the sender cleared the message
+// entirely) always wins, same convention as $val()/$old above. The org's
+// own text (/settings/organization) wins over the built-in one when set —
+// same fallback organization.php's own preview of this field uses.
+$emailDefaults = ['message' => (string) ($org['email_message_default'] ?? '') ?: t('inv.email_message_default')];
+$emailVal = static fn(string $f): string => e((string) ($emailOld[$f] ?? $emailDefaults[$f] ?? ''));
+$emailBad = static fn(string $f): string => isset($emailErrors[$f]) ? 'is-invalid' : '';
 
 /** "{prefix} {issue_date} {0007}" — the same format \App\Models\Invoice::number() writes everywhere else. */
 $invoiceNumber = static fn(array $row): string => \App\Models\Invoice::number($row, $invoicePrefix);
@@ -147,6 +160,16 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
     <i class="bi bi-check-circle-fill"></i> <?= t('inv.updated', e($updated)) ?>
   </div>
 <?php endif; ?>
+<?php if ($emailSent !== null): ?>
+  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
+    <i class="bi bi-check-circle-fill"></i> <?= t('inv.email_sent', e($emailSent)) ?>
+  </div>
+<?php endif; ?>
+<?php if ($emailFailed !== null): ?>
+  <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i> <?= t('inv.email_failed', e($emailFailed)) ?>
+  </div>
+<?php endif; ?>
 <?php if (isset($errors['conflict'])): ?>
   <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
     <i class="bi bi-exclamation-triangle-fill"></i> <?= e($errors['conflict']) ?>
@@ -163,11 +186,10 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
           <h2 class="h6 mb-0" id="invoiceFormTitle"><?= $editing ? t('inv.edit_title') : t('inv.new_title') ?></h2>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2"
-             data-today-formatted="<?= e(date('Y-m-d')) ?>" data-new-label="<?= e(t('inv.new_number_pending')) ?>">
+             data-new-label="<?= e($previewNumber) ?>">
           <span class="fw-bold text-primary text-uppercase small"><?= t('inv.number') ?></span>
           <span class="text-secondary">|</span>
-          <span class="fw-semibold" id="invoiceFormNumber"><?= $editingInvoice !== null ? e($invoiceNumber($editingInvoice)) : t('inv.new_number_pending') ?></span>
-          <span class="text-secondary ms-2" id="invoiceFormDate"><?= $editingInvoice !== null ? '' : e(date('Y-m-d')) ?></span>
+          <span class="fw-semibold" id="invoiceFormNumber"><?= $editingInvoice !== null ? e($invoiceNumber($editingInvoice)) : e($previewNumber) ?></span>
         </div>
       </div>
 
@@ -267,9 +289,11 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
          with none of its functionality (4.40 in handoff.md). action_export_pdf
          submits the same form (form="invoiceMainForm", like the status
          select/checkboxes below already do) with an extra submit_action=
-         export_pdf field — InvoiceController::store() saves/updates exactly
-         as normal, then redirects to the PDF instead of back to /invoices,
-         so one click both saves (or creates) the invoice and downloads it.
+         export_pdf_signed/export_pdf_unsigned field (a dropdown of the two,
+         4.63 in handoff.md, replacing one plain button) — InvoiceController::
+         store() saves/updates exactly as normal, then redirects to the PDF
+         (?sign=1 or 0) instead of back to /invoices, so one click both saves
+         (or creates) the invoice and downloads it.
          action_preview opens the same modal orders.php's "ნახვა" uses
          (4.46 in handoff.md). For an invoice that already has a real id
          (editing one) it's a plain modal-trigger button, no submit
@@ -281,18 +305,33 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
          (populated by the fresh ?edit=N load) once, on page load — same
          modal either way, this branch just needs one extra round trip to
          get a real id first.
-         action_email/whatsapp/share_link remain unwired placeholders,
-         per the original request. -->
+         action_email opens #invoiceEmailModal, same two-state pattern as
+         action_preview above (4.55 in handoff.md). action_whatsapp/
+         share_link remain unwired placeholders, per the original request. -->
     <div class="card ds-card mb-3">
       <div class="card-body d-grid gap-2">
-        <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf" class="btn btn-outline-secondary">
-          <i class="bi bi-file-earmark-pdf me-1"></i><?= t('inv.action_export_pdf') ?>
-        </button>
+        <div class="dropdown">
+          <button type="button" class="btn btn-outline-secondary dropdown-toggle w-100" data-bs-toggle="dropdown" aria-expanded="false">
+            <i class="bi bi-file-earmark-pdf me-1"></i><?= t('inv.action_export_pdf') ?>
+          </button>
+          <ul class="dropdown-menu w-100">
+            <li>
+              <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf_signed" class="dropdown-item">
+                <i class="bi bi-pen me-1"></i><?= t('inv.export_signed') ?>
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf_unsigned" class="dropdown-item">
+                <i class="bi bi-file-earmark me-1"></i><?= t('inv.export_unsigned') ?>
+              </button>
+            </li>
+          </ul>
+        </div>
         <?php if ($editingInvoice !== null): ?>
           <button type="button" class="btn btn-outline-secondary" id="invoicePreviewTrigger" data-bs-toggle="modal" data-bs-target="#invoicePreviewModal"
                   data-invoice-id="<?= (int) $editingInvoice['id'] ?>"
                   data-invoice-number="<?= e($invoiceNumber($editingInvoice)) ?>"
-                  data-invoice-status="<?= e($editingInvoice['status']) ?>">
+                  data-invoice-document-state="<?= e($editingInvoice['document_state']) ?>">
             <i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?>
           </button>
         <?php else: ?>
@@ -300,21 +339,36 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
             <i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?>
           </button>
         <?php endif; ?>
-        <button type="button" class="btn btn-outline-secondary"><i class="bi bi-envelope me-1"></i><?= t('inv.action_email') ?></button>
+        <?php if ($editingInvoice !== null): ?>
+          <button type="button" class="btn btn-outline-secondary" id="invoiceEmailTrigger" data-bs-toggle="modal" data-bs-target="#invoiceEmailModal"
+                  data-invoice-id="<?= (int) $editingInvoice['id'] ?>">
+            <i class="bi bi-envelope me-1"></i><?= t('inv.action_email') ?>
+          </button>
+        <?php else: ?>
+          <button type="submit" form="invoiceMainForm" name="submit_action" value="email" class="btn btn-outline-secondary">
+            <i class="bi bi-envelope me-1"></i><?= t('inv.action_email') ?>
+          </button>
+        <?php endif; ?>
         <button type="button" class="btn btn-outline-secondary"><i class="bi bi-whatsapp me-1"></i><?= t('inv.action_whatsapp') ?></button>
         <button type="button" class="btn btn-outline-secondary"><i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?></button>
 
         <hr class="my-1">
 
-        <div class="form-floating">
-          <select class="form-select" id="invoice_status" name="status" form="invoiceMainForm">
-            <option value="draft" <?= $selected('status', 'draft') ?>><?= t('inv.status_draft') ?></option>
-            <option value="final" <?= $selected('status', 'final') ?>><?= t('inv.status_final') ?></option>
-            <option value="due" <?= $selected('status', 'due') ?>><?= t('inv.status_due') ?></option>
-            <option value="paid" <?= $selected('status', 'paid') ?>><?= t('inv.status_paid') ?></option>
-          </select>
-          <label for="invoice_status"><?= t('inv.status_label') ?></label>
-        </div>
+        <?php
+          $documentState = (string) ($old['document_state'] ?? '');
+          if (!in_array($documentState, \App\Models\Invoice::DOCUMENT_STATES, true)) {
+              $documentState = \App\Models\Invoice::DOCUMENT_STATES[0]; // 'draft'
+          }
+        ?>
+        <label class="form-label mb-1"><?= t('inv.status_label') ?></label>
+        <input type="hidden" id="invoice_document_state" name="document_state" form="invoiceMainForm" value="<?= e($documentState) ?>">
+        <?php foreach (\App\Models\Invoice::DOCUMENT_STATES as $s): ?>
+          <div class="form-check form-switch">
+            <input class="form-check-input document-state-toggle" type="checkbox" id="status_<?= $s ?>"
+                   data-status-value="<?= $s ?>" <?= $documentState === $s ? 'checked' : '' ?>>
+            <label class="form-check-label" for="status_<?= $s ?>"><?= t('inv.status_' . $s) ?></label>
+          </div>
+        <?php endforeach; ?>
 
         <div class="form-check form-switch mt-1">
           <input class="form-check-input" type="checkbox" id="invoice_zero" name="is_zero" form="invoiceMainForm" <?= !empty($old['is_zero']) ? 'checked' : '' ?>>
@@ -324,6 +378,52 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
           <input class="form-check-input" type="checkbox" id="invoice_recurring" name="is_recurring" form="invoiceMainForm" <?= !empty($old['is_recurring']) ? 'checked' : '' ?>>
           <label class="form-check-label" for="invoice_recurring"><?= t('inv.flag_recurring') ?></label>
         </div>
+
+        <?php if ($workflow !== null):
+          $wfInvoiceId = (int) $editingInvoice['id'];
+          $wfRedirect  = '/invoices?edit=' . $wfInvoiceId;
+          $paymentBadgeClass = [
+              'unpaid'  => 'bg-danger-subtle text-danger-emphasis',
+              'partial' => 'bg-warning-subtle text-warning-emphasis',
+              'paid'    => 'bg-success-subtle text-success-emphasis',
+          ];
+        ?>
+        <hr class="my-1">
+        <div class="d-flex align-items-center gap-2">
+          <span class="text-secondary small"><?= t('workflow.label') ?>:</span>
+          <?php if ($workflow['cancelled_at'] !== null): ?>
+            <span class="badge rounded-pill bg-dark-subtle text-dark-emphasis"><?= t('workflow.cancelled_label') ?></span>
+          <?php else: ?>
+            <span class="badge rounded-pill <?= $paymentBadgeClass[$workflow['payment_state']] ?>">
+              <?= t('workflow.payment_' . $workflow['payment_state']) ?>
+            </span>
+          <?php endif; ?>
+        </div>
+
+        <form method="post" action="/invoice-workflow/payment" class="d-flex gap-1">
+          <?= csrf_field() ?>
+          <input type="hidden" name="invoice_id" value="<?= $wfInvoiceId ?>">
+          <input type="hidden" name="redirect" value="<?= e($wfRedirect) ?>">
+          <select class="form-select form-select-sm" name="payment_state" data-ds-select
+                  data-search-placeholder="<?= t('table.search') ?>" data-no-results="<?= t('table.empty') ?>"
+                  data-clear-label="<?= t('cust.clear_field') ?>">
+            <option value="unpaid" <?= $workflow['payment_state'] === 'unpaid' ? 'selected' : '' ?>><?= t('workflow.payment_unpaid') ?></option>
+            <option value="partial" <?= $workflow['payment_state'] === 'partial' ? 'selected' : '' ?>><?= t('workflow.payment_partial') ?></option>
+            <option value="paid" <?= $workflow['payment_state'] === 'paid' ? 'selected' : '' ?>><?= t('workflow.payment_paid') ?></option>
+          </select>
+          <input type="number" step="0.01" min="0" class="form-control form-control-sm" name="paid_amount" value="<?= e($workflow['paid_amount']) ?>">
+          <button type="submit" class="btn btn-sm btn-outline-secondary flex-shrink-0"><i class="bi bi-check-lg"></i></button>
+        </form>
+
+        <form method="post" action="/invoice-workflow/<?= $workflow['cancelled_at'] !== null ? 'uncancel' : 'cancel' ?>">
+          <?= csrf_field() ?>
+          <input type="hidden" name="invoice_id" value="<?= $wfInvoiceId ?>">
+          <input type="hidden" name="redirect" value="<?= e($wfRedirect) ?>">
+          <button type="submit" class="btn btn-sm btn-outline-<?= $workflow['cancelled_at'] !== null ? 'secondary' : 'danger' ?> w-100">
+            <?= $workflow['cancelled_at'] !== null ? t('workflow.uncancel') : t('workflow.cancel') ?>
+          </button>
+        </form>
+        <?php endif; ?>
       </div>
     </div>
 
@@ -342,11 +442,63 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
 
 <?php require APP_PATH . '/Views/partials/invoice-preview-modal.php'; ?>
 
+<div class="modal fade" id="invoiceEmailModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" action="/invoices/send-email" class="modal-content">
+      <?= csrf_field() ?>
+      <input type="hidden" name="invoice_id" id="emailInvoiceId">
+      <div class="modal-header">
+        <h2 class="modal-title h6 mb-0"><?= t('inv.email_modal_title') ?></h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= t('inv.close') ?>"></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-floating mb-1">
+          <input type="email" class="form-control <?= $emailBad('to') ?>" id="emailTo" name="to" value="<?= $emailVal('to') ?>" placeholder=" " required>
+          <label for="emailTo"><?= t('inv.email_to') ?></label>
+        </div>
+        <?php if (isset($emailErrors['to'])): ?><div class="invalid-feedback d-block"><?= e($emailErrors['to']) ?></div><?php endif; ?>
+
+        <div class="form-floating mt-2">
+          <textarea class="form-control <?= $emailBad('message') ?>" id="emailMessage" name="message"
+                    placeholder="<?= t('inv.email_message_placeholder') ?>" style="height:8rem" required><?= $emailVal('message') ?></textarea>
+          <label for="emailMessage"><?= t('inv.email_message') ?></label>
+        </div>
+        <?php if (isset($emailErrors['message'])): ?><div class="invalid-feedback d-block"><?= e($emailErrors['message']) ?></div><?php endif; ?>
+
+        <div class="text-secondary small mt-2">
+          <div><i class="bi bi-paperclip me-1"></i><?= t('inv.email_attachment_note') ?></div>
+          <div><i class="bi bi-signpost-split me-1"></i><?= t('inv.email_signature_note') ?></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= t('inv.close') ?></button>
+        <button type="submit" class="btn btn-primary"><i class="bi bi-send me-1"></i><?= t('inv.email_send') ?></button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <?php
 $scripts = ds_invoice_preview_script() . <<<'HTML'
 
 <script>
 (() => {
+  // Status switches — draft/final, exactly one checked, mirrored into the
+  // hidden #invoice_document_state.
+  const documentToggles = document.querySelectorAll('.document-state-toggle');
+  const documentInput   = document.getElementById('invoice_document_state');
+
+  function wireExclusiveGroup(toggles, hiddenInput) {
+    toggles.forEach((box) => {
+      box.addEventListener('change', () => {
+        if (!box.checked) { box.checked = true; return; } // can't leave zero active
+        toggles.forEach((other) => { if (other !== box) other.checked = false; });
+        hiddenInput.value = box.dataset.statusValue;
+      });
+    });
+  }
+  wireExclusiveGroup(documentToggles, documentInput);
+
   const container   = document.getElementById('invoiceItems');
   const grandTotalEl = document.getElementById('invoiceGrandTotal');
   const vatEl        = document.getElementById('invoiceVat');
@@ -363,6 +515,21 @@ $scripts = ds_invoice_preview_script() . <<<'HTML'
   const customerLabels = customerInfoPanel ? JSON.parse(customerInfoPanel.dataset.fieldLabels) : {};
   const customerInfoEmptyText = customerInfoPanel?.dataset.emptyText ?? '';
   const CUSTOMER_INFO_FIELDS = ['customer_taxid', 'customer_contact', 'customer_phone', 'customer_email', 'customer_address', 'customer_info'];
+
+  // "მეილზე გაგზავნა" modal — reuses customersById (already built above for
+  // the customer-info panel) to prefill "to", instead of a separate
+  // data-invoice-* attribute. Only fills it when empty, so a failed
+  // submit's own $emailOld value (server-rendered into the input) is never
+  // clobbered on reopen.
+  document.getElementById('invoiceEmailModal')?.addEventListener('show.bs.modal', (event) => {
+    const btn = event.relatedTarget;
+    document.getElementById('emailInvoiceId').value = btn?.dataset.invoiceId ?? '';
+    const toInput = document.getElementById('emailTo');
+    if (!toInput.value) {
+      const customerId = document.getElementById('customer_id').value;
+      toInput.value = customersById[customerId]?.customer_email ?? '';
+    }
+  });
 
   // Re-rendered from scratch on every selection change, not just toggled —
   // simplest way to guarantee it never shows a stale customer's details.
@@ -537,8 +704,7 @@ $scripts = ds_invoice_preview_script() . <<<'HTML'
     const submitBtn = document.getElementById('invoiceSubmitBtn');
     const labelSpan = document.getElementById('invoiceSubmitLabel');
     const numberSpan = document.getElementById('invoiceFormNumber');
-    const dateSpan   = document.getElementById('invoiceFormDate');
-    const meta = numberSpan.closest('[data-today-formatted]');
+    const meta = numberSpan.closest('[data-new-label]');
     const formHeader = document.getElementById('invoiceFormHeader');
     const formTitle  = document.getElementById('invoiceFormTitle');
     if (!form) return;
@@ -548,10 +714,12 @@ $scripts = ds_invoice_preview_script() . <<<'HTML'
       updatedAtInput.value = '';
       labelSpan.textContent = submitBtn.dataset.labelAdd;
       numberSpan.textContent = meta.dataset.newLabel;
-      dateSpan.textContent = meta.dataset.todayFormatted;
       formHeader.classList.remove('bg-warning-subtle');
       formHeader.classList.add('bg-transparent');
       formTitle.textContent = formHeader.dataset.titleAdd;
+      document.getElementById('status_draft').checked = true;
+      document.getElementById('status_final').checked = false;
+      document.getElementById('invoice_document_state').value = 'draft';
       setTimeout(() => {
         customerSelect.dsSelect?.refresh();
         container.innerHTML = '';
@@ -584,6 +752,22 @@ if (isset($_GET['preview']) && $editingInvoice !== null) {
 <script>
 document.getElementById('invoicePreviewTrigger')?.click();
 history.replaceState(null, '', location.pathname + location.search.replace(/[?&]preview=1/, ''));
+</script>
+HTML;
+}
+
+// Same trick for "მეილზე გაგზავნა" — a save-then-redirect (?email=1, after
+// submit_action=email on an unsaved invoice) *or* a failed send/validation
+// (InvoiceController::sendEmail() flashes email_errors and redirects with
+// the same flag) both need the modal open again on load, not just a plain
+// page. $emailErrors reopening (not just ?email=1) matters here: the flag
+// isn't in the URL on that path, sendEmail() put it there itself.
+if (($editingInvoice !== null) && (isset($_GET['email']) || $emailErrors !== [])) {
+    $scripts .= <<<'HTML'
+
+<script>
+document.getElementById('invoiceEmailTrigger')?.click();
+history.replaceState(null, '', location.pathname + location.search.replace(/[?&]email=1/, ''));
 </script>
 HTML;
 }

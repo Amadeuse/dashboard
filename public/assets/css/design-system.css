@@ -297,6 +297,23 @@ details.card { interpolate-size: allow-keywords; }
   box-shadow: var(--ds-shadow-sm);
 }
 
+/* A .ds-card wrapped in this — dashboard.php's stat cards — lifts on hover to read as clickable. */
+.ds-card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.ds-card-link:hover,
+.ds-card-link:focus-visible {
+  color: inherit;
+  transform: translateY(-3px);
+}
+.ds-card-link:hover .ds-card,
+.ds-card-link:focus-visible .ds-card {
+  box-shadow: var(--ds-shadow-md);
+}
+
 .ds-icon-tile {
   width: 46px; height: 46px; border-radius: var(--ds-radius);
   display: flex; align-items: center; justify-content: center; font-size: 1.2rem;

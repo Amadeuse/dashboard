@@ -5,6 +5,7 @@
  * @var string $invoicePrefix organization.invoice_prefix, or "INV"
  * @var array  $org           Organization::get() — name for the header, currency for amounts
  * @var string $generatedAt   already-formatted "generated at" timestamp
+ * @var bool   $signed        whether to show the org's signature image below the table (4.63)
  *
  * Plain, mPDF-safe HTML — no Bootstrap grid/flex/utility classes, mPDF's CSS
  * support doesn't cover those. Rendered via Controller::renderToString() (no
@@ -12,6 +13,7 @@
  * InvoiceController::exportOrdersPdf().
  */
 $invoiceNumber = static fn(array $row): string => \App\Models\Invoice::number($row, $invoicePrefix);
+$uploadDir     = ROOT_PATH . '/public/assets/uploads/organization/';
 
 // '0' is how legacy/imported rows spell "no tax id" — same treatment orders.php gives it.
 $taxId = static function (array $row): string {
@@ -22,8 +24,6 @@ $taxId = static function (array $row): string {
 $statusLabels = [
     'draft' => t('inv.status_draft'),
     'final' => t('inv.status_final'),
-    'due'   => t('inv.status_due'),
-    'paid'  => t('inv.status_paid'),
 ];
 
 $grandTotal = array_sum(array_map(static fn(array $r): float => (float) $r['total'], $rows));
@@ -65,7 +65,7 @@ $grandTotal = array_sum(array_map(static fn(array $r): float => (float) $r['tota
         <td><?= $taxId($inv) ?></td>
         <td><?= e($inv['creator_name'] ?? '—') ?></td>
         <td class="amount"><?= e(money((float) $inv['total'], $org['currency'])) ?></td>
-        <td><?= e($statusLabels[$inv['status']] ?? $inv['status']) ?></td>
+        <td><?= e($statusLabels[$inv['document_state']] ?? $inv['document_state']) ?></td>
       </tr>
       <?php endforeach; ?>
     </tbody>
@@ -77,5 +77,15 @@ $grandTotal = array_sum(array_map(static fn(array $r): float => (float) $r['tota
       </tr>
     </tfoot>
   </table>
+
+  <?php if ($signed && ($org['signature'] ?? null) !== null && is_file($uploadDir . $org['signature'])): ?>
+    <table style="margin-top:20px;">
+      <tr>
+        <td style="border-bottom:0; text-align:right; padding:0;">
+          <img src="<?= e($uploadDir . $org['signature']) ?>" style="max-width:200px;max-height:200px;">
+        </td>
+      </tr>
+    </table>
+  <?php endif; ?>
 </body>
 </html>

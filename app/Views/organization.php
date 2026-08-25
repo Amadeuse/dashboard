@@ -10,6 +10,11 @@ $bad      = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : 
 $selected = static fn(string $f, string $optionValue): string
     => ((string) ($old[$f] ?? $org[$f] ?? 'GEL')) === $optionValue ? 'selected' : '';
 $uploadUrl = '/assets/uploads/organization/';
+
+// Shown pre-filled until the org saves its own text — invoices.php's email
+// modal falls back to the exact same t() key when $org['email_message_default']
+// is still empty, so what's visible here is genuinely what gets sent.
+$emailMessageDefaultVal = e((string) ($old['email_message_default'] ?? $org['email_message_default'] ?? t('inv.email_message_default')));
 ?>
 
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
@@ -34,7 +39,7 @@ $uploadUrl = '/assets/uploads/organization/';
     <form method="post" action="/settings/organization" enctype="multipart/form-data" novalidate>
       <?= csrf_field() ?>
 
-      <div class="row g-4 mb-4">
+      <div class="row g-3 mb-3">
         <div class="col-auto">
           <div class="ds-product-thumb-wrap" style="width:140px;">
           <label for="org_logo" class="ds-product-thumb <?= $bad('logo') ?>" style="width:140px;height:140px;" title="<?= t('org.logo') ?>">
@@ -72,7 +77,7 @@ $uploadUrl = '/assets/uploads/organization/';
         </div>
       </div>
 
-      <div class="row g-4">
+      <div class="row g-3">
         <div class="col-md-6">
           <div class="form-floating">
             <input type="text" class="form-control <?= $bad('name') ?>" id="org_name" name="name" value="<?= $val('name') ?>" placeholder=" " maxlength="255" required>
@@ -81,13 +86,21 @@ $uploadUrl = '/assets/uploads/organization/';
           </div>
           <?php if (isset($errors['name'])): ?><div class="invalid-feedback d-block"><?= e($errors['name']) ?></div><?php endif; ?>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-3">
           <div class="form-floating">
             <input type="text" class="form-control <?= $bad('tax_id') ?>" id="org_tax_id" name="tax_id" value="<?= $val('tax_id') ?>" placeholder=" " maxlength="64">
             <label for="org_tax_id"><?= t('org.tax_id') ?></label>
             <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
           </div>
           <?php if (isset($errors['tax_id'])): ?><div class="invalid-feedback d-block"><?= e($errors['tax_id']) ?></div><?php endif; ?>
+        </div>
+        <div class="col-md-3">
+          <div class="form-floating">
+            <input type="tel" class="form-control <?= $bad('phone') ?>" id="org_phone" name="phone" value="<?= $val('phone') ?>" placeholder=" " maxlength="32">
+            <label for="org_phone"><?= t('auth.phone') ?></label>
+            <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
+          </div>
+          <?php if (isset($errors['phone'])): ?><div class="invalid-feedback d-block"><?= e($errors['phone']) ?></div><?php endif; ?>
         </div>
 
         <div class="col-md-6">
@@ -107,15 +120,16 @@ $uploadUrl = '/assets/uploads/organization/';
           <?php if (isset($errors['website'])): ?><div class="invalid-feedback d-block"><?= e($errors['website']) ?></div><?php endif; ?>
         </div>
 
-        <div class="col-md-6">
+        <div class="col-12">
           <div class="form-floating">
-            <input type="tel" class="form-control <?= $bad('phone') ?>" id="org_phone" name="phone" value="<?= $val('phone') ?>" placeholder=" " maxlength="32">
-            <label for="org_phone"><?= t('auth.phone') ?></label>
+            <input type="text" class="form-control <?= $bad('address') ?>" id="org_address" name="address" value="<?= $val('address') ?>" placeholder=" " maxlength="255">
+            <label for="org_address"><?= t('org.address') ?></label>
             <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
           </div>
-          <?php if (isset($errors['phone'])): ?><div class="invalid-feedback d-block"><?= e($errors['phone']) ?></div><?php endif; ?>
+          <?php if (isset($errors['address'])): ?><div class="invalid-feedback d-block"><?= e($errors['address']) ?></div><?php endif; ?>
         </div>
-        <div class="col-md-6">
+
+        <div class="col-md-3">
           <div class="form-floating">
             <input type="text" class="form-control <?= $bad('invoice_prefix') ?>" id="org_invoice_prefix" name="invoice_prefix" value="<?= $val('invoice_prefix') ?>" placeholder=" " maxlength="16">
             <label for="org_invoice_prefix"><?= t('org.invoice_prefix') ?></label>
@@ -127,8 +141,18 @@ $uploadUrl = '/assets/uploads/organization/';
             <div class="form-text"><?= t('org.invoice_prefix_hint') ?></div>
           <?php endif; ?>
         </div>
-
-        <div class="col-md-6">
+        <div class="col-md-3">
+          <div class="form-floating">
+            <input type="number" min="1" step="1" class="form-control <?= $bad('invoice_start_number') ?>" id="org_invoice_start_number" name="invoice_start_number" value="<?= $val('invoice_start_number') ?>" placeholder=" ">
+            <label for="org_invoice_start_number"><?= t('org.invoice_start_number') ?></label>
+          </div>
+          <?php if (isset($errors['invoice_start_number'])): ?>
+            <div class="invalid-feedback d-block"><?= e($errors['invoice_start_number']) ?></div>
+          <?php else: ?>
+            <div class="form-text"><?= t('org.invoice_start_number_hint') ?></div>
+          <?php endif; ?>
+        </div>
+        <div class="col-md-3">
           <div class="form-floating">
             <input type="number" step="0.01" min="0" max="100" class="form-control <?= $bad('vat_rate') ?>" id="org_vat_rate" name="vat_rate" value="<?= $val('vat_rate') ?>" placeholder=" ">
             <label for="org_vat_rate"><?= t('org.vat_rate') ?></label>
@@ -136,9 +160,11 @@ $uploadUrl = '/assets/uploads/organization/';
           </div>
           <?php if (isset($errors['vat_rate'])): ?><div class="invalid-feedback d-block"><?= e($errors['vat_rate']) ?></div><?php endif; ?>
         </div>
-        <div class="col-md-6">
+        <div class="col-md-3">
           <div class="form-floating">
-            <select class="form-select <?= $bad('currency') ?>" id="org_currency" name="currency">
+            <select class="form-select <?= $bad('currency') ?>" id="org_currency" name="currency"
+                    data-ds-select data-search-placeholder="<?= t('table.search') ?>"
+                    data-no-results="<?= t('table.empty') ?>" data-clear-label="<?= t('cust.clear_field') ?>">
               <option value="GEL" <?= $selected('currency', 'GEL') ?>><?= t('org.currency_gel') ?></option>
               <option value="USD" <?= $selected('currency', 'USD') ?>><?= t('org.currency_usd') ?></option>
             </select>
@@ -147,13 +173,17 @@ $uploadUrl = '/assets/uploads/organization/';
           <?php if (isset($errors['currency'])): ?><div class="invalid-feedback d-block"><?= e($errors['currency']) ?></div><?php endif; ?>
         </div>
 
-        <div class="col-md-12">
+        <div class="col-12">
           <div class="form-floating">
-            <input type="text" class="form-control <?= $bad('address') ?>" id="org_address" name="address" value="<?= $val('address') ?>" placeholder=" " maxlength="255">
-            <label for="org_address"><?= t('org.address') ?></label>
-            <button type="button" class="btn-close btn-clear" aria-label="<?= t('cust.clear_field') ?>"></button>
+            <textarea class="form-control <?= $bad('email_message_default') ?>" id="org_email_message_default" name="email_message_default"
+                      placeholder=" " style="height:4.5rem"><?= $emailMessageDefaultVal ?></textarea>
+            <label for="org_email_message_default"><?= t('org.email_message_default') ?></label>
           </div>
-          <?php if (isset($errors['address'])): ?><div class="invalid-feedback d-block"><?= e($errors['address']) ?></div><?php endif; ?>
+          <?php if (isset($errors['email_message_default'])): ?>
+            <div class="invalid-feedback d-block"><?= e($errors['email_message_default']) ?></div>
+          <?php else: ?>
+            <div class="form-text"><?= t('org.email_message_default_hint') ?></div>
+          <?php endif; ?>
         </div>
 
         <div class="col-md-12">
