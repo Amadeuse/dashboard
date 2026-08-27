@@ -4143,6 +4143,239 @@ export-pdf?id=N">` ერთი ბმულის ნაცვლად, `.drop
 `php -l` გავლილია; ცოცხლად row-ის dropdown-იც იხსნება, ორივე ბმულს
 სწორი `id`/`sign` აქვს.
 
+### 4.64 `/invoices`-იდან წარმატებული "მეილზე გაგზავნა" → სამუშაო მაგიდაზე გადამისამართება
+
+user-მა შენიშნა რისკი: `/invoices?edit=N`-იდან მეილზე გაგზავნა
+ავტომატურად ცვლის სტატუსს პირველადი→საბოლოო (`4.55`-ის `markFinal()`),
+მაგრამ გაგზავნის შემდეგ page ისევ იმავე `?edit=N` ფორმაზე რჩებოდა —
+იმავე ფორმის submit-ღილაკის ("დამატება"/"განახლება") შემთხვევით ხელახლა
+დაჭერა ამ **უკვე გაგზავნილი** ინვოისის დუბლირების საფრთხეს ქმნიდა.
+გადაწყვეტა: **მხოლოდ** წარმატებული გაგზავნის შემდეგ (`$sent === true`,
+ანუ სტატუსიც ნამდვილად შეიცვალა) და **მხოლოდ** `/invoices`-კონტექსტში
+(არა `/orders`-იდან, სადაც ეს რისკი საერთოდ არ არსებობს — იქ ფორმა
+საერთოდ არ ჩანს), redirect `/`-ზე (სამუშაო მაგიდა) მიდის ფორმის
+გვერდის ნაცვლად. წარუმატებელი გაგზავნა (SMTP შეცდომა) და ვალიდაციის
+შეცდომა უცვლელია — სტატუსი მაშინ არ იცვლება, დუბლირების რისკიც არ
+დგება, ამიტომ `?edit=N`-ზე დარჩენა (retry-სთვის) კვლავ სწორია.
+
+- **`InvoiceController::sendEmail()`** — success-redirect-ის წინ ახალი
+  `if ($sent && !$fromOrders) { redirect('/'); }`, ძველი
+  `redirect($fromOrders ? '/orders' : '/invoices?edit=...')` ხაზი
+  უცვლელად რჩება ყველა დანარჩენი შემთხვევისთვის (fallback).
+- **`DashboardController::index()`** — ახალი `emailSent`/`emailFailed`
+  flash-ები (იგივე key-ები, რასაც `invoices.php`/`orders.php` უკვე
+  კითხულობდნენ — `4.55`/`4.62`) — წარმატებული გაგზავნის შეტყობინება
+  ახლა აქ მოიხმარება, თორემ session-ში დარჩებოდა და მომდევნო
+  `/invoices`/`/orders` ვიზიტისას გამოჩნდებოდა შეცდომით.
+- **`dashboard.php`** — იგივე ორი alert-ბლოკი, რაც `invoices.php`/
+  `orders.php`-ს აქვს (`alert-success`/`alert-warning`, `inv.email_sent`/
+  `inv.email_failed`) — ახალი lang-key არ დასჭირვებია, არსებულები
+  გაზიარებულია მესამედაც.
+
+**გადამოწმებულია ცოცხლად, ნამდვილი SMTP-ის გარეშე**: დროებით ლოკალური
+mock SMTP server (PHP socket, ყველა STMP-ბრძანებას წარმატებით
+პასუხობს, არაფერს არ აგზავნის) + `.env`-ის დროებითი patch
+(`MAIL_HOST=127.0.0.1`, სხვა ცვლილებები restore-ის შემდეგ ზუსტად
+თავდაპირველზე დაბრუნებული) — `POST /invoices/send-email`
+(`redirect`-ველის გარეშე, ანუ `/invoices`-კონტექსტი) → `Location: /`,
+invoice id=12-ის `document_state` `draft`→`final`, `/`-ზე გამოჩნდა
+სწორი success alert ("ინვოისი „TS1 2026-08-16 0001" გაიგზავნა
+მეილზე."). იგივე მოთხოვნა `redirect=/orders`-ით → `Location: /orders`
+(უცვლელი, `4.62`-ის ქცევა დაცულია). Invoice id=12 თავდაპირველ
+`draft`-ზე დაბრუნებულია, `.env` restore-ილია (`diff`-ით დადასტურებული
+— cleanup-მდე arც ერთი commit არ გაკეთებულა), temp password
+აღდგენილია.
+
+### 4.65 "მეილზე გაგზავნა" მოდალი — ვიზუალური გამოკეთილშობილება (`/invoices` + `/orders`)
+
+user-მა უბრალოდ თქვა "არ მომწონს, გააკეთილშობილო" — კონკრეტული საჩივრის
+გარეშე. ვინაიდან ეს ორივე გვერდზე სიტყვასიტყვით იდენტური, plain
+Bootstrap-default მოდალია (თავისი chrome-ის გარეშე), მაშინ როცა იმავე
+გვერდებზე უკვე არსებობს **უფრო გამართული** მოდალი — `invoice-preview-
+modal.php` (`bg-light` header, icon+label საკუთარი "chrome", არა
+Bootstrap-ის default `modal-title`) — ავირჩიე ის, როგორც ვიზუალური
+ეტალონი და ორივე email-მოდალი მასთან თანმიმდევრულად გავაფორმე.
+სუფთა redesign — არც ერთი behavior/route/validation არ შეცვლილა.
+
+- **Header**: default `<h2 class="modal-title">` → `bg-light` header,
+  `bi-envelope-paper` icon + `text-primary text-uppercase` label
+  (`invoice-preview-modal.php`-ის header-ის იდენტური სტილი).
+- **Dialog**: `.modal-dialog` → `.modal-dialog modal-dialog-centered`
+  (ვერტიკალურად ცენტრირებული, ეკრანის ზედა კიდეზე მიბმულის ნაცვლად).
+- **Validation-feedback**: `.invalid-feedback.d-block` (`.form-floating`-
+  ის **გარეთ**, ცალკე ხაზზე) → `.invalid-feedback` (`.d-block`-ის
+  გარეშე, `.form-floating`-ის **შიგნით**, label-ის შემდეგ) — Bootstrap-ის
+  ნამდვილი `.is-invalid ~ .invalid-feedback { display: block }`
+  sibling-selector-ს დაეყრდნო ხელით-იძულების ნაცვლად; ველი და მისი
+  შეცდომა ახლა ერთ ვიზუალურ ჯგუფშია, არა ცალკე floating-block-ის ქვემოთ.
+- **Attachment/signature ჰინტები**: ორი შიშველი `text-secondary small`
+  ხაზი → ერთი `bg-light rounded-3 p-3` ინფო-პანელი (იგივე `--ds-radius`
+  ტოკენი, რასაც `.ds-card` იყენებს) — მკაფიოდ გამოყოფილი ბლოკი,
+  არა "დავიწყებული" ტექსტის ნარჩენი.
+- **Textarea**: `height:8rem` → `9rem`, ცოტა მეტი სივრცე default
+  შეტყობინების ტექსტისთვის.
+
+ცვლილება იდენტურად გავიმეორე ორივე ფაილში (`invoices.php`-ის და
+`orders.php`-ის საკუთარ `#invoiceEmailModal`-ებში — ეს ორი ცალკე,
+თითქმის-დუბლირებული markup-ია, არა გაზიარებული partial, ისე როგორც
+`4.62`-ში დაპროექტდა).
+
+**გადამოწმებულია ცოცხლად** (tenant 31): ორივე გვერდზე მოდალის header/
+dialog/info-box კლასები სწორია; `orders.php`-ზე "to"/"message" prefill
+(customer email + org-ის default ტექსტი) უცვლელად მუშაობს;
+`invoices.php`-ზე ვალიდაციის-შეცდომის მდგომარეობა (`novalidate` + JS
+force-submit ცუდი მონაცემებით, HTML5-ის native ვალიდაციის გვერდის
+ავლით) სწორად აჩვენებს `.is-invalid`/`.invalid-feedback`-ს —
+`getComputedStyle().display === 'block'`-ით დადასტურებული, ანუ ახალი
+sibling-selector-ზე დაფუძნებული feedback ნამდვილად ჩანს, არა მხოლოდ
+DOM-ში დამალული. Console error არცერთ გვერდზე არ ყოფილა. Temp password
+აღდგენილია — DB-ში ცვლილება არ განხორციელებულა (მხოლოდ markup/CSS).
+
+### 4.66 ინვოისის მეილის სხეული → საკუთარი HTML template (`app/Views/emails/invoice.php`)
+
+user-მა WYSIWYG/template-management სისტემა ითხოვა (`4.65`-ის მოდალის
+redesign-ის შემდეგ) — ამაზე ვურჩიე, რომ ერთი ინვოისის-მეილისთვის
+overkill-ია (ახალი დამოკიდებულება, ცხრილი, sanitization), მომავალი
+"სარეკლამო მეილების" მოდულისთვის კი გამართლებულია, მაგრამ **მაშინ**
+ავაშენოთ, არა ახლა (user დამეთანხმა). ამის ნაცვლად, user-მა კონკრეტული,
+მცირე მოთხოვნა დააზუსტა: ინვოისის მეილის სხეული ნამდვილ HTML-ად იყოს,
+ცალკე template-ფაილში, რომ ვიზუალზე პირდაპირ თავად ემუშავათ.
+
+- **`app/Views/emails/invoice.php`** (ახალი ფაილი/დირექტორია) —
+  `InvoiceController::sendEmail()`-ის ძველი ერთსტრიქონიანი
+  `nl2br(e($message)) . '<br><br>' . orgSignatureHtml(...)` string-
+  აგება ჩანაცვლდა ნამდვილი, ცალკე view-ფაილით — იგივე
+  `Controller::renderToString('emails/invoice', [...])` მექანიზმი, რასაც
+  `pdf/invoice`/`pdf/orders` უკვე იყენებენ (ახალი ცოდნა/pattern არ
+  დასჭირვებია). Table-based layout + inline styles (ფერადი header-
+  ზოლი org-ის სახელით, თეთრი "card", ჩრდილიანი კუთხეები) — არა
+  `<style>` block, ემეილ-კლიენტების თავსებადობისთვის (განსაკუთრებით
+  Outlook desktop, რომელიც `<style>`-ს არასანდოდ იღებს).
+- **`InvoiceController::orgSignatureHtml()`** — წაშლილია (dead code,
+  მისი ლოგიკა template-ის შიგნით გადავიდა).
+- ცხადად **მხოლოდ** markup/template ცვლილებაა — validation, redirect,
+  attachment, `markFinal()` ლოგიკა ხელუხლებელია.
+
+**გადამოწმებულია ცოცხლად, ნამდვილი SMTP-ის გარეშე** (იგივე `4.64`-ის
+mock-SMTP მიდგომა, ამჯერად capture-ით): ლოკალური mock server, რომელიც
+`DATA`-ს ინახავს ფაილში ნაცვლად რომ უბრალოდ `250 ok`-ით უპასუხოს —
+`.env`-ის იგივე დროებითი patch. რეალურად აპის მეშვეობით გაგზავნილი
+მეილი დაიჭირა და base64-დან decode-ის შემდეგ დადასტურდა: header-ზოლში
+org-ის სახელი ("შპს ტესტ ვან"), სხეულში ნამდვილი შეტყობინების ტექსტი,
+signature-ბლოკში org-ის name/phone/email/address — ყველაფერი სწორი
+Georgian text-ით, escaping-ის ბაგების გარეშე, სწორი multipart/mixed
+სტრუქტურით (HTML + PDF attachment). Invoice id=12 თავდაპირველ `draft`-ზე
+დაბრუნებულია, `.env` ზუსტად restore-ილია, temp password აღდგენილია,
+დროებითი test-ფაილები წაშლილია.
+
+### 4.67 "მეილზე გაგზავნა" მოდალი → live preview `emails/invoice.php`-ის თავად შაბლონიდან
+
+user-მა დააკონკრეტა: "მეილის ფორმის ვიზუალი ავიღოთ შაბლონიდან" — ანუ
+compose-მოდალში `emailMessage`-ის plain textarea/gray-info-box (`4.65`)
+თავად `emails/invoice.php`-ის (`4.66`) რეალურ layout-ში ჩაისვას, რომ
+წერისას უკვე ის ჩანდეს, რასაც დამკვეთი მიიღებს — არა ცალკე, "დამსგავსებული"
+mockup, არამედ ზუსტად იგივე ვიზუალური სტრუქტურა, ერთი ცვლადის
+გარეშეც არ გასცდენია (ორივე ადგილას `$org['name']`/phone/email/address
+იგივე real DB-მონაცემია).
+
+- **`invoices.php` + `orders.php`** (ორივეს `#invoiceEmailModal`) —
+  `form-floating` textarea + ცალკე `bg-light` info-box (`4.65`) →
+  `emailMessage` თავად ზის `emails/invoice.php`-ის ფერად ("`#2563eb`")
+  header-ზოლისა და თეთრი card-ის შიგნით (`border-0 p-0 shadow-none`
+  textarea, ისე რომ card-ის ნაწილივით გამოიყურებოდეს, არა ცალკე
+  ველი), header-ში ორგანიზაციის სახელი, card-ის ბოლოში — signature-ბლოკი
+  (name/phone/email/address, `border-top`), ზუსტად template-ის იგივე
+  `array_filter`/`implode('<br>', ...)` ლოგიკით (დუბლირებული ორივე
+  view-ში + template-ში თავად — `4.62`-ის უკვე დამკვიდრებული კონვენციით,
+  სამივე ადგილი დამოუკიდებელი/თითო-ფაილიანია, არა shared partial).
+- **`inv.email_signature_note`** lang-key (ka+en) — წაშლილია, ორივე
+  ენაზე — აღარ სჭირდება: ხელმოწერა ახლა ვიზუალურადაც ჩანს, ცალკე
+  ტექსტური "ავტომატურად დაემატება" გაფრთხილება ზედმეტი გახდა.
+  `inv.email_attachment_note` (PDF დანართის შესახებ) დარჩა — ეს
+  ვიზუალურად არსად ჩანს, ტექსტური შენიშვნა კვლავ საჭიროა.
+- **Validation-ის ვიზუალი** — `.form-control.is-invalid`-ის წითელი
+  ჩარჩო აღარ მუშაობდა plain `<div>`-ზე (Bootstrap-ის `.is-invalid`
+  სელექტორი `.form-control`-სპეციფიკურია) — card-ის გარე `<div>`-ს
+  პირობითი `border-danger` კლასი ემატება, `.invalid-feedback` კი
+  card-ის ქვემოთ, `d-block`-ით (აღარ არის floating-label-ის შიგნით,
+  ცალკე card-ის გარეთაა).
+
+**გადამოწმებულია ცოცხლად** (tenant 31): ორივე გვერდზე მოდალის card
+ზუსტად ისე გამოიყურება, როგორც `emails/invoice.php` (ფერადი header +
+org-ის სახელი + card-ის შიგნით ედიტირებადი textarea default-ტექსტით +
+signature ქვემოთ); `orders.php`-ზე "to" prefill (`client31.8@
+example.test`) უცვლელად მუშაობს. Console error არცერთ გვერდზე არ
+ყოფილა. DB-ში ცვლილება არ განხორციელებულა (მხოლოდ markup/lang-key),
+temp password აღდგენილია.
+
+### 4.68 "ბმულის გაზიარება" — ამოქმედება (`/invoices` + row-ები `/orders`-ზე)
+
+user-მა ჯერ სთხოვა გეგმის აღწერა (`ბმულის გაზიარება" placeholder-
+ღილაკის ამოქმედება invoices.php-ზე), შემდეგ დაადასტურა და დამატებით
+სთხოვა იგივე `/orders`-ის თითოეულ row-საც დაემატოს. **Access-control
+დონეზე არაფერი ახალი არ დაშენებულა** — ყოველ ინვოისს უკვე ჰქონდა
+საკუთარი `view_token` და `/invoices/view?id=N&token=...`/`/invoices/
+export-pdf?id=N&token=...` უკვე მუშაობდა login-ის გარეშე (`4.53`) —
+საჭირო იყო მხოლოდ ამ URL-ის აწყობა და "დააკოპირე" behavior-ის მიბმა.
+
+- **`app/Core/helpers.php`** — ახალი `app_url(): string` (APP_URL
+  .env-დან, scheme-ის ავტომატური დამატებით) — `InvoiceController::
+  pdfFooterHtml()`-ის საკუთარი, აქამდე dublicate inline ლოგიკა ამაზეა
+  გადაყვანილი, ერთი ცვლილების ნაცვლად ორ ადგილას აღარ სჭირდება
+  სინქრონიზაცია.
+- **`InvoiceController::shareUrl(array $invoice): string`** (ახალი,
+  private) — `app_url() . '/invoices/view?id=N&token=...'`.
+  `index()`-ს `'shareUrl'` ემატება ($editingInvoice-ის მიხედვით, ან
+  `''` ახალი ინვოისისთვის); `orders()`-ს კი `'appUrl'` — თითო row-ს
+  URL-ს view თავად აწყობს (იგივე კონვენცია, რაც `$invoiceNumber`
+  closure-ს აქვს).
+- **`InvoiceController::store()`** — ახალი `submit_action === 'share_link'`
+  branch, იგივე save-first trick, რასაც preview/email იყენებენ — **მაგრამ
+  auto-click-to-copy არ ემატება** მიწოდებულ redirect-ზე. მიზეზი:
+  Clipboard API-ს ნამდვილი user-click სჭირდება (browser security model),
+  script-ით გამოძახებული synthetic `.click()`-ს ეს "activation" არა
+  აქვს — ცოცხლად, headless ბრაუზერშიც დადასტურდა (`navigator.
+  permissions.query({name:'clipboard-write'})` → `denied` ამ sandbox-ში
+  ნებისმიერი click-ის მიუხედავად, ნამდვილ user-ბრაუზერშიც კი synthetic
+  click არ იმუშავებდა). ამიტომ redirect უბრალოდ `/invoices?edit=N`-ზეა
+  (query flag-ის გარეშე) — ღილაკი უბრალოდ ცოცხალია, ერთი ნამდვილი
+  click-ითვე მუშაობს, ისე როგორც ნებისმიერ სხვა ვიზიტზე.
+- **`ds_share_link_script()`** (helpers.php, ახალი) — ერთი გაზიარებული
+  JS ორივე გვერდისთვის (`ds_invoice_preview_script()`-ის იგივე
+  "მეორე caller-ზე გამოყოფის" კონვენცია): ყოველი `[data-share-url]`
+  ღილაკი click-ზე `navigator.clipboard.writeText()`-ს იძახებს, success-ზე
+  ღილაკის `<i>` icon-ს 1.5 წამით ჩეკმარკზე ცვლის (`bi-check-lg
+  text-success`) + `title`-ს დროებით "ბმული დაკოპირდა"-ზე — მთელი
+  label-ის ჩანაცვლების ნაცვლად, რადგან `orders.php`-ის row-ღილაკები
+  icon-only-ა (title-ით), `invoices.php`-ის კი ტექსტიანი. Fail-ზე
+  (`catch`) უბრალოდ არაფერი ხდება — არც error, არც false-positive
+  "დაკოპირდა" feedback.
+- **`invoices.php`** — "ბმულის გაზიარება" იგივე ორ-შტოიანი პატერნით
+  (`4.55`-ის მსგავსი): `$editingInvoice !== null` → პირდაპირ
+  `data-share-url`-იანი ღილაკი (`id="invoiceShareLinkTrigger"`); სხვა
+  შემთხვევაში → `submit_action=share_link` submit. "ვოთსაპზე გაგზავნა"
+  კვლავ unwired placeholder-ია, არავის უთხოვია.
+- **`orders.php`** — ახალი per-row `bi-link-45deg` ღილაკი (row-ის სხვა
+  icon-ღილაკების გვერდით), `$shareUrl` closure-ით აწყობილი
+  `data-share-url`-ით. `Invoice::all()`-ის `SELECT i.*` უკვე შეიცავდა
+  `view_token`-ს — model-ში ცვლილება არ დასჭირვებია.
+
+**გადამოწმებულია ცოცხლად + curl-ით** (tenant 31): `invoiceShareLinkTrigger`-ის
+`data-share-url` ინვოისი 12-ისთვის ზუსტ, ნამდვილ token-ს შეიცავს
+(`https://www.invoice.net.ge/invoices/view?id=12&token=...`) — curl-ით
+დადასტურებულია, რომ ეს URL **ნამდვილად** `200 OK`-ს აბრუნებს, cookie-ს
+გარეშე (ანუ სრულად public). `orders.php`-ის row-ღილაკიც იგივე,
+სწორ URL-ს იძლევა. Click-to-copy JS ლოგიკა **ცალკე დამოწმებულია**
+(`navigator.clipboard.writeText`-ის დროებითი stub-ით, sandbox-ის
+`clipboard-write: denied` შეზღუდვის გვერდის ავლით) — `writeText()`
+სწორ URL-ს იღებს, icon სწორად იცვლება checkmark-ზე და 1.5წმ-ში
+უკან ბრუნდება. `submit_action=share_link` branch პირდაპირ, curl-ით
+შექმნილი ტესტ-ინვოისით (id=35) ტესტირებულია — სწორად გადამისამართდა
+`?edit=35`-ზე, ახალი ინვოისის `view_token`-იც სწორად აისახა ღილაკზე;
+ტესტ-ინვოისი წაშლილია. Invoice id=12-ის fixture-მონაცემები უცვლელი
+დარჩა. Console error არცერთ გვერდზე არ ყოფილა. Temp password
+აღდგენილია.
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.

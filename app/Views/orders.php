@@ -12,6 +12,7 @@
  * @var array   $emailOld       'to'/'message' => value, so a rejected email-modal submit comes back filled
  * @var ?string $emailSent      formatted number of the invoice an email was just sent for
  * @var ?string $emailFailed    formatted number of the invoice an email failed to send for (SMTP down/misconfigured — see App\Core\Mailer)
+ * @var string  $appUrl         app_url() — base for each row's "ბმულის გაზიარება" link (4.68), possibly '' (see helpers.php)
  *
  * The list half of what used to be one /invoices page (see 4.25 in
  * handoff.md) — creating/editing lives on /invoices, this is browsing.
@@ -24,6 +25,7 @@
  * here.
  */
 $invoiceNumber = static fn(array $row): string => \App\Models\Invoice::number($row, $invoicePrefix);
+$shareUrl      = static fn(array $row): string => $appUrl . '/invoices/view?id=' . (int) $row['id'] . '&token=' . $row['view_token'];
 
 // Same convention as invoices.php's own email-modal closures (4.55/4.62) —
 // the org's own default text (/settings/organization) wins over the
@@ -169,6 +171,10 @@ $paymentBadgeClass = [
                       data-customer-email="<?= e((string) ($inv['customer_email'] ?? '')) ?>">
                 <i class="bi bi-envelope"></i>
               </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" title="<?= t('inv.action_share_link') ?>"
+                      data-share-url="<?= e($shareUrl($inv)) ?>">
+                <i class="bi bi-link-45deg"></i>
+              </button>
             </td>
           </tr>
           <?php endforeach; ?>
@@ -189,32 +195,54 @@ $paymentBadgeClass = [
      clicked row's data-customer-email, not a customer-select value like
      invoices.php has (there isn't one on this page). -->
 <div class="modal fade" id="invoiceEmailModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-dialog-centered">
     <form method="post" action="/invoices/send-email" class="modal-content">
       <?= csrf_field() ?>
       <input type="hidden" name="invoice_id" id="emailInvoiceId">
       <input type="hidden" name="redirect" value="/orders">
-      <div class="modal-header">
-        <h2 class="modal-title h6 mb-0"><?= t('inv.email_modal_title') ?></h2>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= t('inv.close') ?>"></button>
+      <div class="modal-header bg-light">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-envelope-paper text-primary"></i>
+          <span class="fw-bold text-primary small text-uppercase"><?= t('inv.email_modal_title') ?></span>
+        </div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="<?= t('inv.close') ?>"></button>
       </div>
+      <?php
+        // Same preview logic as invoices.php's own modal — see there for
+        // why it's duplicated (emails/invoice.php's signature computation,
+        // 4.66) rather than shared.
+        $emailSignatureLines = array_filter([
+            (string) ($org['name'] ?? ''),
+            (string) ($org['phone'] ?? ''),
+            (string) ($org['email'] ?? ''),
+            (string) ($org['address'] ?? ''),
+        ], static fn(string $v): bool => $v !== '');
+      ?>
       <div class="modal-body">
-        <div class="form-floating mb-1">
+        <div class="form-floating mb-3">
           <input type="email" class="form-control <?= $emailBad('to') ?>" id="emailTo" name="to" value="<?= $emailVal('to') ?>" placeholder=" " required>
           <label for="emailTo"><?= t('inv.email_to') ?></label>
+          <?php if (isset($emailErrors['to'])): ?><div class="invalid-feedback"><?= e($emailErrors['to']) ?></div><?php endif; ?>
         </div>
-        <?php if (isset($emailErrors['to'])): ?><div class="invalid-feedback d-block"><?= e($emailErrors['to']) ?></div><?php endif; ?>
 
-        <div class="form-floating mt-2">
-          <textarea class="form-control <?= $emailBad('message') ?>" id="emailMessage" name="message"
-                    placeholder="<?= t('inv.email_message_placeholder') ?>" style="height:8rem" required><?= $emailVal('message') ?></textarea>
-          <label for="emailMessage"><?= t('inv.email_message') ?></label>
+        <div class="rounded-3 overflow-hidden border <?= isset($emailErrors['message']) ? 'border-danger' : '' ?>">
+          <div class="px-3 py-2" style="background:#2563eb;">
+            <span class="text-white fw-bold small"><?= e((string) ($org['name'] ?? app_name())) ?></span>
+          </div>
+          <div class="p-3">
+            <textarea class="form-control border-0 p-0 shadow-none" id="emailMessage" name="message"
+                      placeholder="<?= t('inv.email_message_placeholder') ?>" style="height:8rem; resize:none;" required><?= $emailVal('message') ?></textarea>
+          </div>
+          <?php if ($emailSignatureLines !== []): ?>
+            <div class="px-3 pb-3 small text-secondary">
+              <div class="border-top pt-2"><?= implode('<br>', array_map('e', $emailSignatureLines)) ?></div>
+            </div>
+          <?php endif; ?>
         </div>
         <?php if (isset($emailErrors['message'])): ?><div class="invalid-feedback d-block"><?= e($emailErrors['message']) ?></div><?php endif; ?>
 
-        <div class="text-secondary small mt-2">
-          <div><i class="bi bi-paperclip me-1"></i><?= t('inv.email_attachment_note') ?></div>
-          <div><i class="bi bi-signpost-split me-1"></i><?= t('inv.email_signature_note') ?></div>
+        <div class="text-secondary small mt-2 d-flex align-items-center gap-2">
+          <i class="bi bi-paperclip"></i><?= t('inv.email_attachment_note') ?>
         </div>
       </div>
       <div class="modal-footer">
@@ -226,7 +254,7 @@ $paymentBadgeClass = [
 </div>
 
 <?php
-$scripts = ds_table_script() . ds_invoice_preview_script() . <<<'HTML'
+$scripts = ds_table_script() . ds_invoice_preview_script() . ds_share_link_script() . <<<'HTML'
 
 <script>
 (() => {

@@ -111,6 +111,10 @@ final class InvoiceController extends Controller
             'previewNumber' => $previewNumber,
             'invoicesByCustomer' => $invoicesByCustomer,
             'editingInvoice' => $editingInvoice,
+            // "ბმულის გაზიარება" (4.68) — '' for a brand new, unsaved
+            // invoice, same "nothing to share yet" gap store()'s
+            // submit_action=share_link branch bridges (see there).
+            'shareUrl'      => $editingInvoice !== null ? $this->shareUrl($editingInvoice) : '',
             'workflow'      => $workflow,
             'errors'        => $errors,
             'old'           => $old,
@@ -159,6 +163,12 @@ final class InvoiceController extends Controller
             'emailOld'      => flash('email_old') ?? [],
             'emailSent'     => flash('email_sent'),
             'emailFailed'   => flash('email_failed'),
+            // Per-row "ბმულის გაზიარება" (4.68) — every row here is already
+            // saved, so unlike invoices.php there's no "not created yet" gap
+            // to bridge; the view builds each row's full URL itself from
+            // this base + the row's own id/view_token, same as it already
+            // does for $invoiceNumber.
+            'appUrl'        => app_url(),
         ]);
     }
 
@@ -261,6 +271,18 @@ final class InvoiceController extends Controller
         // modal is client-side, an unsaved invoice needs a real id first.
         if (($_POST['submit_action'] ?? '') === 'email') {
             redirect('/invoices?edit=' . $invoiceId . '&email=1');
+        }
+
+        // "ბმულის გაზიარება" (4.68) — the share link needs the invoice's
+        // own view_token, which only exists once it's actually a saved
+        // row, so the same save-first redirect as preview/email above.
+        // No auto-click-to-copy on landing, unlike those two: the
+        // Clipboard API requires a real click (browsers don't grant it to
+        // a script-dispatched one on page load), so there'd be nothing
+        // reliable to fake — the button is just there, live, one real
+        // click away, same as it would be on any other visit to this page.
+        if (($_POST['submit_action'] ?? '') === 'share_link') {
+            redirect('/invoices?edit=' . $invoiceId);
         }
 
         redirect('/invoices');
@@ -446,7 +468,13 @@ final class InvoiceController extends Controller
         ]);
         $pdfBytes = Pdf::render($html, $this->pdfFooterHtml());
 
-        $body = nl2br(e($message)) . '<br><br>' . $this->orgSignatureHtml($ctx['org']);
+        // Real, standalone template — a normal file to open and restyle,
+        // not a string built inline (4.66 in handoff.md; replaced
+        // orgSignatureHtml(), now gone, its content moved into the template).
+        $body = $this->renderToString('emails/invoice', [
+            'message' => $message,
+            'org'     => $ctx['org'],
+        ]);
         $sent = Mailer::send(
             $to,
             t('inv.email_subject', $ctx['number']),
@@ -463,22 +491,19 @@ final class InvoiceController extends Controller
         }
 
         flash($sent ? 'email_sent' : 'email_failed', $ctx['number']);
+
+        // A successful send from /invoices also just flipped this invoice
+        // draft→final (markFinal() above) — staying on ?edit=N leaves the
+        // "დამატება"/save button sitting right there, one misclick away from
+        // re-submitting the same form and creating a second, duplicate
+        // invoice. Bouncing to the dashboard instead removes that button
+        // from the page entirely. Only for an actual delivery — a failed
+        // send changes nothing, so staying put to retry is still safe (and
+        // more useful); /orders never had this risk (no form to resubmit).
+        if ($sent && !$fromOrders) {
+            redirect('/');
+        }
         redirect($fromOrders ? '/orders' : '/invoices?edit=' . $id . '#invoice-form');
-    }
-
-    /** Plain-HTML signature block (name/phone/email/address) appended below the sender's own typed message — sendEmail()'s own use, not shared with pdfFooterHtml() (a different document, different rules). */
-    private function orgSignatureHtml(array $org): string
-    {
-        $lines = array_filter([
-            (string) ($org['name'] ?? ''),
-            (string) ($org['phone'] ?? ''),
-            (string) ($org['email'] ?? ''),
-            (string) ($org['address'] ?? ''),
-        ], static fn(string $v): bool => $v !== '');
-
-        return '<div style="color:#555;font-size:13px;border-top:1px solid #ddd;padding-top:8px;">'
-            . implode('<br>', array_map('e', $lines))
-            . '</div>';
     }
 
     /**
@@ -535,6 +560,17 @@ final class InvoiceController extends Controller
     }
 
     /**
+     * "ბმულის გაზიარება" (4.68) — the same public, no-login share link
+     * show()/exportInvoicePdf() already accept via resolveInvoiceForView(),
+     * just assembled here instead of typed by hand. No new access-control
+     * work — the invoice's view_token has always been the credential.
+     */
+    private function shareUrl(array $invoice): string
+    {
+        return app_url() . '/invoices/view?id=' . (int) $invoice['id'] . '&token=' . (string) $invoice['view_token'];
+    }
+
+    /**
      * Two lines: a red payment-reminder notice above the separator, then
      * "Generated by {APP_NAME}" (linking to APP_URL) below it — a real
      * running mPDF page footer (Pdf::download()'s $footerHtml), not part of
@@ -545,10 +581,7 @@ final class InvoiceController extends Controller
      */
     private function pdfFooterHtml(): string
     {
-        $appUrl = (string) env('APP_URL', '');
-        if ($appUrl !== '' && !preg_match('#^https?://#i', $appUrl)) {
-            $appUrl = 'https://' . $appUrl;
-        }
+        $appUrl = app_url();
 
         $link = $appUrl !== ''
             ? '<a href="' . e($appUrl) . '" style="color:#2563eb;text-decoration:none;">' . e(app_name()) . '</a>'

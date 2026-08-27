@@ -24,6 +24,17 @@ function app_version(): string
     return (string) env('APP_VERSION', '1.0');
 }
 
+/** Public base URL (scheme added if .env's APP_URL doesn't have one), or '' if APP_URL isn't set — nothing to link to yet. */
+function app_url(): string
+{
+    $url = trim((string) env('APP_URL', ''));
+    if ($url === '') {
+        return '';
+    }
+
+    return preg_match('#^https?://#i', $url) ? $url : 'https://' . $url;
+}
+
 /** Translate. Extra args feed vsprintf — see 'dash.greeting'. */
 function t(string $key, ...$args): string
 {
@@ -205,6 +216,48 @@ function ds_invoice_preview_script(): string
     body.innerHTML = res.ok ? await res.text() : '';
   });
 })();
+</script>
+HTML;
+}
+
+/**
+ * Click-to-copy for every "ბმულის გაზიარება" trigger on the page — the
+ * button itself already carries the ready-made URL in data-share-url
+ * (built server-side, invoices.php/orders.php — 4.68), this JS only
+ * writes it to the clipboard and briefly swaps the button's <i> icon to a
+ * checkmark as confirmation (not the whole label — orders.php's row
+ * buttons are icon-only, invoices.php's has a text label too, and
+ * swapping just the icon reads fine either way). One shared script since
+ * both pages need the exact same behavior — same "factor out once it
+ * needs a second caller" call as ds_invoice_preview_script() above.
+ */
+function ds_share_link_script(): string
+{
+    $copiedTitle = json_encode(t('inv.share_link_copied'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
+
+    return <<<HTML
+<script>
+document.querySelectorAll('[data-share-url]').forEach((btn) => {
+  const icon = btn.querySelector('i');
+  const originalIconClass = icon ? icon.className : '';
+  const originalTitle = btn.title;
+
+  btn.addEventListener('click', async () => {
+    const url = btn.dataset.shareUrl;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      return;
+    }
+    if (icon) icon.className = 'bi bi-check-lg text-success';
+    btn.title = $copiedTitle;
+    setTimeout(() => {
+      if (icon) icon.className = originalIconClass;
+      btn.title = originalTitle;
+    }, 1500);
+  });
+});
 </script>
 HTML;
 }

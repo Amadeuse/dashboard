@@ -19,6 +19,11 @@ final class DashboardController extends Controller
         $this->view('dashboard', [
             'title'         => t('page.dashboard') . ' · ' . app_name(),
             'notice'        => flash('notice'),
+            // "მეილზე გაგზავნა" success bounces here from /invoices (4.64,
+            // see InvoiceController::sendEmail()) — same flash keys orders.php/
+            // invoices.php already read, just consumed here instead this time.
+            'emailSent'     => flash('email_sent'),
+            'emailFailed'   => flash('email_failed'),
             'user'          => Auth::user(),
             'invoicePrefix' => (string) ($org['invoice_prefix'] ?? '') ?: 'INV',
             'currency'      => (string) $org['currency'],

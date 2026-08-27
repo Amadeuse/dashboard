@@ -6,6 +6,8 @@
  * @var array  $recent  Dashboard::recentInvoices() — last few invoices, any tenant member
  * @var string $invoicePrefix organization.invoice_prefix (or "INV"), for Invoice::number()
  * @var string $currency organization.currency ('GEL' or 'USD')
+ * @var ?string $emailSent   formatted number of an invoice just emailed from /invoices, whose send bounced here (4.64) instead of back to the edit form
+ * @var ?string $emailFailed formatted number of an invoice that failed to email — see InvoiceController::sendEmail()
  *
  * Real, tenant-scoped data (App\Core\Auth::tenantId()) — see handoff.md 4.35.
  * Replaces the earlier hardcoded sample dashboard (fake traffic sources,
@@ -38,6 +40,16 @@ $documentStateBadgeClass = [
 <?php if ($notice !== null): ?>
   <div class="alert alert-warning fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
     <i class="bi bi-exclamation-triangle-fill"></i> <?= e($notice) ?>
+  </div>
+<?php endif; ?>
+<?php if ($emailSent !== null): ?>
+  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
+    <i class="bi bi-check-circle-fill"></i> <?= t('inv.email_sent', e($emailSent)) ?>
+  </div>
+<?php endif; ?>
+<?php if ($emailFailed !== null): ?>
+  <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
+    <i class="bi bi-exclamation-triangle-fill"></i> <?= t('inv.email_failed', e($emailFailed)) ?>
   </div>
 <?php endif; ?>
 

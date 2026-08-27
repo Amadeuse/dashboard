@@ -18,6 +18,7 @@
  * @var array   $emailOld       'to'/'message' => value, so a rejected email-modal submit comes back filled
  * @var ?string $emailSent      formatted number of the invoice an email was just sent for
  * @var ?string $emailFailed    formatted number of the invoice an email failed to send for (SMTP down/misconfigured — see App\Core\Mailer)
+ * @var string  $shareUrl       the editing invoice's public view_token link (4.68), or '' when adding a brand new one
  *
  * Create/edit only — the list lives on its own page now (/orders, see
  * orders.php), reached from the sidebar under შეკვეთები > ყველა შეკვეთა.
@@ -306,8 +307,11 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
          modal either way, this branch just needs one extra round trip to
          get a real id first.
          action_email opens #invoiceEmailModal, same two-state pattern as
-         action_preview above (4.55 in handoff.md). action_whatsapp/
-         share_link remain unwired placeholders, per the original request. -->
+         action_preview above (4.55 in handoff.md). action_share_link is
+         the same two-state pattern again (4.68) — data-share-url instead
+         of a modal trigger, ds_share_link_script() (helpers.php) does the
+         actual copy-to-clipboard. action_whatsapp remains an unwired
+         placeholder, per the original request. -->
     <div class="card ds-card mb-3">
       <div class="card-body d-grid gap-2">
         <div class="dropdown">
@@ -350,7 +354,15 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
           </button>
         <?php endif; ?>
         <button type="button" class="btn btn-outline-secondary"><i class="bi bi-whatsapp me-1"></i><?= t('inv.action_whatsapp') ?></button>
-        <button type="button" class="btn btn-outline-secondary"><i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?></button>
+        <?php if ($editingInvoice !== null): ?>
+          <button type="button" class="btn btn-outline-secondary" id="invoiceShareLinkTrigger" data-share-url="<?= e($shareUrl) ?>">
+            <i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?>
+          </button>
+        <?php else: ?>
+          <button type="submit" form="invoiceMainForm" name="submit_action" value="share_link" class="btn btn-outline-secondary">
+            <i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?>
+          </button>
+        <?php endif; ?>
 
         <hr class="my-1">
 
@@ -442,32 +454,63 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
 
 <?php require APP_PATH . '/Views/partials/invoice-preview-modal.php'; ?>
 
+<!-- Same "own header/footer chrome" polish as invoice-preview-modal.php
+     (bg-light header, icon+label instead of Bootstrap's plain modal-title)
+     instead of a stock Bootstrap modal — the attachment/signature notes
+     moved from two bare lines into a light info panel, same convention as
+     ds-card (4.65 in handoff.md, a pure redesign, no behavior changed). -->
 <div class="modal fade" id="invoiceEmailModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-dialog-centered">
     <form method="post" action="/invoices/send-email" class="modal-content">
       <?= csrf_field() ?>
       <input type="hidden" name="invoice_id" id="emailInvoiceId">
-      <div class="modal-header">
-        <h2 class="modal-title h6 mb-0"><?= t('inv.email_modal_title') ?></h2>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="<?= t('inv.close') ?>"></button>
+      <div class="modal-header bg-light">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-envelope-paper text-primary"></i>
+          <span class="fw-bold text-primary small text-uppercase"><?= t('inv.email_modal_title') ?></span>
+        </div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="<?= t('inv.close') ?>"></button>
       </div>
+      <?php
+        // Signature lines shown below, exactly as emails/invoice.php (4.66)
+        // itself computes them — so what's previewed here is what actually
+        // gets sent, not a lookalike drawn separately.
+        $emailSignatureLines = array_filter([
+            (string) ($org['name'] ?? ''),
+            (string) ($org['phone'] ?? ''),
+            (string) ($org['email'] ?? ''),
+            (string) ($org['address'] ?? ''),
+        ], static fn(string $v): bool => $v !== '');
+      ?>
       <div class="modal-body">
-        <div class="form-floating mb-1">
+        <div class="form-floating mb-3">
           <input type="email" class="form-control <?= $emailBad('to') ?>" id="emailTo" name="to" value="<?= $emailVal('to') ?>" placeholder=" " required>
           <label for="emailTo"><?= t('inv.email_to') ?></label>
+          <?php if (isset($emailErrors['to'])): ?><div class="invalid-feedback"><?= e($emailErrors['to']) ?></div><?php endif; ?>
         </div>
-        <?php if (isset($emailErrors['to'])): ?><div class="invalid-feedback d-block"><?= e($emailErrors['to']) ?></div><?php endif; ?>
 
-        <div class="form-floating mt-2">
-          <textarea class="form-control <?= $emailBad('message') ?>" id="emailMessage" name="message"
-                    placeholder="<?= t('inv.email_message_placeholder') ?>" style="height:8rem" required><?= $emailVal('message') ?></textarea>
-          <label for="emailMessage"><?= t('inv.email_message') ?></label>
+        <!-- Live mockup of emails/invoice.php's own layout (4.66) — the
+             textarea sits inside the same blue-header/white-card/signature
+             shape the actual email renders in, so composing here already
+             shows what the recipient will see, not a generic form. -->
+        <div class="rounded-3 overflow-hidden border <?= isset($emailErrors['message']) ? 'border-danger' : '' ?>">
+          <div class="px-3 py-2" style="background:#2563eb;">
+            <span class="text-white fw-bold small"><?= e((string) ($org['name'] ?? app_name())) ?></span>
+          </div>
+          <div class="p-3">
+            <textarea class="form-control border-0 p-0 shadow-none" id="emailMessage" name="message"
+                      placeholder="<?= t('inv.email_message_placeholder') ?>" style="height:8rem; resize:none;" required><?= $emailVal('message') ?></textarea>
+          </div>
+          <?php if ($emailSignatureLines !== []): ?>
+            <div class="px-3 pb-3 small text-secondary">
+              <div class="border-top pt-2"><?= implode('<br>', array_map('e', $emailSignatureLines)) ?></div>
+            </div>
+          <?php endif; ?>
         </div>
         <?php if (isset($emailErrors['message'])): ?><div class="invalid-feedback d-block"><?= e($emailErrors['message']) ?></div><?php endif; ?>
 
-        <div class="text-secondary small mt-2">
-          <div><i class="bi bi-paperclip me-1"></i><?= t('inv.email_attachment_note') ?></div>
-          <div><i class="bi bi-signpost-split me-1"></i><?= t('inv.email_signature_note') ?></div>
+        <div class="text-secondary small mt-2 d-flex align-items-center gap-2">
+          <i class="bi bi-paperclip"></i><?= t('inv.email_attachment_note') ?>
         </div>
       </div>
       <div class="modal-footer">
@@ -479,7 +522,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
 </div>
 
 <?php
-$scripts = ds_invoice_preview_script() . <<<'HTML'
+$scripts = ds_invoice_preview_script() . ds_share_link_script() . <<<'HTML'
 
 <script>
 (() => {
