@@ -16,12 +16,6 @@
   </div>
 </div>
 
-<?php if ($flash !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= e($flash) ?>
-  </div>
-<?php endif; ?>
-
 <?php if ($modules === []): ?>
   <div class="card ds-card">
     <div class="card-body text-center text-secondary py-5">
@@ -78,3 +72,6 @@
     <?php endforeach; ?>
   </div>
 <?php endif; ?>
+
+<?php // Flashed $flash now renders as a toast (4.82 in handoff.md), not an inline .alert.
+$scripts = ds_flash_toast($flash !== null ? e($flash) : null); ?>

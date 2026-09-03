@@ -28,6 +28,17 @@ abstract class Controller
     }
 
     /**
+     * No chrome at all — not even auth's split-screen visual panel, just the
+     * view's own content on a plain page with one footer credit link.
+     * Invoice-view.php's share-link target (4.77): a single, standalone
+     * document, same spirit as bare() but for content, not a login form.
+     */
+    protected function document(string $view, array $data = []): void
+    {
+        $this->render(APP_PATH . '/Views/' . $view . '.php', $data, APP_PATH . '/Views/document/_layout.php');
+    }
+
+    /**
      * Same view-rendering as view(), but with no layout at all and returned
      * as a string instead of echoed — for content meant to go somewhere
      * other than the browser's own page, e.g. App\Core\Pdf::download()'s

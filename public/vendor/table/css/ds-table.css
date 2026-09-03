@@ -39,19 +39,25 @@
   gap: .5rem;
   margin: 0;
   white-space: nowrap;
-  font-size: .85rem;
+  font-size: .875rem;
   color: var(--bs-secondary-color);
 }
 .ds-table-per-page select { width: auto; }
 
-/* ---- One type size and one weight for the whole table ---- */
+/* ---- One type size/family for the whole table; header bold, data regular ---- */
 .ds-table th,
 .ds-table td,
 .ds-table td .badge,
 .ds-table td code,
 .ds-table td small,
-.ds-table td .small { font-size: .875rem; }
-.ds-table th,
+.ds-table td .small,
+.ds-table td .btn { font-size: .875rem; } /* .btn needed too — Bootstrap's own .btn sets font-size:1rem itself, plain inheritance from td doesn't reach it */
+/* <code> (customers.php's tax-id cell) is monospace by browser/Bootstrap
+   default (reboot.css sets code/kbd/pre/samp to --bs-font-monospace,
+   unlike font-size this app never overrode that var) — every other cell
+   already inherits the table's own sans font, this is the one holdout. */
+.ds-table td code { font-family: inherit; }
+.ds-table th { font-weight: 700; }
 .ds-table td,
 .ds-table td * { font-weight: 400; }
 
@@ -62,6 +68,11 @@
    only affordance needed since table-hover already highlights the row. */
 .ds-row-editable { cursor: pointer; }
 
+/* A fixed-size thumbnail/avatar column — was users.php's own inline
+   style="width:48px", pulled out here (not users.php-specific naming) since
+   any future avatar-in-a-list column can reuse it too. */
+.ds-table td.ds-table-col-avatar { width: 48px; }
+
 /* ---- Grid lines on every cell, header included ---- */
 .ds-table .table {
   margin: 0;
@@ -70,11 +81,28 @@
 .ds-table .table > :not(caption) > * > * {
   border: 1px solid var(--bs-border-color);
   padding: .65rem .75rem;
-  background-image: none; /* cancel Bootstrap's hover/stripe shadow so lines stay crisp */
+  /* Bootstrap 5.3 paints .table-hover/.table-striped as an inset
+     box-shadow(0 0 0 9999px var(--bs-table-bg-state)) on *every* cell, not
+     background-image (that was true of older Bootstrap, not this one) — so
+     it has to be killed here, or it shows through under the custom stripe/
+     hover rules below as an unwanted extra tint on every cell but the one
+     that redeclares box-shadow itself. */
+  box-shadow: none;
 }
 .ds-table .table > thead > tr > th { border-bottom-width: 1px; }
-/* The grid already separates the rows; a second hover tint on top of it reads as noise */
-.ds-table .table-hover > tbody > tr:hover > * { background-color: var(--bs-tertiary-bg); }
+
+/* Striped rows, background-color (box-shadow: none above ruled out
+   Bootstrap's own .table-striped mechanism). */
+.ds-table .table-striped > tbody > tr:nth-of-type(odd) > * { background-color: rgba(var(--bs-emphasis-color-rgb), .015); }
+/* Fixed light-blue accent (user-specified hex, not a --bs-* var — doesn't
+   adapt to dark mode, unlike the rest of this file). Declared *after* the
+   stripe rule above — same selector specificity, later source order wins
+   the tie, so hover still overrides a striped row instead of the stripe
+   rule silently winning every time. */
+.ds-table .table-hover > tbody > tr:hover > * { background: #e3f2fd; transition: background 0.2s, box-shadow 0.3s;}
+/* Accent only on the row's leading cell — box-shadow on every `> *` above
+   would draw a left-edge bar on *each* column, not once for the row. */
+.ds-table .table-hover > tbody > tr:hover > *:first-child { box-shadow: inset 3px 0 0 #2196f3; }
 
 /* ---- Sortable headers ---- */
 .ds-table th.sortable-header {

@@ -9,6 +9,30 @@ use App\Core\Sms;
 
 final class User
 {
+    /**
+     * Same 8 colors migrations/035's backfill uses — a tenant's chart
+     * (Dashboard::revenueByUser()) reads each member's own stored `color`
+     * directly, this palette only supplies a sensible *default* for the
+     * registration/user-form color picker (nextColor() below), never a
+     * fallback at render time.
+     */
+    private const PALETTE = ['#4f46e5', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4', '#a855f7', '#ec4899', '#84cc16'];
+
+    /**
+     * A starting value for a new user's color picker — cycles the palette by
+     * how many members this tenant already has, so consecutively added
+     * team members default to visually distinct colors (still just a
+     * default; the field is a real <input type="color">, always changeable).
+     * $ruler null for a brand-new root registration (no team yet — always
+     * PALETTE[0]).
+     */
+    public static function nextColor(?int $ruler): string
+    {
+        $count = $ruler !== null ? count(self::tenantMemberIds($ruler)) : 0;
+
+        return self::PALETTE[$count % count(self::PALETTE)];
+    }
+
     public static function findByEmail(string $email): ?array
     {
         return Db::all('SELECT * FROM users WHERE email = ?', [$email])[0] ?? null;
@@ -135,21 +159,21 @@ final class User
         return (int) (self::findByEmail($email)['id'] ?? 0);
     }
 
-    public static function create(string $name, string $email, string $password, ?string $phone = null): int
+    public static function create(string $name, string $email, string $password, ?string $phone = null, ?string $color = null): int
     {
         // NULL, never '' — the column is UNIQUE, and two accounts with no phone
         // would otherwise collide on an empty string instead of being distinct NULLs.
-        Db::conn()->prepare('INSERT INTO users (name, email, password_hash, phone) VALUES (?, ?, ?, ?)')
-            ->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $phone === '' ? null : $phone]);
+        Db::conn()->prepare('INSERT INTO users (name, email, password_hash, phone, color) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$name, $email, password_hash($password, PASSWORD_DEFAULT), $phone === '' ? null : $phone, $color ?? self::nextColor(null)]);
 
         return (int) Db::conn()->lastInsertId();
     }
 
-    /** No password — the account was created via "Continue with Google". */
+    /** No password, no form (so no color picker either) — the account was created via "Continue with Google". */
     public static function createFromGoogle(string $name, string $email, string $googleId): int
     {
-        Db::conn()->prepare('INSERT INTO users (name, email, google_id) VALUES (?, ?, ?)')
-            ->execute([$name, $email, $googleId]);
+        Db::conn()->prepare('INSERT INTO users (name, email, google_id, color) VALUES (?, ?, ?, ?)')
+            ->execute([$name, $email, $googleId, self::nextColor(null)]);
 
         return (int) Db::conn()->lastInsertId();
     }
@@ -158,8 +182,8 @@ final class User
     public static function createSubUser(array $data, int $createdBy): int
     {
         Db::conn()->prepare(
-            'INSERT INTO users (name, email, phone, avatar, role, password_hash, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO users (name, email, phone, avatar, role, password_hash, created_by, color)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         )->execute([
             $data['name'],
             $data['email'],
@@ -168,6 +192,7 @@ final class User
             $data['role'],
             password_hash($data['password'], PASSWORD_DEFAULT),
             $createdBy,
+            $data['color'],
         ]);
 
         return (int) Db::conn()->lastInsertId();
@@ -184,13 +209,14 @@ final class User
      */
     public static function updateSubUser(int $id, array $data, int $ruler): void
     {
-        $sql    = 'UPDATE users SET name = ?, email = ?, phone = ?, avatar = ?, role = ?';
+        $sql    = 'UPDATE users SET name = ?, email = ?, phone = ?, avatar = ?, role = ?, color = ?';
         $params = [
             $data['name'],
             $data['email'],
             $data['phone'] === '' ? null : $data['phone'],
             $data['avatar'] === '' ? null : $data['avatar'],
             $data['role'],
+            $data['color'],
         ];
 
         if ($data['password'] !== '') {
@@ -220,11 +246,16 @@ final class User
             'phone'    => trim((string) ($input['phone'] ?? '')),
             'role'     => (string) ($input['role'] ?? ''),
             'password' => (string) ($input['password'] ?? ''),
+            'color'    => strtolower(trim((string) ($input['color'] ?? ''))),
         ];
         $errors = [];
 
         if ($clean['name'] === '') {
             $errors['name'] = terr('auth.err_name_required');
+        }
+
+        if (!preg_match('/^#[0-9a-f]{6}$/', $clean['color'])) {
+            $errors['color'] = terr('users.err_color_invalid');
         }
 
         if (!filter_var($clean['email'], FILTER_VALIDATE_EMAIL)) {
@@ -332,12 +363,17 @@ final class User
             'email'    => trim((string) ($input['email'] ?? '')),
             'phone'    => trim((string) ($input['phone'] ?? '')),
             'password' => (string) ($input['password'] ?? ''),
+            'color'    => strtolower(trim((string) ($input['color'] ?? ''))),
         ];
         $confirm = (string) ($input['password_confirm'] ?? '');
         $errors  = [];
 
         if ($clean['name'] === '') {
             $errors['name'] = terr('auth.err_name_required');
+        }
+
+        if (!preg_match('/^#[0-9a-f]{6}$/', $clean['color'])) {
+            $errors['color'] = terr('users.err_color_invalid');
         }
 
         if (!filter_var($clean['email'], FILTER_VALIDATE_EMAIL)) {

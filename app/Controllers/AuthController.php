@@ -139,7 +139,7 @@ final class AuthController extends Controller
             redirect('/register');
         }
 
-        $id = User::create($clean['name'], $clean['email'], $clean['password'], $clean['phone']);
+        $id = User::create($clean['name'], $clean['email'], $clean['password'], $clean['phone'], $clean['color']);
         Auth::login($id);
         redirect('/');
     }

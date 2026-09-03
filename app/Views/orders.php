@@ -2,7 +2,8 @@
 /**
  * @var array   $rows           every invoice, newest first — customer_name/
  *                               customer_taxid/customer_email and the
- *                               creator's name (creator_name, nullable)
+ *                               creator's name/color (creator_name/
+ *                               creator_color, both nullable, 4.87)
  *                               joined in by Invoice::all()
  * @var string  $invoicePrefix  organization.invoice_prefix, or "INV" if unset
  * @var string  $currency       organization.currency ('GEL' or 'USD')
@@ -58,16 +59,7 @@ $paymentBadgeClass = [
 ];
 ?>
 
-<?php if ($emailSent !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('inv.email_sent', e($emailSent)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($emailFailed !== null): ?>
-  <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
-    <i class="bi bi-exclamation-triangle-fill"></i> <?= t('inv.email_failed', e($emailFailed)) ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed emailSent/emailFailed now render as toasts (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
   <div>
@@ -108,7 +100,7 @@ $paymentBadgeClass = [
     <div class="card-body">
     <div class="ds-table" data-ds-table data-per-page="10" data-per-page-options="10,25,50,100">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover table-striped align-middle mb-0">
         <thead>
           <tr class="text-secondary">
             <th><?= t('inv.number') ?></th>
@@ -126,7 +118,7 @@ $paymentBadgeClass = [
             <td><?= e($invoiceNumber($inv)) ?></td>
             <td><?= e($inv['customer_name']) ?></td>
             <td><?= $taxId($inv) ?></td>
-            <td><?= $inv['creator_name'] !== null ? e($inv['creator_name']) : '<span class="text-secondary">—</span>' ?></td>
+            <td><?php if ($inv['creator_name'] !== null): ?><?php if ($inv['creator_color'] !== null): ?><span class="ds-color-dot" style="background:<?= e($inv['creator_color']) ?>"></span><?php endif; ?><?= e($inv['creator_name']) ?><?php else: ?><span class="text-secondary">—</span><?php endif; ?></td>
             <td data-order="<?= (float) $inv['total'] ?>"><?= number_format((float) $inv['total'], 2) ?></td>
             <td>
               <span class="badge rounded-pill <?= $documentStateBadgeClass[$inv['document_state']] ?>">
@@ -175,6 +167,9 @@ $paymentBadgeClass = [
                       data-share-url="<?= e($shareUrl($inv)) ?>">
                 <i class="bi bi-link-45deg"></i>
               </button>
+              <a href="/invoices?duplicate=<?= (int) $inv['id'] ?>" class="btn btn-sm btn-outline-secondary" title="<?= t('inv.action_duplicate') ?>">
+                <i class="bi bi-copy"></i>
+              </a>
             </td>
           </tr>
           <?php endforeach; ?>
@@ -254,7 +249,10 @@ $paymentBadgeClass = [
 </div>
 
 <?php
-$scripts = ds_table_script() . ds_invoice_preview_script() . ds_share_link_script() . <<<'HTML'
+$scripts = ds_table_script() . ds_invoice_preview_script() . ds_share_link_script()
+    . ds_flash_toast($emailSent !== null ? t('inv.email_sent', e($emailSent)) : null)
+    . ds_flash_toast($emailFailed !== null ? t('inv.email_failed', e($emailFailed)) : null, 'warning', 'bi-exclamation-triangle-fill')
+    . <<<'HTML'
 
 <script>
 (() => {

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controllers\AnalyticsController;
 use App\Controllers\AuthController;
 use App\Controllers\CustomerController;
 use App\Controllers\DashboardController;
@@ -32,9 +33,11 @@ use App\Controllers\UserController;
 
 $router->get('/', [DashboardController::class, 'index']);
 $router->get('/style-guide', [StyleGuideController::class, 'index']);
+$router->get('/analytics/overview', [AnalyticsController::class, 'overview']);
 
 $router->get('/customers', [CustomerController::class, 'index']);
 $router->post('/customers', [CustomerController::class, 'store']);
+$router->get('/customers/report', [CustomerController::class, 'report']);
 
 $router->get('/products', [ProductController::class, 'index']);
 $router->post('/products', [ProductController::class, 'store']);
@@ -86,6 +89,7 @@ $router->get('/settings/organization', [OrganizationController::class, 'show']);
 $router->post('/settings/organization', [OrganizationController::class, 'save']);
 
 $router->get('/superuser', [SuperUserController::class, 'index']);
+$router->get('/superuser/activity', [SuperUserController::class, 'activity']);
 $router->post('/superuser/impersonate', [SuperUserController::class, 'impersonate']);
 $router->post('/superuser/stop', [SuperUserController::class, 'stop']);
 $router->post('/superuser/toggle-block', [SuperUserController::class, 'toggleBlock']);

@@ -67,10 +67,20 @@ function ds_date(string $iso): string
     return Lang::date($iso);
 }
 
-/** Current path with a different ?lang= — used by the topbar switcher. */
+/**
+ * Current path with a different ?lang= — used by the topbar switcher.
+ * Keeps every other query param as-is (?id=N, ?edit=N, ...) — used to be
+ * just Router::current() . '?lang=code', dropping the rest of the query
+ * string entirely, which broke the switcher on any page whose own state
+ * lives in the URL (e.g. /customers/report?id=N — the id was lost, landing
+ * back on a plain /customers/report with no customer to show).
+ */
 function ds_lang_url(string $code): string
 {
-    return e(Router::current()) . '?lang=' . $code;
+    $query = $_GET;
+    $query['lang'] = $code;
+
+    return e(Router::current() . '?' . http_build_query($query));
 }
 
 /**
@@ -221,19 +231,51 @@ HTML;
 }
 
 /**
+ * One flash notification (created/updated/email sent, etc.) as a toast
+ * (window.dsNotify, app.js) instead of the inline .alert banner every page
+ * used to render at its own top (4.82 in handoff.md — user asked for every
+ * notify to go through Bootstrap Toast, not a mix of the two; 4.83 moved
+ * it to the standard Bootstrap toast layout — plain white, icon+app-name+
+ * timestamp header). $message is the already-t()/e()-built text (same as
+ * the old alert's own body) or null — null renders nothing, so a caller
+ * can pass a flash unconditionally without its own if-guard. $icon is a
+ * bare `bi-*` class, only needed to override the type's own default
+ * (dsNotify's DS_TOAST_ICON map, app.js) — e.g. the password-reset-sent
+ * notice's envelope icon. Appended to $scripts, not printed inline in the
+ * body — dsNotify only exists once app.js has loaded, which happens near
+ * the end of layout.php, well after $content.
+ */
+function ds_flash_toast(?string $message, string $type = 'success', ?string $icon = null): string
+{
+    if ($message === null) {
+        return '';
+    }
+
+    $msgJs  = json_encode($message, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
+    $typeJs = json_encode($type, JSON_UNESCAPED_UNICODE);
+    $iconJs = $icon !== null ? json_encode($icon, JSON_UNESCAPED_UNICODE) : 'null';
+
+    return "<script>window.dsNotify?.($msgJs, $typeJs, $iconJs);</script>\n";
+}
+
+/**
  * Click-to-copy for every "ბმულის გაზიარება" trigger on the page — the
  * button itself already carries the ready-made URL in data-share-url
  * (built server-side, invoices.php/orders.php — 4.68), this JS only
- * writes it to the clipboard and briefly swaps the button's <i> icon to a
+ * writes it to the clipboard, briefly swaps the button's <i> icon to a
  * checkmark as confirmation (not the whole label — orders.php's row
  * buttons are icon-only, invoices.php's has a text label too, and
- * swapping just the icon reads fine either way). One shared script since
- * both pages need the exact same behavior — same "factor out once it
- * needs a second caller" call as ds_invoice_preview_script() above.
+ * swapping just the icon reads fine either way), and raises a toast
+ * (window.dsNotify, app.js — the same one client-side validation already
+ * uses) so it's obvious *something* happened even for the icon-only row
+ * buttons (4.80 in handoff.md). One shared script since both pages need
+ * the exact same behavior — same "factor out once it needs a second
+ * caller" call as ds_invoice_preview_script() above.
  */
 function ds_share_link_script(): string
 {
     $copiedTitle = json_encode(t('inv.share_link_copied'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
+    $notifyText  = json_encode(t('inv.share_link_notify'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
 
     return <<<HTML
 <script>
@@ -256,6 +298,8 @@ document.querySelectorAll('[data-share-url]').forEach((btn) => {
       if (icon) icon.className = originalIconClass;
       btn.title = originalTitle;
     }, 1500);
+
+    window.dsNotify?.($notifyText + ' <kbd>Ctrl</kbd>+<kbd>V</kbd>', 'info');
   });
 });
 </script>

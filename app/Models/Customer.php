@@ -40,6 +40,14 @@ final class Customer
         return Db::all('SELECT * FROM customers WHERE ruler = ? ORDER BY id DESC', [$ruler]);
     }
 
+    /** One customer, tenant-scoped — null if it doesn't exist or belongs to someone else (customers.php's "რეპორტი" link, 4.69). */
+    public static function find(int $id, int $ruler): ?array
+    {
+        $rows = Db::all('SELECT * FROM customers WHERE id = ? AND ruler = ?', [$id, $ruler]);
+
+        return $rows[0] ?? null;
+    }
+
     public static function create(array $data, int $ruler): void
     {
         $cols = implode(', ', self::FIELDS);

@@ -37,16 +37,7 @@ $selected = static fn(string $f, string $optionValue): string
   </div>
 </div>
 
-<?php if ($created !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('prod.created', e($created)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($updated !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('prod.updated', e($updated)) ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed created/updated now render as toasts (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <!-- ---- New product ---- -->
 <details class="card ds-card mb-3" id="product-form" open>
@@ -144,7 +135,7 @@ $selected = static fn(string $f, string $optionValue): string
     <div class="card-body">
     <div class="ds-table" data-ds-table data-per-page="10" data-per-page-options="10,25,50,100">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover table-striped align-middle mb-0">
         <thead>
           <tr class="text-secondary">
             <th><?= t('prod.name') ?></th>
@@ -218,7 +209,10 @@ $lookupModal('ptypeModal', '/product-types', t('ptype.modal_title'), t('ptype.na
 ?>
 
 <?php
-$scripts = ds_table_script() . <<<'HTML'
+$scripts = ds_table_script()
+    . ds_flash_toast($created !== null ? t('prod.created', e($created)) : null)
+    . ds_flash_toast($updated !== null ? t('prod.updated', e($updated)) : null)
+    . <<<'HTML'
 
 <script>
   // Unit modal: add or rename over AJAX, then reflect the result into the

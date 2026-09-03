@@ -25,10 +25,6 @@ $val = static fn(string $f): string => e((string) ($old[$f] ?? ''));
     <button class="ds-auth-tab <?= $activeTab === 'otp' ? 'active' : '' ?>" type="button" role="tab" data-tab="otp"><?= t('auth.tab.otp') ?></button>
   </div>
 
-  <?php if ($notice !== null): ?>
-    <div class="alert alert-success d-flex align-items-center gap-2 mb-0"><i class="bi bi-check-circle-fill"></i> <?= e($notice) ?></div>
-  <?php endif; ?>
-
   <form class="ds-auth-panel" data-panel="password" method="post" action="/login" novalidate <?= $activeTab === 'otp' ? 'hidden' : '' ?>>
     <?= csrf_field() ?>
     <div>
@@ -128,7 +124,9 @@ $labels = json_encode([
     'enterFirst' => t('auth.err_email_required'),
 ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
-$scripts = "<script>window.dsOtpLabels = $labels;</script>\n" . <<<'HTML'
+$scripts = "<script>window.dsOtpLabels = $labels;</script>\n"
+    . ds_flash_toast($notice !== null ? e($notice) : null)
+    . <<<'HTML'
 <script>
 (() => {
   const tabs = document.getElementById('auth-tabs').querySelectorAll('.ds-auth-tab');

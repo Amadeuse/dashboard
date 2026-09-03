@@ -86,13 +86,14 @@ final class Invoice
      *   a customer's full invoice history is relevant there regardless of
      *   who created each one.
      * @return array<int, array<string, mixed>> newest first, with the customer's
-     *   name/tax id/email and the creator's name (orders.php's table, and its
-     *   "მეილზე გაგზავნა" prefill) joined in. creator_name is NULL for invoices
-     *   predating created_by (migrations/021).
+     *   name/tax id/email and the creator's name/color (orders.php's table,
+     *   and its "მეილზე გაგზავნა" prefill / creator-color dot, 4.87) joined
+     *   in. creator_name/creator_color are NULL for invoices predating
+     *   created_by (migrations/021).
      */
     public static function all(?array $createdByIds = null): array
     {
-        $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, c.customer_email, u.name AS creator_name
+        $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, c.customer_email, u.name AS creator_name, u.color AS creator_color
                   FROM invoices i
                   JOIN customers c ON c.id = i.customer_id
                   LEFT JOIN users u ON u.id = i.created_by';
@@ -250,8 +251,16 @@ final class Invoice
         );
         foreach ($clean['items'] as $item) {
             $lineTotal = (float) $item['quantity'] * (float) $item['unit_price'];
+            // The normal form submission always has a real unit_id here —
+            // Invoice::validate() already rejects a missing/invalid one.
+            // NULL/'' only ever reaches this point via duplicate() copying
+            // a legacy pre-migrations/030 item that never had one — casting
+            // that to (int) 0 (not a real unit) used to fail this column's
+            // own FK constraint outright, so it's preserved as a genuine
+            // NULL instead, exactly like the source row it was copied from.
+            $unitId = $item['unit_id'] !== null && $item['unit_id'] !== '' ? (int) $item['unit_id'] : null;
             $insertItem->execute([
-                $invoiceId, (int) $item['product_id'], (int) $item['unit_id'], $item['quantity'], $item['unit_price'], $lineTotal,
+                $invoiceId, (int) $item['product_id'], $unitId, $item['quantity'], $item['unit_price'], $lineTotal,
             ]);
         }
 

@@ -19,12 +19,6 @@ $hasPassword = $user['password_hash'] !== null;
   </div>
 </div>
 
-<?php if ($updated): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('profile.settings.updated') ?>
-  </div>
-<?php endif; ?>
-
 <div class="card ds-card mb-3">
   <div class="card-body">
     <h2 class="h6 fw-bold mb-3"><i class="bi bi-key text-primary me-2"></i><?= t('profile.settings.password_title') ?></h2>
@@ -79,3 +73,6 @@ $hasPassword = $user['password_hash'] !== null;
     <?php endif; ?>
   </div>
 </div>
+
+<?php // Flashed $updated now renders as a toast (4.82 in handoff.md), not an inline .alert.
+$scripts = ds_flash_toast($updated ? t('profile.settings.updated') : null); ?>

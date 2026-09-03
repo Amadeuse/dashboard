@@ -4376,6 +4376,1423 @@ export-pdf?id=N&token=...` უკვე მუშაობდა login-ის �
 დარჩა. Console error არცერთ გვერდზე არ ყოფილა. Temp password
 აღდგენილია.
 
+### 4.69 დამკვეთის რეპორტი — ახალი გვერდი (`/customers/report?id=N`)
+
+user-მა მოითხოვა: კონკრეტული დამკვეთის რეპორტის გვერდი — ინვოისების
+სია ნომრების მიხედვით, დროში გაწერილი მოცულობის გრაფიკი, ინვოისზე
+კლიკით ნახვა გვერდის დატოვების გარეშე, ჯამი სტატუსების მიხედვით.
+დამატებით ვთხოვე და დამეთანხმა headline-სტატისტიკის (სულ/საშუალო/
+ბოლო ინვოისი) და ტოპ-5 პროდუქტის ჩამატებაზეც. **ახალი UI-პატერნი არ
+დამჭირვებია** — ინვოისის ნახვა, სტატუსის badge-ები, ds-table, Chart.js
+გრაფიკი — ყველა ამ სესიაში (ან უფრო ადრე) უკვე დამკვიდრებული კონვენციაა,
+ეს გვერდი მხოლოდ ერთ ადგილას აწყობს.
+
+- **`app/Models/CustomerReport.php`** (ახალი მოდელი, `Dashboard.php`-ის
+  იგივე "სპეციალიზებული აგრეგაციები" როლში) — 5 static მეთოდი:
+  `invoices()` (სია, `sequence_number DESC`), `summary()` (count/total/
+  average/first/last date, `COALESCE`-ით ცარიელ შემთხვევაზეც უსაფრთხო),
+  `statusTotals()` (`document_state` => `{count,total}`, `array_fill_keys`
+  `Invoice::DOCUMENT_STATES`-ით — draft/final ორივე ყოველთვის present,
+  0-ით, თუნდაც ერთ სტატუსს არცერთი ინვოისი არ ჰქონდეს), `monthlyTotals()`
+  (მთელი ისტორია, არა მხოლოდ მიმდინარე წელი — განსხვავებით
+  `Dashboard::revenueByUser()`-ისგან, საკუთარი დოკ-ბლოკი ხსნის რატომ),
+  `topProducts()` (`invoice_items` join, revenue-ით დალაგებული, LIMIT 5).
+  ყველგან იგივე tenant-scoping კონვენცია, რაც `Invoice::all()`-ს აქვს —
+  `created_by IN (tenantMemberIds)`, არა customer-ის `ruler`-ით პირდაპირ.
+- **`Customer::find(int $id, int $ruler): ?array`** (ახალი) — მანამდე
+  არ არსებობდა (`all()` იყო ერთადერთი read მეთოდი).
+- **`CustomerController::report()`** (ახალი) — 404 (`ErrorController`)
+  არარსებულ/სხვა-ტენანტის `id`-ზე, ზუსტად იგივე pattern, რასაც
+  `InvoiceController`-ის access-control-ები იყენებენ.
+- **`GET /customers/report`** — ახალი route.
+- **`app/Views/customer-report.php`** (ახალი) — breadcrumb + "უკან"
+  ღილაკი; დამკვეთის საკონტაქტო ინფოს card; 4 headline stat-card
+  (dashboard.php-ის ზუსტად იგივე `ds-icon-tile`/`card ds-card h-100`
+  მარკაპი); Chart.js bar chart (dashboard.php-ის იგივე CDN/pattern,
+  ცარიელ ისტორიაზე chart საერთოდ არ render-დება — `<canvas>`-ის
+  ნაცვლად empty-state); status-totals + top-products ორი პატარა card
+  გვერდიგვერდ; ინვოისების ds-table, ნომერზე დაჭერა `data-bs-toggle=
+  "modal" data-bs-target="#invoicePreviewModal"`-ით ხსნის **იმავე**
+  `invoice-preview-modal.php`/`ds_invoice_preview_script()`-ს, რასაც
+  `/orders`/`/invoices` იყენებენ — ახალი modal/fetch-კოდი ნულია.
+- **`customers.php`** — სიის ცხრილს ახალი სვეტი დაემატა, per-row
+  `bi-bar-chart` ბმული `/customers/report?id=N`-ზე — row-click-ის
+  ედიტ-რეჟიმს არ ეხება (იგივე `event.target.closest('a')` გამონაკლისი,
+  რასაც tel:/mailto: ბმულები უკვე იყენებდნენ, ახალი JS არ დასჭირვებია).
+- **ახალი lang-key-ები** (ka+en, `cust.report*`): 15 გასაღები.
+
+**გადამოწმებულია ცოცხლად + curl-ით** (tenant 31, customer 1560 — 1
+ინვოისით): გვერდი სწორად ითვლის ყველა სექციას (headline stats, status
+totals draft=1656₾/1 · final=0₾/0, top product "ლურსმანი 5სმ" 10ც/1656₾);
+Chart.js ინსტანციირებულია (`Chart.getChart(canvas)` truthy); ინვოისის
+ნომერზე დაჭერამ სწორი მოდალი გახსნა **URL-ის შეცვლის გარეშე**
+(`location.href` უცვლელი დარჩა). Access-control: საკუთარი customer
+→ `200`; სხვა tenant-ის customer (id=1, tenant 1-ის) → `404`; არარსებული
+id → `404`; `id`-ის გარეშე → `404`. ცარიელი-ისტორიის customer-ითაც
+(id=1553, 0 ინვოისი) — ყველა სექცია (headline 0/0.00/"ჯერ არცერთი",
+სტატუსები 0/0, chart-ის ნაცვლად empty-state, ცხრილის ნაცვლად
+empty-state) PHP შეცდომების/warning-ების გარეშე გამოჩნდა. `customers.php`-ის
+row-click-ედიტი უცვლელად მუშაობს ახალი სვეტის მიუხედავად. Console
+error არცერთ ეტაპზე არ ყოფილა. DB-ში ცვლილება არ განხორციელებულა
+(მხოლოდ read-queries), temp password აღდგენილია.
+
+### 4.70 დამკვეთის რეპორტი — მოდალის მოცილება, სექციების გადალაგება, chart ორ სერიად
+
+`4.69`-ის პირველი ვერსიის გადამოწმებისას user-მა 2 კონკრეტული
+ცვლილება მოითხოვა: (1) ინვოისის "ნახვა" აღარ იყოს მოდალი — პირდაპირ,
+inline, გვერდზევე გამოჩნდეს, default-ად ბოლო (უახლესი) ინვოისით,
+სექციების მიმდევრობა: Customer info → Invoice (inline) → Invoice list
+→ Headline stats; (2) headline stats-ის chart-ი ორ სერიად გაიყოს —
+პირველადი/საბოლოო.
+
+- **მოდალი მთლიანად მოშორდა** — `invoice-preview-modal.php`-ის
+  `require` და `ds_invoice_preview_script()`-ის გამოძახება წაშლილია
+  ამ გვერდიდან (`ds_invoice_preview_script()` `#invoicePreviewModal`-ს
+  პირდაპირ ეძებს `document.getElementById`-ით და `.addEventListener`-ს
+  უძახებს null-ზე, თუ ეს element არ არსებობს — ამიტომ **არ შეიძლებოდა**
+  უბრალოდ დარჩენილიყო გამოუყენებელი, რეალურად page-ს დაამტვრევდა).
+- **`CustomerController::report()`** — ახალი: `$defaultInvoiceId`
+  (`$invoices[0]['id']`, სია უკვე `sequence_number DESC`-ითაა
+  დალაგებული, ე.ი. პირველი row = უახლესი) და `$invoicePreviewHtml` —
+  `InvoiceController::preview()`-ის ის ორი ხაზი (`Invoice::find()` +
+  `Invoice::itemsFor()` + `renderToString('invoice-preview', ...)`)
+  პირდაპირ აქაც გამეორებულია (access-control აქ Customer::find()-ის
+  tenant-scope-ითაა უკვე დაცული — InvoiceController-ის token-vs-login
+  dual-access ლოგიკა აქ საერთოდ არ სჭირდება, ამიტომ private მეთოდის
+  გაზიარება/refactor ორ controller-ს შორის overkill იქნებოდა ერთი
+  პატარა ბლოკისთვის).
+- **`CustomerReport::monthlyTotals()`** — return-shape შეიცვალა
+  `{months, totals}` → `{months, series}`, ზუსტად `Dashboard::
+  revenueByUser()`-ის იგივე ფორმა (ერთი სერია `document_state`-ზე,
+  არა tenant member-ზე) — SQL-ს `document_state` დაემატა GROUP BY-ში,
+  view-ის chart-კოდი სიტყვასიტყვით იმეორებს dashboard.php-ის
+  grouped-bar მიდგომას. ფერები: `draft`='#94a3b8' (ნაცრისფერი),
+  `final`='#4f46e5' (indigo).
+- **`customer-report.php`** — მთლიანად გადალაგებულია მოთხოვნილი
+  თანმიმდევრობით. ახალი "Invoice" card (`invoice-preview-modal.php`-ის
+  `bg-light` header-სტილის იგივე გამეორება, უბრალოდ page-card-ად
+  `<div class="modal-header">`-ის ნაცვლად) — ნომერი/სტატუსი
+  `#reportInvoiceNumber`/`#reportInvoiceStatus`-ში, სხეული `#invoicePreviewInline`-ში.
+  ინვოისების სიაში ნომერზე დაჭერა (`.js-report-invoice-trigger`,
+  აღარ არის `data-bs-toggle`/`data-bs-target`) → `fetch('/invoices/
+  preview?id=N')` (**იგივე, უცვლელი endpoint**, რასაც მოდალი იყენებდა)
+  → პასუხი პირდაპირ `#invoicePreviewInline`-ში injectდება, ნომერი/
+  სტატუსი-badge/active-row highlight ახლდება JS-ით, გვერდი
+  `scrollIntoView`-ით ზემოთ ბრუნდება. ეს page-სპეციფიკური inline JS
+  (არა helpers.php-ში გატანილი) — `ds_invoice_preview_script()`-ის
+  ხელახლა გამოყენება არასწორი იქნებოდა (მოდალზეა აგებული, რომელიც
+  აქ აღარ არსებობს), საკუთარი პატარა `statusData` მასივი დუბლირებულია
+  (2 entry, იაფი დუბლირება, `$emailSignatureLines`-ის იგივე პრეცედენტი).
+
+**გადამოწმებულია ცოცხლად** (tenant 31, customer 1560): ორი ტესტ-
+ინვოისით (id=12 draft/1656₾ + დროებით შექმნილი id=36 final/100₾,
+სხვადასხვა თარიღით) — default-ად ჩატვირთვისას ჩანდა უახლესი (id=36,
+"საბოლოო"), ინვოისების სიაში id=12-ზე დაჭერამ **URL-ის შეცვლის
+გარეშე** გადართო ნომერი/სტატუსი-badge/სხეული/active-row სწორ
+მნიშვნელობებზე. Chart-მა სწორად აჩვენა 2 ცალკე სერია ("პირველადი"
+1656 / "საბოლოო" 100), თითო თავისი ფერით. Headline stats/status-
+totals/top-products ყველა განახლდა ორივე ინვოისის გათვალისწინებით
+(სულ 2, 1756₾, საშ. 878₾). ცარიელი-ისტორიის customer (id=1553)
+ხელახლა გადამოწმდა ახალი structure-ითაც — 4 empty-state ბლოკი,
+PHP შეცდომების გარეშე. ტესტ-ინვოისი (id=36) წაშლილია, id=12
+უცვლელი დარჩა, temp password აღდგენილია.
+
+### 4.71 ბაგი: ენის გადამრთველი კარგავდა query-string-ს ყველა გვერდზე
+
+user-მა შენიშნა: `/customers/report?id=N`-ზე ენის გადართვისას `id`
+იკარგებოდა. Root-cause-ის მოძებნისას აღმოჩნდა, რომ ეს **არ იყო** ამ
+გვერდის ცალკე ბაგი — `ds_lang_url()` (`app/Core/helpers.php`,
+topbar-ისა და ყველა auth-გვერდის ენის-ღილაკის ერთადერთი წყარო)
+ყოველთვის მხოლოდ `Router::current()` (წმინდა path, query-სტრინგის
+გარეშე) + `?lang=code`-ს აწყობდა — ანუ **ნებისმიერი** query-param-ზე
+დამოკიდებული გვერდი (`/invoices?edit=N`, `/customers/report?id=N`
+და ა.შ.) კარგავდა თავის სრულ მდგომარეობას ენის გადართვისას, არა
+მხოლოდ ახალი რეპორტის გვერდი — უბრალოდ user-მა ეს პირველად აქ
+შენიშნა, რადგან `?id=` ამ გვერდისთვის აუცილებელია (მისი გარეშე 404).
+Lazy fix-ი (მხოლოდ ამ ერთ გვერდზე `?id=`-ის ხელით დამატება) ყველა
+დანარჩენ გვერდს ისევ გატეხილს დატოვებდა — გასწორებულია **root**-ში,
+ერთადერთ გაზიარებულ ფუნქციაში:
+
+- **`ds_lang_url()`** — `$_GET`-ის ყველა არსებული პარამეტრი ინახება,
+  მხოლოდ `lang` overwrite/emplace-დება, `http_build_query()`-ით
+  აწყობილი query-string მთლიანად `e()`-ითაა escaped (საჭირო გახდა,
+  რადგან ერთზე მეტი param-ის შემთხვევაში `&`-საც შეიცავს, რომელიც
+  HTML `href`-ში `&amp;`-ად უნდა გამოჩნდეს).
+
+**გადამოწმებულია ცოცხლად**: `/customers/report?id=1560`-ზე ენის
+ბმულმა სწორად აჩვენა `?id=1560&lang=en` (არა მხოლოდ `?lang=en`),
+გადართვის შემდეგ გვერდი ინგლისურად, სწორი customer-ით, 404-ის
+გარეშე ჩაიტვირთა. იმავე ფიქსმა ასევე გამოასწორა `/invoices?edit=N`-იც
+(დამოუკიდებლად გადამოწმებული) — ანუ ეს ერთი, საერთო ცვლილება ყველა
+query-param-ზე დამოკიდებულ გვერდს ეხმარება, არა მხოლოდ ორ ამ
+კონკრეტულს. Console error არცერთ ეტაპზე არ ყოფილა, temp password
+აღდგენილია.
+
+### 4.72 ცხრილის style/script აუდიტი — უკვე ცენტრალიზებულია, ერთი inline style დარჩენილი აღმოჩნდა
+
+user-მა მოითხოვა: ყველა ცხრილის style/script გატანა ცალკე `table.css`/
+`table.js`-ში, inline style/script-ების შემოწმებით. აუდიტის შედეგი:
+**ეს უკვე თითქმის მთლიანად გაკეთებული იყო** — `public/vendor/table/
+css/ds-table.css` + `public/vendor/table/js/ds-table.js` უკვე არსებობს
+და უკვე ზუსტად ეს როლი აქვს (ახალი `table.css`/`table.js` არ შემქმნია
+— ცალკე, თითქმის-იდენტური ფაილების გაჩენა დაერევოდა, არა ეხმარებოდა
+`app_url()`-ის იგივე ლოგიკით). `layout.php` ყოველ გვერდზე `ds-table.css`-ს
+გლობალურად კრავს, `ds_table_script()` (helpers.php) კი `ds-table.js`-ს
+per-page — 6 გვერდი უკვე იყენებს (`customers`, `orders`, `products`,
+`users`, `dashboard`, `customer-report`).
+
+**Grep-აუდიტით ნაპოვნი**: მთელს `app/Views/`-ში, ცხრილთან
+დაკავშირებული `<style>` block ან inline `style="..."` მხოლოდ ერთი
+ნამდვილი შემთხვევა იყო — `users.php`-ის `<td style="width:48px;">`
+(ავატარის სვეტი). წაშლილია, `.ds-table td.ds-table-col-avatar { width:
+48px; }`-ად გადატანილია `ds-table.css`-ში.
+
+**შემოწმებული და **განზრახ** ხელუხლებელი დარჩენილი**:
+- `emails/invoice.php`, `pdf/orders.php`, `pdf/invoice.php` — თავიანთი
+  `<style>` block-ები **უნდა** დარჩეს inline: ეს არა Bootstrap-ით
+  render-დებული გვერდები, არამედ დამოუკიდებელი დოკუმენტები (email
+  client-ები + mPDF), რომლებსაც გარე CSS ფაილის ჩატვირთვა საერთოდ არ
+  შეუძლიათ სანდოდ — ორივე ფაილის საკუთარი docblock ეს აშკარად ხსნის
+  (`4.66`-ის emails/invoice.php-ის დოკუმენტაცია). გატანა ამ დოკუმენტებს
+  **გატეხავდა**, არა გაასუფთავებდა.
+- `invoice-view.php`, `invoice-preview.php`, `superuser.php`-ის ცხრილები
+  — pure Bootstrap utility classes, inline style საერთოდ არ აქვთ.
+- `users.php`-ის ავატარის `img`/`span` inline sizing (`width:32px` და
+  სხვა) — component-დონის (`ds-avatar`) სტილია, არა ცხრილის, ცხრილის
+  გარეთაც გვხვდება (profile-upload widget) — table.css-ში გადატანა
+  არასწორი ადგილი იქნებოდა.
+- სხვა `style="font-size:2rem;opacity:.4;"` (empty-state icon, 6+
+  გვერდზე გამეორებული) — ცხრილის კი არა, ზოგადი "ცარიელი სია" pattern-ია
+  (ცხრილის ნაცვლადაც ჩნდება, არა მისი ნაწილი) — scope-ის გარეთაა ამ
+  მოთხოვნისთვის, არ შეხებია.
+- JS-ში დუბლირებული sort/search/paging ლოგიკა — არ ნაპოვნია;
+  `customers.php`-ის ერთადერთი table-related JS (`ds-table-search`
+  input-ის პროგრამული შევსება) ბიზნეს-ფუნქციაა (ს/კ ძებნა), არა
+  ცხრილის generic behavior — `ds-table.js`-ს არ ეკუთვნის.
+
+**გადამოწმებულია**: `php -l` გავლილია, class-სახელი ზუსტად ემთხვევა
+view-ში და CSS-ში. Live-ბრაუზერით `/settings/users`-ზე ვერ
+გადამოწმდა ვიზუალურად — tenant 31-ს sub-user არ ჰყავს (ცხრილი
+ცარიელია, "შედეგი ვერ მოიძებნა") — ცვლილება მექანიკური/დაბალი-რისკის
+იყო (style-ატრიბუტის class-ად გადატანა, იდენტური მნიშვნელობით),
+ამიტომ ცალკე test-მონაცემის შექმნა overkill იყო.
+
+### 4.73 ყველა ცხრილს `table-striped` — + hover-ის ერთ დღემდე-ფარული CSS-ბაგის აღმოჩენა/გასწორება
+
+user-მა მოითხოვა: ყველა ცხრილს striped-rows სტილი ჰქონდეს.
+Bootstrap-ის საკუთარი `table-striped` კლასი დაემატა ყველა 9 `<table>`-ს
+`app/Views/`-ში (`customers`, `orders`, `products`, `users`, `dashboard`,
+`customer-report`, `superuser`, `invoice-view`, `invoice-preview`) —
+ახალი dependency/custom CSS არ დასჭირვებია definition-ის დონეზე,
+Bootstrap-ს ეს native აქვს.
+
+**აღმოჩნდა**, რომ ეს მარტივი კლასის დამატება საკმარისი არ იყო
+`.ds-table`-ით გახვეულ 6 გვერდზე — `ds-table.css`-ის `4.63`-მდელი
+წესი (`background-image: none`, "grid-ის ხაზები crisp რომ დარჩეს")
+სწორედ Bootstrap-ის `table-striped`-ის საკუთარ მექანიზმს აუქმებდა
+(ორივე, stripe-იც და hover-იც, `background-image`-ით მუშაობს).
+
+- **`ds-table.css`** — ახალი წესი, `background-color`-ით (არა
+  `background-image`, რომელიც ზემოთ ნულირებულია) — `.ds-table
+  .table-striped > tbody > tr:nth-of-type(odd) > *`, hover-ის ტონზე
+  ერთი ჩრდილით უფრო ღია, რომ hover კვლავ შესამჩნევად მუქდებოდეს
+  striped row-ზეც.
+- **ამ დროს აღმოჩენილი ცალკე ბაგი**: ახალი stripe-წესისა და არსებული
+  hover-წესის CSS-specificity **ზუსტად ტოლი** გამოვიდა (ორივეს აქვს 2
+  class + 1 pseudo-class) — ტოლ specificity-ზე **source-order-ში
+  უფრო გვიან** განსაზღვრული წესი იმარჯვებს, stripe კი hover-ის
+  *შემდეგ* დავამატე პირველად, ანუ hover საერთოდ აღარ მუშაობდა
+  striped (კენტ) row-ებზე — ცოცხლად დადასტურებული (`:hover`-ის
+  ფონი 0.03-ალფა tint-ზე იკეტებოდა, tertiary-bg-მდე არ მუქდებოდა).
+  გასწორებულია — stripe-წესი გადატანილია hover-წესის **წინ**
+  (source-order-ში), hover ახლა ისევ იმარჯვებს ტოლი specificity-ის
+  შემთხვევაშიც.
+
+**გადამოწმებულია ცოცხლად**: `/customers`-ზე (8 row) `getComputedStyle`-ით
+დადასტურდა ნამდვილი alternating pattern (`rgba(0,0,0,.03)` / თეთრი
+/ `rgba(0,0,0,.03)` / თეთრი...). Hover-ის ბაგი თავად აღმოვაჩინე
+ამავე გადამოწმებისას (`:hover`-ის ფონი უცვლელი დარჩა პირველი
+ცდისას) — გასწორების შემდეგ, ნამდვილი mouse-hover-ით (`computer`
+tool, არა JS-dispatched event, რომელიც `:hover`-ს არ იწვევს) —
+`getComputedStyle` ცხადად აჩვენა `--bs-tertiary-bg`-ის რეალური
+ფერი (`rgb(248,249,250)`), ანუ hover კვლავ მუშაობს striped
+row-ზეც. `invoice-view.php`-ზეც (public token-link, login გარეშე)
+დადასტურდა `table-striped` კლასის არსებობა, console error-ის
+გარეშე. Temp password აღდგენილია.
+
+### 4.74 Stripe უფრო ღია + hover-ის fixed ფერი — და Bootstrap 5.3-ის საკუთარი box-shadow-ტრიკის ნამდვილი აღმოჩენა
+
+user-მა მოითხოვა: stripe უფრო ღია, `tr:hover`-ს კონკრეტული სტილი
+(`background: #e3f2fd; box-shadow: inset 4px 0 0 #2196f3;` — ფიქსირებული
+hex-ფერები, არა `--bs-*` თემა-ცვლადები, ამიტომ dark mode-ს არ
+მიჰყვება, სხვა ამ ფაილის ყველა დანარჩენი წესისგან განსხვავებით —
+ცალსახად ასეა მოთხოვნილი).
+
+- Stripe: `.03` → `.015` opacity (`4.73`-ის მნიშვნელობის ნახევარი).
+- Hover: ჩანაცვლდა ზუსტად user-ის მოცემული სტილით. Box-shadow-ის
+  accent (`4px` ლურჯი ზოლი) მხოლოდ row-ის **პირველ** უჯრედზეა
+  (`:first-child`) — ყველა უჯრედზე დადება column-თითო ვერტიკალურ
+  ზოლებს დახატავდა, არა ერთ row-level აქცენტს.
+
+**ამ ცვლილებისას აღმოჩენილი, დიდი ხნის ნამდვილი ბაგი** (`4.73`-ის
+საკუთარი "Bootstrap აუქმებს via background-image" კომენტარი **მცდარი**
+გამოდგა): Bootstrap 5.3 stripe/hover-ს **საერთოდ არ** ხატავს
+background-image-ით — ნამდვილად იყენებს `box-shadow: inset 0 0 0
+9999px var(--bs-table-bg-state)`-ს **ყოველ** უჯრედზე (`.table > :not
+(caption) > * > *`-ზე, Bootstrap-ის CDN CSS-დან უშუალოდ დადასტურებული).
+რაკი ჩემი ახალი `:first-child`-ის box-shadow-წესი მხოლოდ row-ის
+პირველ უჯრედს ეხებოდა, **დანარჩენ** უჯრედებზე Bootstrap-ის საკუთარი
+ნაცრისფერი (`rgba(0,0,0,.075)`) box-shadow კვლავ აქტიური რჩებოდა,
+ჩემს ღია ლურჯ ფონზე ზემოდან ხატებოდა — ცოცხლად დადასტურებული
+(`getComputedStyle`-ით: row-ის მე-2 უჯრედს ჰქონდა `rgba(0,0,0,.075)
+0 0 0 9999px inset`, რაც ჩემი კოდის არცერთ ადგილას არ იწერებოდა).
+**გასწორებულია**: base grid-line წესს (`.ds-table .table > :not
+(caption) > * > *`) დაემატა `box-shadow: none` — ეს ნეიტრალიზებს
+Bootstrap-ის საკუთარ stripe/hover მექანიზმს **ყოველ** უჯრედზე,
+საიდანაც ჩემი საკუთარი stripe/hover წესები სუფთად, ჩარევის გარეშე
+დგება. `4.73`-ის ძველი კომენტარი ("background-image: none ... crisp
+lines") ახლა ჩანაცვლებულია სწორი ახსნით.
+
+**გადამოწმებულია ცოცხლად**: `getComputedStyle`-ით row-ის **ყველა**
+უჯრედს (0-დან 5-მდე) ახლა ერთნაირი სუფთა `rgb(227,242,253)` ფონი
+აქვს hover-ზე, `box-shadow: none` ყველგან გარდა პირველი უჯრედისა
+(`4px inset #2196f3`) — Bootstrap-ის ნაცრისფერი overlay აღარსად
+ჩანს. Grid-ხაზები (`border`) უცვლელად მუშაობს (box-shadow-სგან
+დამოუკიდებელი property). Stripe-იც (`.016`-ალფა, ახალი მსუბუქი
+მნიშვნელობა) სუფთად ალტერნირებს hover-ის გარეშეც. Console error
+არცერთ ეტაპზე არ ყოფილა, temp password აღდგენილია.
+
+### 4.75 ცხრილის header — ბოლდი, ყველა მონაცემი — ერთი ფონტის ზომა
+
+user-მა მოითხოვა: header-ის ფონტი bold, ყველა მონაცემს ერთი და იგივე
+ფონტის ზომა. `ds-table.css`-ის ძველი წესი (`th`/`td` ორივეს ერთად
+`font-weight: 400`) გაიყო — `th` ახლა `700`-ია, `td` (და მისი
+შვილები) კვლავ `400`.
+
+**Grep-ით შემოწმებისას ნამდვილი font-size შეუსაბამობაც აღმოჩნდა**:
+`.ds-table td .badge/code/small/.small`-ს უკვე ჰქონდა `.875rem`
+override, მაგრამ **არა** `.btn`-ს — Bootstrap-ის `.btn` საკუთარ
+`font-size: 1rem`-ს აწესებს (`--bs-btn-font-size`), td-დან
+inheritance-ს არ ეყრდნობა, ამიტომ plain inheritance საკმარისი არ
+იყო. ერთადერთი ნამდვილი შემთხვევა მთელ codebase-ში —
+`customer-report.php`-ის ინვოისის-ნომრის trigger ღილაკი
+(`btn btn-link`, არა `btn-sm`, ცხრილის უჯრედის შიგნით) — რეალურად
+`1rem`-ზე render-დებოდა, დანარჩენი row-ის `.875rem`-ის ნაცვლად.
+გასწორებულია: `.ds-table td .btn` დამატებულია `.875rem`-იან
+font-size წესში.
+
+**გადამოწმებულია ცოცხლად**: `/customers/report?id=1560`-ზე —
+`th` weight `700`, `td` weight `400`, ორივეს ზომა `12.6px`
+(`.875rem`), ადრე-შეუსაბამო ღილაკიც ახლა ზუსტად `12.6px`-ია.
+`/orders`-ზე — ცხრილის ყველა `td`-ს `getComputedStyle`-ით
+შემოწმებული `font-size`-ების სია ერთ, უნიკალურ მნიშვნელობამდე
+დადის (`12.6px`) — ანუ ნამდვილად აღარსად არის outlier. Console
+error არცერთ გვერდზე არ ყოფილა, temp password აღდგენილია.
+
+### 4.76 ცხრილის ყველა მონაცემს — ერთი font-family
+
+user-მა (`4.75`-ის განგრძობით) მოითხოვა: font-family-იც ერთი და
+იგივე იყოს ყველა მონაცემისთვის. Grep-ით ნაპოვნი ერთადერთი ნამდვილი
+შემთხვევა — `customers.php`-ის საიდენტიფიკაციო-კოდის `<code>`
+ტეგი: Bootstrap-ის reboot.css `code`/`kbd`/`pre`/`samp`-ს default-ად
+`--bs-font-monospace`-ზე სვამს, რომელიც ეს აპი არასდროს გადაუფარავს
+(ფონტის ზომაზე `4.72`/`4.75`-ში უკვე override იყო, family-ზე — არა).
+`.ds-table td code { font-family: inherit; }` დამატებულია.
+
+**გადამოწმებულია ცოცხლად**: `/customers`-ზე `<code>`-ისა და
+ჩვეულებრივი `<td>`-ის `getComputedStyle().fontFamily` ზუსტად
+ემთხვევა (`Inter, "Noto Sans Georgian", ...`); მთელი ცხრილის (header
++ ყველა row) ყველა უჯრედის font-family-ების სია ერთ, უნიკალურ
+მნიშვნელობამდე დადის. Console error არ ყოფილა, temp password
+აღდგენილია.
+
+### 4.77 "ბმულის გაზიარება"-ს დანიშნულების გვერდი — მთლიანად chrome-ისა და ღილაკების გარეშე
+
+user-მა მოითხოვა: `/invoices/view` (share-link-ისა და "ბეჭდვა"-ს
+საერთო destination) აღარ იყოს app-screen, არამედ ავტორიზაციის-გარეშე
+გვერდი — მხოლოდ ინვოისი, სიმულირებულ A4 გვერდზე, app-ის ზედა/გვერდითი
+ნავბარის და ყოველგვარი აქტიური ღილაკის გარეშე — footer-ში ერთადერთი
+ბმულით, ისეთივე, როგორიც `pdfFooterHtml()`-ის (რეალური PDF-ის)
+footer-შია.
+
+- **`App\Core\Controller::document()`** (ახალი, მესამე render-რეჟიმი
+  `view()`/`bare()`-ის გვერდით) — `document/_layout.php`-ს იყენებს
+  layout-ად, `bare()`-ისგან განსხვავებით (რომელიც auth-გვერდების
+  split-screen ვიზუალს ატარებს — აქ არასწორი იქნებოდა).
+- **`app/Views/document/_layout.php`** (ახალი) — მინიმალური HTML:
+  ფონტები (იგივე Google Fonts + BPG Arial Caps, რასაც `layout.php`/
+  `auth/_layout.php` იყენებენ) + `design-system.css`, **ბოოტსტრაპ-
+  აიქონების გარეშე** (invoice-view.php-ის შემცველობას ხატულა არც
+  ერთი არ სჭირდება ტულბარის მოცილების შემდეგ). `<footer>`-ი layout-ის
+  თავადაა ჩაშენებული (გენერიკულია, ნებისმიერ მომავალ "document"
+  გვერდს გამოადგება) — ორი ხაზი, ზუსტად `pdfFooterHtml()`-ის იგივე
+  ტექსტი/სტრუქტურა (debt notice + "დაგენერირებულია {APP_NAME}"
+  ბმულით `app_url()`-ზე).
+- **`design-system.css`** — ახალი `.ds-document-*` კლასები: A4-ის
+  პროპორციული `max-width:210mm; min-height:297mm` თეთრი "ფურცელი",
+  ნაცრისფერ ფონზე ცენტრირებული, ჩრდილით (`--ds-shadow-md`); `@media
+  print`-ში ჩრდილი/ცენტრირება ქრება (Ctrl+P-ით რომ ნამდვილად
+  სუფთა, ერთი-გვერდიანი დოკუმენტივით დაიბეჭდოს); mobile-ზეც (`<576px`)
+  ცენტრირება/max-width მოშორდება (ვიწრო ეკრანზე მთელი სიგანე ჯობია).
+- **`InvoiceController::show()`** — `$this->view(...)` → `$this->
+  document(...)`, `$viewToken` პარამეტრი წაშლილია (PDF-ის ღილაკს
+  აღარ სჭირდებოდა).
+- **`invoice-view.php`** — მთელი toolbar-ი ("PDF შენახვა"/"ბეჭდვა"
+  ღილაკები, `.no-print`) წაშლილია; შემცველობის `.card.ds-card` wrapper
+  უბრალო `<div class="p-4 p-md-5">`-ად გამარტივდა (გარე
+  `.ds-document-page` თავადვე იძლევა "ფურცლის" ვიზუალს — card-ის
+  ორმაგი ჩრდილი/ჩარჩო overkill იქნებოდა).
+- **Dead lang-key**: `inv.save_pdf` (ka+en) — წაშლილია, აღარსად
+  გამოიყენებოდა (`inv.print` კი კვლავ ცოცხალია, `orders.php`-ისა და
+  preview-modal-ის საკუთარი "ბეჭდვა" ბმულებისთვის).
+
+**Scope**: ეს ცვლილება ორივე ვიზიტორისთვის მოქმედებს — anonymous
+share-link (`?token=`) **და** login-ით შემოსული tenant-წევრის
+"ბეჭდვა" ნავიგაცია (`/invoices/view?id=N`, token-ის გარეშე) —
+ორივე ერთსა და იმავე `show()`-ს/route-ს იზიარებდა უკვე, ერთი
+render-ლოგიკის შენარჩუნება (ორის ნაცვლად) მარტივი, ცალსახად სწორი
+არჩევანი იყო.
+
+**გადამოწმებულია ცოცხლად, ორივე access-გზით** (tenant 31): share-link-ით
+(login-ის გარეშე, ახალი browser-context) — page-ს **ზუსტად 1** `<a>`
+აქვს მთლიან DOM-ში (footer-ის credit-ბმული, `app_url()`-ზე სწორი
+href-ით) და **0** `<button>`, `.ds-sidebar`/`.ds-topbar` საერთოდ არ
+არსებობს; `.ds-document-page`-ის `getComputedStyle` — `max-width
+793.7px`/`min-height 1122.5px` (ზუსტად A4-ის 210×297mm px-ში),
+თეთრი ფონი, ჩრდილი. იგივე გვერდი login-ით (`?id=12`, token-ის
+გარეშე) — იდენტური 0 ღილაკი/1 ბმული. `/orders`-ზეც (row-ის "ბეჭდვა"
+ბმულის წყარო) console error არ ყოფილა. Temp password აღდგენილია.
+
+### 4.78 A4-გვერდის სტილი — user-ის მითითებული gist-ის ზუსტი მნიშვნელობებით
+
+user-მა მიუთითა კონკრეტული წყარო: [gist.github.com/kivanio/...]
+("A4 CSS Page Template") — `4.77`-ის `.ds-document-*` წესები საკუთარი
+მიახლოებული მნიშვნელობებიდან (`--bs-tertiary-bg` ფონი, `--ds-shadow-md`)
+ამ gist-ის ზუსტ მნიშვნელობებზე გადავიდა: `body` ფონი `rgb(204,204,204)`,
+გვერდი — თეთრი, `box-shadow: 0 0 0.5cm rgba(0,0,0,.5)`, ზომები `cm`-ში
+(`21cm`/`29.7cm`, `210mm`/`297mm`-ის იდენტური, უბრალოდ ერთეული
+შეიცვალა თავად წყაროსთან თვალსაჩინო შესატყვისობისთვის). Print-media
+reset-იც (`margin:0; box-shadow:none`) იგივე გვერდიდანაა, `box-shadow:
+0`-ის ნაცვლად ვალიდური `none`-ით (გვერდზე ეს ტიპო იყო).
+
+**განზრახ გადახრა gist-ისგან**: `width`/ფიქსირებული `height` →
+`max-width`/`min-height`. Gist-ის `<page>` ბლოკები ცარიელი canvas-ებია,
+რომლებსაც ავტორი ხელით პაგინირებს (index.html-ში 7 ცალკე `<page>`
+ჩანს) — ჩვენი ინვოისი კი ერთი, ცვლადი-სიგრძის დოკუმენტია; ფიქსირებული
+`height`-ი უბრალოდ **მოკვეთდა** გრძელ ინვოისს overflow-ის დამუშავების
+გარეშე, `min-height` კი გვერდს შემცველობის მიხედვით ზრდის, ვიზუალურად
+A4-ის სიგანეს/მინიმალურ სიმაღლეს ინარჩუნებს.
+
+**გადამოწმებულია ცოცხლად**: `.ds-document-page`-ის `getComputedStyle` —
+`max-width: 793.701px` (=21cm), `min-height: 1122.52px` (=29.7cm),
+`box-shadow: rgba(0,0,0,.5) 0 0 18.9px` (=0.5cm), `background: rgb(255,
+255,255)`; `.ds-document-body` — `rgb(204,204,204)`, ზუსტად gist-ის
+მნიშვნელობა. ღილაკების/ბმულების რაოდენობა უცვლელი დარჩა (0/1) —
+სუფთა ვიზუალური ცვლილებაა, `4.77`-ის access/chrome-ლოგიკას არ
+შეხებია. Console error არ ყოფილა.
+
+### 4.79 A4-გვერდის footer — თავად ფურცლის შიგნით, არა ცალკე ქვემოთ
+
+user-მა მოითხოვა: debt-notice + "დაგენერირებულია" footer-ი თავად
+A4-ფურცლის (`.ds-document-page`) შიგნით იყოს, არა მის ქვემოთ, ცალკე
+ელემენტად ნაცრისფერ ფონზე (რა ასეც იყო `4.77`-ში — `<footer>` `<main
+class="ds-document-page">`-ის sibling იყო, არა შვილი).
+
+- **`document/_layout.php`** — `<footer>` გადატანილია `<main
+  class="ds-document-page">`-ის **შიგნით**, `$content`-ის შემდეგ,
+  ბოლო child-ად.
+- **`design-system.css`** — `.ds-document-page` გახდა `display:flex;
+  flex-direction:column`; `.ds-document-footer`-ს `margin-top: auto`
+  ედება (საკუთარი `max-width`/`margin:auto` ცენტრირება მოშორდა —
+  აღარ სჭირდება, ფურცლის სიგანეს პირდაპირ იზიარებს) — მოკლე
+  ინვოისზე footer-ი ფურცლის ბოლო კიდეს ეკვრის, გრძელზე კი უბრალოდ
+  content-ის შემდეგ მოსდევს (არ ეფარება).
+
+**გადამოწმებულია ცოცხლად**: `footer.parentElement === .ds-document-page`
+და `.lastElementChild === footer` — true; `footer.getBoundingClientRect().
+bottom` ზუსტად ემთხვევა `.ds-document-page`-ის საკუთარ `bottom`-ს
+(orphan-footer-ის ნაცვლად ნამდვილად ფურცლის კიდეზეა). ღილაკები/
+ბმულები კვლავ 0/1, console error არ ყოფილა.
+
+### 4.80 "ბმულის გაზიარება" — toast-შეტყობინება (Ctrl+V მინიშნებით)
+
+user-მა მოითხოვა: ბმულის კოპირებისას გამოჩნდეს notify, რომ ბმული
+ბუფერშია და Ctrl+V-ით ჩასმა შეიძლება — "ტექსტი კარგად დაალაგე".
+**ახალი toast-სისტემა არ დამჭირვებია** — `layout.php`-ს/`app.js`-ს
+უკვე ჰქონდა მზა, გაზიარებული `window.dsNotify(message, type)`
+(`#dsToastContainer`, Bootstrap Toast) — client-side ვალიდაციისთვის
+აშენებული, აქაც პირდაპირ გამოსადეგი.
+
+- **`ds_share_link_script()`** (helpers.php) — click-ის success-ტოტში
+  ემატება `window.dsNotify?.(...)` გამოძახება (icon-ისა და title-ის
+  ცვლილების გვერდით, არა მის ნაცვლად — row-ის icon-only ღილაკებზე
+  მარტო title-change ადვილად შეუმჩნეველია). Toast-ის ტექსტი
+  სტრუქტურირებულია: `bi-clipboard2-check-fill` ხატულა + წინადადება
+  + `<kbd>Ctrl</kbd>+<kbd>V</kbd>` (ორი ცალკე `<kbd>` badge, არა
+  plain-text "Ctrl+V" — ეს არის "ტექსტი კარგად დაალაგე"-ს კონკრეტული
+  პასუხი, კლავიატურის კომბინაცია ვიზუალურადაც კლავიშებივით იკითხება).
+- **ახალი lang-key** `inv.share_link_notify` (ka+en) — pure-text
+  წინადადება, `<kbd>` markup თავად JS-ის მხრიდანაა დამატებული
+  (lang string-ებში HTML embed-ის ნაცვლად).
+
+**გადამოწმებულია ცოცხლად** (tenant 31, `orders.php`-ისა და
+`invoices.php`-ის ორივე ღილაკზე, `navigator.clipboard.writeText`-ის
+stub-ით sandbox-ის `clipboard-write:denied`-ის გვერდის ავლით,
+`4.68`-ის იგივე მეთოდით): toast ორივე გვერდზე `show`-კლასით
+ჩნდება, `text-bg-success` ტონით, ტექსტი/`<kbd>` markup ზუსტად
+მოსალოდნელია. Console error არცერთ გვერდზე არ ყოფილა. Temp password
+აღდგენილია.
+
+### 4.81 Toast ფერი success → info — და `dsNotify()`-ის საერთო close-button ბაგის აღმოჩენა
+
+user-მა დააზუსტა (`4.80`-ის განგრძობით): მწვანე/success ტონის
+ნაცვლად — ინფორმაციის (`info`) ხატულითა და ფერით. `ds_share_link_
+script()`-ში `bi-clipboard2-check-fill`/`'success'` → `bi-info-
+circle-fill`/`'info'`.
+
+**ამ ცვლილებისას აღმოჩენილი, `window.dsNotify()`-ის (app.js) თავად
+საერთო ბაგი** — არა ახალი, ჩემი ცვლილებით მხოლოდ პირველად
+გამოწვეული: `dsNotify()` close-ღილაკს ყოველთვის `btn-close-white`-ს
+სვამდა, ტიპის მიუხედავად. Bootstrap 5.3-ის `text-bg-success`/
+`text-bg-danger` **თეთრ** ტექსტს იყენებს მუქ ფონზე (თეთრი close-X
+სწორია), მაგრამ `text-bg-info`/`text-bg-warning` — **შავ** ტექსტს
+ღია ფონზე (CDN CSS-დან უშუალოდ დადასტურებული) — თეთრი close-X ღია
+ფონზე თითქმის უხილავი გამოდის. ეს ბაგი აქამდე არ იყო შემჩნეული,
+რადგან `dsNotify()`-ს `'info'`/`'warning'` ტიპით არავინ იძახებდა
+აქამდე (`dsNotifyCode()`-ის catalog-ში `warning` ტიპი არსებობს,
+უბრალოდ ჯერ არცერთ რეალურ code-ს არ გამოუყენებია).
+
+- **`app.js`** — `window.dsNotify()`-ში ახალი `closeClass` ლოგიკა:
+  `type === 'info' || type === 'warning'` → plain `btn-close`,
+  სხვა ნებისმიერი ტიპი (success/danger) → ძველი `btn-close
+  btn-close-white`. **Root-ში გასწორებულია** — ერთი call-site-ის
+  ნაცვლად ყველა მომავალი `dsNotify()`/`dsNotifyCode()` გამოძახება
+  ავტომატურად სარგებლობს, `ds_share_link_script()`-ს ცალკე fix არ
+  დასჭირვებია.
+
+**გადამოწმებულია ცოცხლად**: ახალი toast — `text-bg-info` კლასი,
+`rgb(13,202,240)` ფონი, შავი ტექსტი, close-ღილაკს **აღარ** აქვს
+`btn-close-white` (მხოლოდ `btn-close`) — ვიზუალურად ხილული X.
+Regression-შემოწმება: `dsNotify('...', 'danger')` კვლავ
+`btn-close-white`-ს ინარჩუნებს (უცვლელი), `dsNotify('...', 'warning')`
+ახლა სწორადვე plain `btn-close`-ზეა. Console error არ ყოფილა, temp
+password აღდგენილია.
+
+### 4.82 ყველა flash-შეტყობინება → Bootstrap Toast (აღარ page-top `.alert` banner)
+
+user-მა მოითხოვა: ყველა notify Bootstrap Toast-ით გამოვიდეს. აპში
+ორი პარალელური სისტემა თანაარსებობდა — client-side JS-შეცდომების
+`window.dsNotify()` (toast, უკვე არსებული) და server-flashed
+"created"/"updated"/"email sent" და ა.შ. შეტყობინებების page-top
+`<div class="alert...ds-alert-autodismiss">` banner-ები (14 view-ში).
+ეს ორივე ერთ toast-სისტემაზე გაერთიანდა.
+
+- **`ds_flash_toast(?string $message, string $type = 'success', string
+  $icon = 'bi-check-circle-fill'): string`** (ახალი, helpers.php) —
+  `$message === null` → `''` (caller-ს საკუთარი if-guard არ სჭირდება);
+  სხვანაირად `<script>window.dsNotify?.(icon + msg, type)</script>`-ს
+  აბრუნებს, `$scripts`-ში ჩასამატებლად (**არა** inline body-ში —
+  `dsNotify` მხოლოდ მას შემდეგ არსებობს, რაც `app.js` ჩაიტვირთება,
+  რაც `layout.php`-ში `$content`-ის **შემდეგ** ხდება).
+- **14 view + 1 module-view** კონვერტირებულია: `customers.php`,
+  `orders.php`, `invoices.php` (5 flash — created/updated/emailSent/
+  emailFailed/conflict), `dashboard.php` (notice/emailSent/emailFailed),
+  `products.php`, `users.php`, `organization.php` (ერთადერთი
+  boolean-flag შემთხვევა, `$updated ? t(...) : null`), `modules.php`,
+  `profile.php`, `profile-settings.php`, `auth/login.php` (`$notice`),
+  `auth/forgot-password.php` (`$sent`), `Warehouse` module-ის
+  `warehouse.php`. თითოეულში: inline `.alert` block წაშლილია,
+  `ds_flash_toast(...)` დამატებულია `$scripts`-ის აწყობაში (ან, სადაც
+  `$scripts` საერთოდ არ არსებობდა — `modules.php`, `profile-settings.php`,
+  `auth/forgot-password.php` — ახლად დამატებულია).
+- **`auth/_layout.php`-ს არ ჰქონდა** `#dsToastContainer`-იც და
+  `app.js`-იც (auth-გვერდები საკუთარ, ცალკე minimal script-სეტს
+  იყენებდნენ) — ორივე დამატებულია, რომ `auth/login.php`/`auth/
+  forgot-password.php`-ის toast-ებმაც იმუშაონ. `app.js`-ის დანარჩენი
+  listener-ები (sidebar/theme toggle და ა.შ.) უსაფრთხოდ no-op-ებია
+  auth-გვერდებზე — querySelectorAll-ით ეძებენ element-ებს, რომლებიც
+  იქ საერთოდ არ არსებობს.
+- **განზრახ ხელუხლებელი დარჩენილი** (`.alert` matches, non-flash):
+  `layout.php`-ის SuperUser impersonation-ბანერი (მუდმივი სტატუსი,
+  არა ერთჯერადი flash), `profile-settings.php`-ის "no_password_yet"
+  (persistent hint), `invoices.php`-ის `errors['items']` და `products.php`/
+  `warehouse.php`-ის `data-lookup-error` (ორივე field/section-დონის
+  ვალიდაცია, არა page-level notify), `style-guide.php`-ის სტატიკური
+  demo-მაგალითები (`sg.alert_success`/`sg.alert_warning`, `flash()`-ს
+  საერთოდ არ იყენებს).
+- **Dead code წაშლილია**: `app.js`-ის `.ds-alert-autodismiss`
+  auto-close listener — comprehensive grep-ით დადასტურდა, რომ ეს
+  კლასი აღარსად render-დება (ყველა callsite კონვერტირებულია).
+
+**გადამოწმებულია ცოცხლად + curl-ით** (tenant 31): curl-ით შექმნილმა
+customer-მა (`customers.php`) HTML-response-ში მხოლოდ სწორი
+`window.dsNotify?.(...)` script-ი აჩვენა, `.alert-success` block
+0-ჯერ (grep count). იმავე customer-ის ბრაუზერით რედაქტირებამ real
+navigation-ის შემდეგ ნამდვილი, ხილული toast აჩვენა ("...განახლდა.",
+`show` კლასით), page-ზე 0 `.alert-success`/`.alert-warning`. Auth
+layout-ზე (`/login`, logout-ის შემდეგ, ნამდვილი unauthenticated
+session-ით) — `window.dsNotify`/`#dsToastContainer` ორივე `typeof
+function`/`true`-ზეა, პირდაპირი `dsNotify()` გამოძახებით toast
+ცოცხლად გამოჩნდა. `organization.php` (curl, login-ით) — `200 OK`,
+PHP შეცდომების/leftover `.alert-success`-ის გარეშე. Console error
+არცერთ ეტაპზე არ ყოფილა. ტესტ-customer წაშლილია, temp password
+აღდგენილია.
+
+### 4.83 Toast → სტანდარტული Bootstrap toast-სტილი (icon + app-სახელი + "ახლა" + close)
+
+user-მა Bootstrap-ის საკუთარი დოკუმენტაციის reference screenshot
+მოგვცა — plain თეთრი toast, `.toast-header` (icon + brand + "just now"
++ close) და `.toast-body` ცალკე. `4.80`-`4.82`-ის `text-bg-{type}`
+შეფერილი toast ამ layout-ზე გადავიდა.
+
+- **`app.js`-ის `window.dsNotify(message, type, icon)`** — მესამე,
+  optional `icon` პარამეტრი დაემატა. მთლიანად ახალი markup: `.toast`
+  (თეთრი, `text-bg-*` აღარაა) → `.toast-header` (`<i>` — ფერადი,
+  ტიპის მიხედვით, `DS_TOAST_COLOR` map-ით; `<strong>` — `window.
+  dsAppName`; `<small>` — `window.dsToastJustNow`; `.btn-close`, ახლა
+  ყოველთვის მუქი — `4.81`-ის `closeClass`/`text-bg-*` ლოგიკა **მთლიანად
+  მოშორდა**, საჭირო აღარაა, თეთრ ფონზე მუქი close ყოველთვის სწორია)
+  + `.toast-body` (მხოლოდ თეთრი ტექსტი, აღარ შეიცავს icon-ს). ახალი
+  `DS_TOAST_ICON` map — თუ `icon` არგუმენტი არ გადმოეცემა, ტიპის
+  მიხედვით ავტომატურად აირჩევა (`success`→check-circle-fill,
+  `danger`→exclamation-octagon-fill, `warning`→exclamation-triangle-fill,
+  `info`→info-circle-fill).
+- **`ds_flash_toast()`** (helpers.php) — აღარ აწყობს icon-HTML-ს და
+  არ აწებებს message-ს (`$iconHtml . $msgJs` აღარ არსებობს) — icon
+  ცალკე, მესამე JS-არგუმენტად გადაეცემა `dsNotify`-ს. `$icon`
+  პარამეტრი `string` → `?string = null` — callsite-ებს **არცერთს არ
+  დასჭირვებია ცვლილება** (default-ი JS-ის `DS_TOAST_ICON`-ს მიენდობა,
+  რომელიც ყველა არსებული callsite-ის აქამდე ხელით-მითითებულ icon-ს
+  ისედაც ემთხვევა).
+- **`ds_share_link_script()`** — იგივე გამარტივება, `<i>...</i> +`
+  კონკატენაცია მოშორდა, `dsNotify($notifyText + ' <kbd>Ctrl</kbd>+
+  <kbd>V</kbd>', 'info')` — icon ('info-circle-fill') ავტომატურად.
+- **`layout.php` + `auth/_layout.php`** — ახალი `window.dsAppName`
+  (`app_name()`) და `window.dsToastJustNow` (`t('toast.just_now')`,
+  ახალი ka/en lang-key) injection, `dsNotifications`-ის გვერდით.
+
+**გადამოწმებულია ცოცხლად**: მოცემული screenshot-ის ტექსტით ("See?
+Just like this.") პირდაპირი `dsNotify()` გამოძახებამ ააგო ზუსტად
+იგივე structure — icon (მწვანე, success), `<strong>INVOICE</strong>`,
+`<small>ახლა</small>`, plain `.btn-close`, `.toast` კლასი
+`text-bg-*`-ის გარეშე. ნამდვილი flash-flow-ითაც (customers.php-ზე
+ახალი customer-ის შექმნა, ბრაუზერით) — header "INVOICE ახლა", body
+"„...\" დაემატა.", მწვანე check-circle-fill icon, `show` კლასი.
+Console error არ ყოფილა (ერთადერთი ნახული log — ძველი, ამ ტესტთან
+დაუკავშირებელი 405, სესიის ადრეული ეტაპიდან). ტესტ-customer-ები
+წაშლილია, temp password აღდგენილია.
+
+### 4.84 დეშბორდის "ბოლო ინვოისები" — იგივე row-actions, რაც `/orders`-ს აქვს
+
+user-მა მოითხოვა: დეშბორდის "ბოლო ინვოისები" ცხრილს `/orders`-ის
+იგივე row-actions ჰქონდეს. ყველა 6 მოქმედება დაემატა: ნახვა (preview
+მოდალი), რედაქტირება, ბეჭდვა, ექსპორტი PDF (ხელმოწერით/გარეშე
+dropdown), მეილზე გაგზავნა, ბმულის გაზიარება — ზუსტად `orders.php`-ის
+იგივე markup/closures/მოდალები, დუბლირებული (არა გაზიარებული
+partial) — იგივე კონვენცია, რაც `4.62`-ში დამკვიდრდა.
+
+- **`Dashboard::recentInvoices()`** — `c.customer_email` დაემატა
+  SELECT-ში (მეილის prefill-ისთვის; `view_token` უკვე `i.*`-ში იყო).
+- **`DashboardController::index()`** — ახალი `org`, `appUrl`,
+  `emailErrors`, `emailOld` view-ცვლადები (`org` უკვე გამოთვლილი
+  იყო, უბრალოდ არ გადაეცემოდა view-ს).
+- **`InvoiceController::sendEmail()`** — **განზოგადებულია** მესამე
+  redirect-კონტექსტისთვის. ძველი ბინარული `$fromOrders` ცვლადი →
+  `$listRedirect` (`/orders`, `/`, ან `null` — whitelisted თავად
+  `$_POST['redirect']`-იდან). ორივე list-გვერდი (`/orders`, `/`)
+  ახლა **ერთნაირად** იქცევა — success-ზეც და failure-ზეც საკუთარ
+  თავზე ბრუნდება (`?email_error=N`-ით failure-ზე); `invoices.php`-ის
+  single-invoice-ფორმის კონტექსტს (`$listRedirect === null`) კი
+  საკუთარი, `4.64`-ის success→დეშბორდი ლოგიკა შენარჩუნებული აქვს.
+- **`dashboard.php`** — `$invoiceNumber`/`$shareUrl`/`$emailDefaults`/
+  `$emailVal`/`$emailBad` closures, actions-სვეტი, `invoice-preview-
+  modal.php` include, საკუთარი `#invoiceEmailModal` (`redirect`
+  hidden ველი `/`), `ds_invoice_preview_script()`/`ds_share_link_
+  script()` + email-მოდალის JS (`?email_error=`-ის reopen — იგივე,
+  რაც `orders.php`-ს აქვს).
+
+**გადამოწმებულია ცოცხლად + curl-ით** (tenant 31): actions-სვეტში
+ზუსტად 4 button + 4 link (view/pdf-dropdown-toggle/email/share +
+edit/print/2 dropdown-item); share-link-ს ნამდვილი token, email-ღილაკს
+სწორი `customer_email`. Preview-მოდალმა/email-მოდალმა/chart-მა
+(`revenueChart`, ID-კონფლიქტის გარეშე) ყველამ იმუშავა. curl-ით,
+ვალიდაციის-შეცდომით (`redirect=/`) — `Location: /?email_error=12`,
+გვერდზე სწორი `is-invalid`/`invalid-feedback`; ბრაუზერში იგივე URL-მა
+სწორად გახსნა მოდალი (`invoiceId=12`), query flag წაშალა. `ds_lang_
+url()`-ის `4.71`-ის ფიქსიც სწორად მუშაობდა აქაც (`?email_error=12&lang=en`).
+Invoice id=12-ის მონაცემები (total/document_state) უცვლელი დარჩა.
+Console error არ ყოფილა, temp password აღდგენილია.
+
+### 4.85 SuperUser — ქვემომხმარებლების ცხრილს საკუთარი "დათვალიერება"/"დაბლოკვა" ღილაკები
+
+user-მა მოითხოვა: `/superuser`-ის ცხრილში ქვემომხმარებლები მხოლოდ
+badge-ებად ჩანდნენ, დაწკაპუნებით მხოლოდ დაბლოკვა შეეძლო — არც
+"დათვალიერება" ჰქონდათ, არც ცალკე მოქმედების ღილაკები. მოთხოვნა:
+თითოეულ ადმინს (ტენანტს), ვისაც ქვემომხმარებელი ჰყავს, ჰქონდეს
+გახსნადი child ცხრილი, სადაც ქვემომხმარებლები საკუთარი
+"დათვალიერება"+"დაბლოკვა" ღილაკებით იქნებიან.
+
+**დაზუსტებული user-თან** (`AskUserQuestion`): ტენანტის საკუთარი
+"დათვალიერება" ღილაკი **უცვლელად** რჩება პირდაპირი, ერთი-კლიკის
+impersonate-ად — ცალკე პატარა toggle ხსნის/კეცავს ქვემომხმარებლების
+ცხრილს, `დათვალიერება`-ს ქცევა არ იცვლება.
+
+**რატომ ასეა საჭირო**: `SuperUserController::impersonate()` მხოლოდ
+root ტენანტს (`created_by IS NULL`) იღებს ვალიდურ სამიზნედ —
+`Auth::tenantId()`-ის impersonation-შტო ამ მნიშვნელობას პირდაპირ
+ენდობა, ქვემომხმარებლის id-ზე ხელახლა არ გარდაქმნის. ამიტომ
+ქვემომხმარებლის "დათვალიერება" ღილაკიც ტექნიკურად **იმავე root
+tenant_id-ს** აგზავნის — impersonation თავად tenant-ის დონეზეა
+(ყველა tenant-წევრის მონაცემი საერთოა), არა ინდივიდუალურ
+მომხმარებელზე, ასე რომ "ამ ქვემომხმარებლის დათვალიერება" და "ამ
+ადმინის დათვალიერება" ერთი და იგივე რეალური მოქმედებაა, უბრალოდ
+ორივე ადგილიდან ხელმისაწვდომი.
+
+**`superuser.php`** — ტენანტის მწკრივის "ქვე-მომხმარებლები" სვეტი
+გამარტივდა უბრალო რაოდენობის badge-მდე (აღარ არის ცალკეული
+block-toggle badge-ები). თუ `subUsers !== []`, მწკრივის შემდეგ
+ემატება ერთი `colspan`-იანი მწკრივი plain `<details>`-ით (JS/Bootstrap
+collapse-ის გარეშე — იგივე ხრიკი, რაც `sidebar.php`-ის nav-ჯგუფებს
+აქვს, `design-system.css`-ის `.ds-details-caret`) — `<summary>`
+აჩვენებს "N ქვე-მომხმარებელი"-ს ისარით, გახსნისას იშლება nested
+`<table>` თითოეული ქვემომხმარებლისთვის: სახელი+დაბლოკვის badge,
+ელფოსტა, `დათვალიერება` (root tenant_id) + `დაბლოკვა`/`განბლოკვა`
+(სუბუსერის საკუთარი id) ღილაკები — იგივე markup/სტილი, რაც
+ტენანტის საკუთარ მწკრივს აქვს.
+
+**`design-system.css`** — ახალი `.ds-subusers > summary` წესი
+(marker დამალვა, hover-ფერი) — იგივე კონვენცია, რაც `.card >
+summary`-ს აქვს; caret-ის rotate-ისთვის უკვე არსებული generic
+`details[open] > summary .ds-details-caret` წესი ხელახლა
+გამოიყენება, ახალი წესი არ დასჭირდა.
+
+**გადამოწმებულია ცოცხლად** (`super@nova.local`-ით, read-only —
+არცერთი ფორმა არ გაგზავნილა, ტენანტ 1-ის (real user) მონაცემი
+უცვლელია): `test1`/`test2`-ს (ქვემომხმარებლის გარეშე) child-row საერთოდ
+არ დაერენდერა; ტენანტ 1-ს (2 ქვემომხმარებლით) "2 ქვე-მომხმარებელი"
+toggle გამოუჩნდა, დაწკაპუნებით `<details>`-ის `open`-ატრიბუტი
+სწორად გადაირთო (`d.open: true`), nested ცხრილში ორივე
+ქვემომხმარებლის სახელი/ელფოსტა/ღილაკი სწორად გამოჩნდა. ორივე
+ქვემომხმარებლის "დათვალიერება" ფორმის `tenant_id` სწორად `1`-ს
+(root) აგზავნიდა, "დაბლოკვა" ფორმის `user_id` კი სუბუსერის საკუთარ
+id-ს (`24`/`13`) — hidden ველების პირდაპირი წაკითხვით დადასტურებული.
+⚠️ caret-ის `rotate(180deg)` CSS transform ტესტ-ბრაუზერში
+(`Claude_Browser`) საერთოდ არ გამოისახებოდა — თუნდაც პირდაპირ,
+`!important`-ინლაინ ტესტ-წესითაც `getComputedStyle` ყოველთვის
+identity-მატრიცას აბრუნებდა — დადასტურდა, რომ ეს ავტომატიზაციის
+გარემოს თავისებურებაა (headless browser transforms/animations-ს
+გამორთავს determinism-ისთვის), არა კოდის ბაგი — თავად `<details
+open>`-ის ლოგიკური open/close მდგომარეობა და მისი შემცველობა
+უტყუარად სწორად მუშაობდა.
+
+### 4.86 SuperUser-ის კონკრეტული ქვემომხმარებლის დათვალიერება — ცხრილიც და გრაფიკიც მხოლოდ მისი
+
+user-მა მოითხოვა: `4.85`-ის ახალი ქვემომხმარებლის "დათვალიერება"
+ღილაკის ჩართვისას, `/orders`-ისა და დეშბორდის ცხრილში/გრაფიკში
+**მხოლოდ ჩართული (impersonated) მომხმარებლის** შეკვეთები უნდა ჩანდეს
+— ტენანტის საკუთარი "დათვალიერების" დროს კი, როგორც აქამდე, მთელი
+გუნდის (root + ყველა ქვემომხმარებელი) შეკვეთები.
+
+**გადამწყვეტი დეტალი**: `Auth::tenantId()` (ruler-scoped მონაცემი —
+customers/products/organization) ყოველთვის root ტენანტს უნდა
+აბრუნებდეს, თუნდაც კონკრეტული ქვემომხმარებელი იყოს არჩეული — ეს
+არასდროს შეცვლილა. ცვლილება მხოლოდ **invoice-scoped** მონაცემს
+ეხება (`/orders`, დეშბორდის ცხრილი+გრაფიკი+სტატ-ბარათები).
+
+**`Auth`** — `impersonate()`-ს ახალი მეორე პარამეტრი, `?int
+$asUserId` (`null`-ზე ტოლდება `$tenantUserId`-ს) — ინახავს
+`$_SESSION['impersonating_user']`-ს, root tenant id-ის (`impersonating_tenant`)
+გვერდით. ახალი `impersonatingUserId()` getter. ახალი
+`invoiceScopeUserIds(): array` — ეს არის ერთადერთი choke point,
+საიდანაც ყველა invoice-scoped caller ღებულობს სამიზნე user id-ების
+სიას: ჩვეულებრივ `User::tenantMemberIds($ruler)` (მთელი გუნდი,
+`4.36`-ის უცვლელი წესი), **გარდა** იმ შემთხვევისა, როცა SuperUser
+კონკრეტულ ქვემომხმარებელს ათვალიერებს (`impersonatingUserId() !==
+tenantId()`) — მაშინ მხოლოდ `[$actingAs]`. ჩვეულებრივი (არა-superadmin)
+მომხმარებლისთვის ეს ყოველთვის იმავე მთელი-გუნდის სიაზე დაბრუნდება,
+რაც აქამდე იყო — არაფერი იცვლება მათთვის.
+
+**`SuperUserController::impersonate()`** — POST ველი `tenant_id` →
+`user_id` (ეს არის, root-ის ან სუბუსერის, რომელიც row-ს "დათვალიერება"
+დაეჭირა). Controller-ი root ტენანტს `created_by`-დან თავად პოულობს
+და მას აგზავნის `Auth::tenantId()`-ისთვის (`Auth::impersonate($tenantId,
+$userId)`), `$userId`-საც ინახავს ცალკე invoice-scope-ისთვის.
+
+**`superuser.php`** — ორივე ფორმის (root-მწკრივის და სუბუსერის)
+hidden ველი `user_id`-ზეა გადართული (root-ის შემთხვევაში მაინც
+თავისი id უგზავნის, სუბუსერის შემთხვევაში კი საკუთარს, აღარ root-ის).
+ღილაკის active-ფერი ახლა `$impersonatingUser`-ზეა დამოკიდებული
+(კონკრეტულ პიროვნებაზე), მწკრივის მთლიანი highlight კი კვლავ
+`$impersonating`-ზე (ტენანტის დონე) — ორივე კონტროლერიდან newly
+გადაცემული.
+
+**`layout.php`-ის SuperUser-ბანერი** — თუ კონკრეტული ქვემომხმარებელია
+არჩეული, აჩვენებს `{ტენანტი} → {ქვემომხმარებელი}`-ს, თუ root თავად
+დათვალიერდა — მხოლოდ ტენანტის სახელს, უცვლელად.
+
+**`InvoiceController::orders()`/`exportOrdersPdf()`** —
+`User::tenantMemberIds($ruler)` → `Auth::invoiceScopeUserIds()`.
+
+**`Dashboard`-ის მოდელი** — `stats()`/`revenueByUser()`/`recentInvoices()`
+სამივემ `$ruler`-იდან `User::tenantMemberIds()`-ის შიდა გამოთვლის
+მაგივრად ახლა **პარამეტრად** იღებენ `$userIds`-ს (caller,
+`DashboardController::index()`, ერთხელ ითვლის `Auth::invoiceScopeUserIds()`-ს
+და სამივეს გადასცემს). `revenueByUser()`-ის chart-ის "წევრების"
+SQL-იც (`SELECT id, name FROM users WHERE id = ? OR created_by = ?`)
+შეიცვალა `WHERE id IN ($userIds-ის placeholder)`-ით — narrowing
+ავტომატურად მუშაობს, ცალკე ლოგიკა chart-ის სერიების გასაფილტრად აღარ
+დასჭირდა: თუ `$userIds` ერთი კონკრეტული ადამიანია, "წევრების" სია
+თავადვე მხოლოდ მას შეიცავს, therefore მხოლოდ მისი ერთი bar-სერია
+გამოვა. `customers`/`products` (`Dashboard::stats()`-ის ორი
+სტატ-ბარათი) კვლავ ruler-scoped-ია, ცვლილება არ შეხებია — ეს
+საერთო org-მონაცემია, არა ინდივიდუალური.
+
+**გადამოწმებულია ცოცხლად** (`super@nova.local`-ით, ტენანტ 1-ის real
+მონაცემზე — მხოლოდ SELECT-ები, არცერთი write-ფორმა არ გავაგზავნე,
+გარდა `impersonate`/`stop`-ისა, რომლებიც session-ს ცვლიან, არა DB-ს):
+წინასწარ დათვლილი (`created_by IN (1,13,24)`) — root(1)=9, sub(13)=1,
+sub(24)=2, სულ გუნდი=12. სუბუსერ 24-ის ("პავლე პეტრიაშვილი")
+დათვალიერებისას: `/orders`-მა ზუსტად **2** მწკრივი აჩვენა
+(`ყველა შეკვეთა 2`); დეშბორდზე "ინვოისები"=**2**, "შემოსავალი"=**105.00**
+(80+25), "დამკვეთები"/"პროდუქტები" უცვლელი (11/7, ruler-scoped);
+Chart.js instance-მა (`window.Chart.getChart(...)`) დაადასტურა
+**ერთადერთი** სერია, `label: "პავლე პეტრიაშვილი"`, `total: 105`;
+ბანერმა აჩვენა `გივი ბერძენიშვილი → პავლე პეტრიაშვილი`. root(1)-ის
+საკუთარ თავზე ხელახლა გადართვისას: `/orders`-მა ისევ **12**
+დაბრუნა, chart-მა **3** სრული სერია (`102481.5`/`105`/`80`), ბანერმა
+მხოლოდ ტენანტის სახელი (ისრის გარეშე) — narrowing სწორად ირთვება/
+ითიშება. `session`-ი გასუფთავებულია (`/superuser/stop` + `/logout`),
+DB-ში არაფერი შეცვლილა.
+
+### 4.87 თითო მომხმარებელს — საკუთარი, არჩეული ფერი (რეგისტრაცია), chart-ი მას იყენებს პალიტრის ნაცვლად
+
+user-მა შენიშნა: შემოსავლის გრაფიკზე მთავარი ადმინი და
+ქვემომხმარებლები ერთნაირი (position-ის მიხედვით გამოთვლილი) ფერით
+გამოისახებოდნენ — მოთხოვნა: რეგისტრაციისას (მთავარიც და
+ქვემომხმარებელიც) თავად აირჩევდეს საკუთარ, უნიკალურ ფერს, რომელიც
+chart-შიც გამოჩნდება და ცხრილებშიც.
+
+**სქემა** — `migrations/035_add_users_color.sql`: `users.color CHAR(7)
+NULL`. Backfill — იგივე 8-ფეროვანი პალიტრა (`User::PALETTE`),
+per-tenant (`PARTITION BY COALESCE(created_by, id)`, root პირველი,
+შემდეგ subs სახელით — `revenueByUser()`-ის უკვე არსებული დისფლეი
+წესრიგი), `ELT()`-ით პოზიციური ინდექსიდან hex-ის ასარჩევად.
+`superadmin` row-ები `NULL`-ად რჩება.
+
+**`User`** — ახალი `PALETTE` const + `nextColor(?int $ruler)`: ფორმის
+color-picker-ის **default** მნიშვნელობა მხოლოდ (`$ruler=null` → ახალი
+root-ის რეგისტრაცია, ყოველთვის `PALETTE[0]`; `$ruler=tenantId()` →
+sub-user ფორმა, ტენანტის უკვე არსებული წევრების რაოდენობით
+შემდეგი პალიტრის ფერი) — ველი თავად რეალური `<input type="color">`-ია,
+ყოველთვის თავისუფლად შესაცვლელი, ეს მხოლოდ წამახალისებელი
+predefined მნიშვნელობაა. `validateSubUser()`/`validateRegistration()`-ს
+ახალი `color` ველი (`/^#[0-9a-f]{6}$/`-ვალიდაცია, lowercase-ზე
+normalize). `create()`/`createFromGoogle()`/`createSubUser()`/
+`updateSubUser()` — სვეტი დამატებულია INSERT/UPDATE-ებში
+(`createFromGoogle()`-ს, ფორმის-გარეშე OAuth-flow-ს, ავტომატური
+`nextColor(null)` ერგება).
+
+**`auth/register.php`** — ახალი `<input type="color" class="form-control-color">`
+ველი, პაროლის ველების შემდეგ, `auth.color`/`auth.color.hint` label/hint-ით.
+**`users.php`** (sub-user add/edit) — იგივე ველი ფორმაში (`users.color`/
+`users.color_hint`), row-click-ის `FIELDS` მასივს დაემატა `color`
+(`data-color`-იდან edit-ფორმაში გადმოსატანად), roster-ის სახელის
+სვეტს — ფერადი წერტილი (`.ds-color-dot`).
+
+**`Dashboard::revenueByUser()`** — ძველი `$palette[$i % count($palette)]`
+პოზიციური ლოგიკა მთლიანად ამოღებულია, `members`-ის SQL-ს დაემატა
+`color`, series პირდაპირ `$member['color'] ?? '#94a3b8'`-ს იყენებს
+(fallback მხოლოდ თეორიული — backfill-ის შემდეგ ყველა non-superadmin
+row-ს აქვს ფერი).
+
+**ცხრილებშიც** (`შესაძლოა ცხრილშიც`-ის თხოვნაზე) — `Invoice::all()`
+და `Dashboard::recentInvoices()`-ის SQL-ს დაემატა `u.color AS
+creator_color`; `orders.php`-ის "შეკვეთის მიმღები" და `dashboard.php`-ის
+"ბოლო ინვოისები"-ის იგივე სვეტი, ასევე `superuser.php`-ის ტენანტისა
+და ქვემომხმარებლის მწკრივები — ყველგან იგივე `.ds-color-dot`
+(`design-system.css`, ახალი 8px წრე) სახელის წინ. `customer-report.php`
+განზრახ გამოტოვებულია (out-of-scope, არ მოთხოვნილა პირდაპირ) —
+საჭიროების შემთხვევაში იგივე ნიმუშით მარტივად დაემატება.
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით —
+დასრულების შემდეგ real hash აღდგენილია): migration-ის ჩატარების
+შემდეგ ნამდვილი tenant 1-ის გუნდი სწორად დაბექდა (`root=indigo,
+sub-24=green, sub-13=amber` — ზუსტად ემთხვევა `4.86`-ის ხელით
+დათვლილ ტესტს, დამთხვევა შემთხვევითი არაა: იგივე position-ის
+ლოგიკა). ახალი sub-user-ის დამატებისას (`users.php`) default ფერი
+სწორად შემოთავაზდა (`#22c55e`, ტენანტის უკვე ერთი წევრიდან
+გამომდინარე); custom ფერის (`#ec4899`) არჩევით შენახვისას — roster-ის
+წერტილმა ზუსტად ეს RGB აჩვენა (`rgb(236, 72, 153)`), დეშბორდის
+chart-ის მეორე სერიამაც იგივე hex გამოიყენა. row-click-ით
+რედაქტირებისას ფორმამ სწორი შენახული ფერი ჩამოტვირთა; ფერის
+ცვლილებით (`#06b6d4`) resubmit-მა DB-ში სწორად განაახლა. server-side
+ვალიდაციამ (`validateSubUser()`) პირდაპირი გამოძახებით უარყო
+არასწორი ტექსტი (`"not-a-color"`) და ნორმალიზა uppercase hex
+(`#ABCDEF` → `#abcdef`) ცალკე ერრორის გარეშე. Root-რეგისტრაციის
+ფორმამაც (`auth/register.php`) default (`#4f46e5`) სწორად აჩვენა და
+custom ფერი (`#a855f7`) სწორად შეინახა. ყველა ტესტ-user
+(sub-user id 85, root id 86 + მისი auto-შექმნილი `organization`
+row) წაშლილია, tenant 31-ის temp password აღდგენილია.
+
+### 4.88 ჩვეულებრივი ქვემომხმარებლის შესვლისას — მხოლოდ საკუთარი შეკვეთები (არა მთელი გუნდი)
+
+user-მა მოითხოვა: ეს `4.86`-ის იგივე "მხოლოდ ამ მომხმარებლის
+შეკვეთები" წესი ეხოს **ჩვეულებრივ (SuperUser-ის გარეშე) ქვემომხმარებლის
+შესვლასაც** — არა მხოლოდ SuperUser-ის დათვალიერების რეჟიმს.
+
+**გადამწყვეტი შედეგი**: ეს პირდაპირ ეწინააღმდეგება `4.36`-ის
+დოკუმენტირებულ, განზრახ გადაწყვეტილებას ("A sub-user's own invoices
+count toward their admin's dashboard — that's the whole point of the
+team's numbers together") — user-ის ახალი მოთხოვნა ცალსახად
+**აუქმებს** იმ წესს ამ view-კონტექსტებისთვის (`/orders`, დეშბორდი),
+თუმცა **არა** ინვოისის ნუმერაციისთვის: `Invoice::save()`-ის
+`sequence_number`-ის გამოთვლა და `previewNextSequenceNumber()`
+კვლავ პირდაპირ `User::tenantMemberIds($ruler)`-ს იყენებენ (არა
+`Auth::invoiceScopeUserIds()`-ს) — ნომრები კვლავ **მთელი გუნდის**
+საერთო თანმიმდევრობაა, მხოლოდ ის, რაც **ჩანს**, იცვლება.
+
+**`Auth::invoiceScopeUserIds()`** (`4.86`-ის ერთადერთი choke point) —
+გადაწერილია ერთიანი წესით: `$actingAs` = SuperUser-ის არჩეული
+კონკრეტული პიროვნება (`impersonatingUserId()`), ან, თუ ეს არ არსებობს
+(ჩვეულებრივი login), **თავად ამჟამად შესული მომხმარებლის საკუთარი
+id** (`$_SESSION['user_id']`) — `Auth::user()`-ის ხელახლა-გამოძახების
+გარეშე (`tenantId()` უკვე ერთხელ ამოწმებს სესიას ამ წერტილამდე).
+`$actingAs !== $ruler` → მხოლოდ ის ერთი; თანაბარია (root თავად
+ათვალიერებს/შესულია) → მთელი გუნდი, უცვლელად. ეს ნიშნავს: root
+ადმინის ჩვეულებრივი შესვლა — უცვლელად მთელი გუნდი; ქვემომხმარებლის
+ჩვეულებრივი შესვლა — ახლა **მხოლოდ საკუთარი** (ახალი); SuperUser
+root-ის დათვალიერებისას — მთელი გუნდი (უცვლელი, `4.86`); SuperUser
+კონკრეტული სუბუსერის დათვალიერებისას — მხოლოდ მისი (უცვლელი, `4.86`).
+
+დამოკიდებული caller-ები (`InvoiceController::orders()`/
+`exportOrdersPdf()`, `DashboardController::index()` →
+`Dashboard::stats()`/`revenueByUser()`/`recentInvoices()`) **არცერთი
+არ შეცვლილა** — ყველა უკვე `Auth::invoiceScopeUserIds()`-ს
+იძახებდა `4.86`-ის შემდეგ, ცვლილება მთლიანად თავად ამ ერთ
+ფუნქციაშია ლოკალიზებული. მხოლოდ docblock-ები დაზუსტდა
+(`InvoiceController::orders()`, `Dashboard.php`-ის class-level +
+სამივე მეთოდის) — ძველი "სუბუსერი ხედავს მთელ გუნდს" ფრაზირება
+შეცვლილია ახალი წესის ასახვით.
+
+**გადამოწმებულია ცოცხლად** (tenant 31-ზე, დროებითი sub-user-ითა და
+ინვოისით — დასრულების შემდეგ ორივე წაშლილია): შეიქმნა დროებითი
+ქვემომხმარებელი ("QA Sub Scope Test") + 1 ინვოისი მასზე (20.00 ₾) —
+root-ს (test1) უკვე ჰქონდა 1 საკუთარი ინვოისი (1,656.00 ₾), გუნდის
+ჯამი 2. ქვემომხმარებლის სახელით შესვლისას: დეშბორდზე
+"ინვოისები"=**1**, "შემოსავალი"=**20.00**, chart-ს **ერთადერთი**
+სერია (`label: "QA Sub Scope Test"`, `total: 20`), "ბოლო ინვოისები"
+და `/orders` ორივემ ზუსტად **1** მწკრივი აჩვენა (მხოლოდ საკუთარი).
+შემდეგ root-ით (`test1`) შესვლისას: `/orders`-მა ისევ **2** მწკრივი
+დააბრუნა (ორივე გუნდის წევრის ინვოისი) — root-ის ჩვეულებრივი
+შესვლის ქცევა უცვლელი დარჩა. ტესტ-ინვოისი, ტესტ-ქვემომხმარებელი
+წაშლილია, tenant 31-ის temp password აღდგენილია.
+
+### 4.89 SuperUser → პირველი-რიგის dropdown მენიუ ("მომხმარებლები"/"აქტივობა") + ახალი აქტივობის ჟურნალი
+
+user-მა მოითხოვა: `SuperUser` sidebar-ის ბოლო-ერთეულიდან გახდეს
+pirველი-რიგის dropdown მენიუ ორი ქვე-ელემენტით — "**მომხმარებლები**"
+(=`4.85`/`4.86`-ის ახლანდელი `/superuser` გვერდის იგივე
+ფუნქციონალი, უცვლელი) და "**აქტივობა**" (ახალი — აქტივობის ჟურნალი,
+მარცხნივ რეგისტრირებულ მომხმარებელთა სია, მარჯვნივ log-ცხრილი
+თარიღი/მოქმედება/...). ორივე მენიუ-ელემენტი მხოლოდ მაშინ ჩანს, როცა
+სისტემაში SuperUser არის შესული (`role === 'superadmin'`, უცვლელი
+`4.х`-ის პირობა).
+
+**დაზუსტებული user-თან** (`AskUserQuestion`): ლოგირდება login/logout
++ **ნავიგაცია** ("ვინ სად შევიდა") — არა "ყველა ღილაკზე დაჭერა"
+სიტყვასიტყვით (ეს client-side click-ტრეკინგს მოითხოვდა, ცალკე
+beacon-endpoint-ს — spam-ის და ღირებულების გარეშე overkill
+იქნებოდა). SuperUser-ის მენიუს პოზიცია — უცვლელად sidebar-ის
+ბოლოში, ცალკე სექციად (როგორც აქამდე).
+
+**სქემა** — `migrations/036_create_activity_log.sql`: `activity_log`
+(`user_id` FK→`users.id` ON DELETE CASCADE, `method`, `path`,
+`ip_address`, `created_at`).
+
+**`App\Core\ActivityLog`** (ახალი) — **ერთადერთი choke point**:
+`record()` გამოიძახება `public/index.php`-დან, ერთხელ, აპ-ის
+login-გატის ($requestPath-ის დათვლის) ზუსტად შემდეგ — ყოველი
+authenticated request (GET ნავიგაციაც და POST action-იც) აქ გადის,
+ამიტომ **არცერთ კონტროლერს** არ დასჭირდა ცალკე log-გამოძახება.
+`$_SESSION['user_id']`-ს პირდაპირ კითხულობს (არა `Auth::user()`,
+რომ `Auth::check()`-ის უკვე ერთხელ ჩატარებული სამუშაო არ გაორმაგდეს).
+`SKIP_PATHS`-ით გამორიცხულია სუფთა AJAX/JSON helper-ები (`/units`,
+`/product-types`, `/invoices/preview`, `/auth/photo`) — არა
+ნავიგაცია, მხოლოდ spam იქნებოდა. `describe()` — `"POST /login"`-ის
+მსგავს წყვილს (method+path, query-ს გარეშე lookup-ისთვის) ~30
+route-ის fixed lang-key რუკით გადააქცევს წაკითხვად ტექსტად
+(`"შესვლა — /login"`) — რაც არ არის map-ში, raw `"METHOD /path"`-ზე
+ბრუნდება fallback-ად, ბაგი არაა.
+
+**`Auth::login()`/`logout()`** — ორივეს ბოლოში ემატება
+`ActivityLog::record(...)`, **სინთეზური** `('POST', '/login')`/
+`('POST', '/logout')` წყვილით (არა რეალური request-ის path,
+რომელიც password/OTP/Google/registration-ის მიხედვით სხვადასხვაა)
+— ყოველთვის ერთი სუფთა "შესვლა" ჩანაწერია, მექანიზმის მიუხედავად.
+ეს ერთადერთი გაზიარებული choke point ყველა login-გზას
+(`attempt()`, `verifyOtp()`, `googleCallback()`, `register()`)
+ფარავს ერთბაშად. `logout()` ასევე `Auth::check()`-ის საკუთარი
+auto-logout ტოტებიდანაც (idle timeout, session-ის შუაში დაბლოკვა)
+გამოიძახება — ესეც აქტივობის კვალს ტოვებს, არა მხოლოდ "გასვლა"
+ღილაკის დაჭერისას.
+
+**`SuperUserController::activity()`** (ახალი action, `GET
+/superuser/activity`) — `User::everyone()` (ახალი: ყველა
+non-superadmin მომხმარებელი, ყველა tenant-ი, flat) მარცხენა
+სიისთვის, `ActivityLog::all(?userId)` — `?user_id=N`-ით
+ვიწროვდება ერთ კონკრეტულ პიროვნებაზე.
+
+**`superuser-activity.php`** (ახალი view) — ორსვეტიანი layout: მარცხნივ
+`list-group` (ძებნის ველით, plain client-side JS filter-ით
+`data-name`-ზე), მარჯვნივ `.ds-table` (search+pagination თავისუფლად,
+`ds_table_script()`-ის იმავე კომპონენტით) — თარიღი/მომხმარებელი
+(ფერის წერტილით, `4.87`)/მოქმედება/IP.
+
+**`sidebar.php`** — ძველი ბრტყელი `<a href="/superuser">` →
+`<details class="ds-nav-group" name="ds-nav">` (იგივე markup/
+accordion-ჯგუფი, რასაც menu.json-ის dropdown-ჯგუფებიც იყენებენ),
+ორი შვილი-ბმულით. Role-გატა (superadmin-ონლი) უცვლელი, hand-coded
+(menu.json-ს არ აქვს role-visibility კონცეფცია, ეს ერთადერთი
+გამონაკლისია — `4.х`-ის დოკუმენტირებული, უცვლელი გადაწყვეტილება).
+
+**გადამოწმებულია ცოცხლად** (`super@nova.local` + tenant 31/test1,
+temp password-ით): (1) superadmin-ით შესვლისას sidebar-ში
+`SuperUser`-ის dropdown სწორად გამოჩნდა ორი შვილით
+(`მომხმარებლები→/superuser`, `აქტივობა→/superuser/activity`); (2)
+`/superuser/activity`-ზე ყველა 5 რეგისტრირებული user (ორივე tenant,
+plus root+2 sub) მარცხენა სიაში გამოჩნდა; log-ცხრილში საკუთარი
+სესიის `შესვლა — /login`, `სამუშაო მაგიდის ნახვა — /`, `SuperUser
+სიის ნახვა — /superuser`, `აქტივობის ჟურნალის ნახვა —
+/superuser/activity` ჩანაწერები სწორი დროით/IP-ით (`127.0.0.1`)
+გამოჩნდა; (3) test1-ით ჩვეულებრივი (არა-SuperUser) შესვლისას sidebar-ში
+`SuperUser`-ის მენიუ საერთოდ არ დაერენდერა (`superuserMenuPresent:
+false`, JS-შემოწმებით); (4) test1-ის სახელით navigatoin (`/`,
+`/customers`, `/orders`, `/logout`) → superadmin-ის სესიით
+`/superuser/activity?user_id=31`-ზე ეს ზუსტად ეს 4+login ჩანაწერი
+გამოჩნდა, სხვა user-ების ჩანაწერების გარეშე — cross-tenant
+ფილტრაცია მუშაობს სწორად; (5) `/superuser` (ახლა "მომხმარებლები")
+ცოცხლად გადამოწმდა — ფუნქციონალი (roster, დათვალიერება/დაბლოკვა)
+ბუკვალურად უცვლელია, არცერთი ფაილი `4.85`/`4.86`-ის შემდეგ არ
+შეცვლილა ამ change-ში. tenant 31-ის temp password აღდგენილია.
+Verification-ის დროს დაგენერირებული `activity_log`-ის ჩანაწერები
+(superadmin-ის + test1-ის საკუთარი login/navigation, 20 row) **არ
+წაშლილა** — ეს რეალური, ღირებული log-მონაცემია, არა ხელოვნური
+ტესტ-მონაცემი (ინვოისი/customer-ის მსგავსად), ამ ფუნქციის ზუსტად
+ასეთი ჩანაწერების ჩაწერისთვისაა განკუთვნილი.
+
+### 4.90 აქტივობის ჟურნალის მარცხენა სია — ქვემომხმარებლები ინდენტირებული საკუთარი ადმინის ქვეშ
+
+user-მა მოითხოვა: `4.89`-ის მარცხენა user-სიაში ჩანდეს, ვისი
+ქვემომხმარებელია თითოეული — ანუ ტენანტის იერარქია ვიზუალურად.
+
+**`SuperUserController::activity()`** — `User::everyone()` (flat,
+alphabetical, ტენანტის ინფორმაციის გარეშე) → `User::allGroupedByTenant()`
+(იგივე query, რასაც `superuser.php`-ის roster იყენებს, `4.85`) —
+ცვლადიც გადაერქვა `$tenantGroups`. `User::everyone()` მთლიანად
+წაშლილია `User.php`-დან — მას აღარავინ იძახებდა.
+
+**`superuser-activity.php`** — მარცხენა სია ახლა ტენანტ-ჯგუფებად
+გამოისახება: root ადმინის ბმული ჩვეულებრივად, უშუალოდ მის შემდეგ კი
+თითოეული მისი ქვემომხმარებლის ბმული `ps-4` შეწევით +
+`bi-arrow-return-right` ისარით — ზუსტად იგივე ვიზუალური კონვენცია,
+რასაც `superuser.php`-ის own child-table იყენებს (`4.85`).
+
+**გადამოწმებულია ცოცხლად**: `/superuser/activity`-ზე მარცხენა
+სიაში `test1`/`test2`/`გივი ბერძენიშვილი` ჩვეულებრივად (`ps-4`
+გარეშე), `პავლე პეტრიაშვილი`/`პეტრე პავლიაშვილი` კი სწორად
+ინდენტირებული (`ps-4`) გამოჩნდა, `გივი ბერძენიშვილი`-ს ბმულის
+პირდაპირ შემდეგ.
+
+### 4.91 აქტივობის ჟურნალის თარიღი — წამის სიზუსტით
+
+user-მა მოითხოვა: `4.89`-ის log-ცხრილის „თარიღი" სვეტს წამებიც
+ჰქონდეს (მანამდე მხოლოდ სთ:წთ იყო). `superuser-activity.php`-ში
+`substr($row['created_at'], 11, 5)` (`H:i`) → `substr(...11, 8)`
+(`H:i:s`) — `activity_log.created_at` MySQL `TIMESTAMP`-ია, string
+ფორმატი `'Y-m-d H:i:s'` უცვლელად შეიცავს წამებს, უბრალოდ ადრე
+წაჭრილი იყო. გადამოწმებულია ცოცხლად — ცხრილში ჩანაწერები ახლა
+`სთ:წთ:წმ`-ით გამოჩნდა (მაგ. `02:36:08`).
+
+### 4.92 "ტრეფიკი" ამოღებულია, "მიმოხილვა" — ახალი ანალიტიკური გვერდი
+
+user-მა მოითხოვა ორი რამ: (1) `menu.json`-ის "ანალიტიკა" ჯგუფიდან
+"ტრეფიკი" ქვე-პუნქტი მთლიანად ამოღებულიყო (ადრეც აღინიშნა, რომ ეს
+placeholder ვებ-საიტის ვიზიტორთა ანალიტიკის ნაშთია, ამ საბუღალტრო
+აპლიკაციას არ ერგება — იხ. წინა ტურის პასუხი); (2) "მიმოხილვა"-ს
+ადგილას ავეშენებინა ის ფუნქციონალი, რაც წინა პასუხში შემოთავაზებული
+იყო: თავისუფალი პერიოდი, შემოსავლის ტრენდი, ტოპ დამკვეთები/
+პროდუქცია, საშუალო ინვოისი, draft→final კონვერსია.
+
+**`menu.json`** — `nav.analytics_traffic` item წაშლილია მთლიანად
+(lang-key-ებიც, `ka`/`en`, ორივეს — აღარავინ იძახებდა). `nav.analytics_overview`-ის
+`url` `"#"` → `/analytics/overview`. `nav.analytics_reports` უცვლელად
+`"#"`-ზეა — ეს ცალკე მოთხოვნა არ ყოფილა.
+
+**`App\Models\Analytics`** (ახალი) — org-wide ანალიტიკა, თავისუფალი
+`$from`/`$to` დღიური დიაპაზონით (არა მხოლოდ მიმდინარე წელი, დეშბორდის
+chart-ისგან განსხვავებით, და არა ერთი დამკვეთი, `CustomerReport.php`-ისგან
+განსხვავებით) — იგივე `Auth::invoiceScopeUserIds()` სქოუფინგის
+წესით, რასაც დეშბორდი/`/orders`/`CustomerReport` უკვე მისდევენ
+(`4.86`/`4.88`) — sub-user ხედავს მხოლოდ საკუთარს, admin მთელ
+გუნდს. ოთხი მეთოდი: `summary()` (count/total/average/finalRate —
+`finalRate` ახალი მეტრიკაა, არცერთ არსებულ რეპორტში არ ყოფილა),
+`revenueTrend()` (`daily`/`weekly`/`monthly` bucket, `DATE_FORMAT`-ის
+შესაბამისი pattern-ით), `topCustomers()`/`topProducts()`
+(`CustomerReport::topProducts()`-ის იგივე ფორმა, org-wide, ერთი
+დამკვეთის ფილტრის გარეშე).
+
+**`AnalyticsController::overview()`** (ახალი, `GET /analytics/overview`) —
+`?from=&to=&granularity=` (native `<input type="date">`-ებიდან,
+JS date-picker ბიბლიოთეკის გარეშე) — ვალიდაცია: არასწორი/არარსებული
+თარიღი → default "ბოლო 30 დღე"; `from`>`to` → ავტომატურად იცვლება
+ადგილი, ჩავარდნის ნაცვლად.
+
+**`analytics-overview.php`** (ახალი view) — filter-ფორმა, 4 stat-ბარათი
+(`customer-report.php`-ის იგივე `.ds-icon-tile` ვიზუალი, `money()`
+helper-ით), line-chart (Chart.js, `revenueByUser()`-ის ბარ-chart-ისგან
+განსხვავებით — ტრენდისთვის line უფრო ბუნებრივია), ტოპ-დამკვეთების და
+ტოპ-პროდუქციის ორი ბარათი. `granularity`-ის მიხედვით bucket-ლეიბლები
+სხვადასხვანაირად ფორმატდება: `daily` → `ds_date()`, `monthly` →
+`t('month.N')`, `weekly` → raw ISO-კვირა (`2026-W35`, ლოკალიზაცია არ
+დასჭირდა).
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+sidebar-ში "ტრეფიკი" აღარ ჩანს, "მიმოხილვა" სწორ URL-ზე მიდის;
+default 30-დღიან ფანჯარაში (tenant 31-ის ერთადერთი ინვოისი, `1,656.00`,
+draft) — 4 stat-ბარათი ზუსტი (`1`/`1,656.00`/`1,656.00`/`0.0%`),
+chart-ის ერთადერთი წერტილი `16 აგვ, 2026`-ზე `1656`-ით, ტოპ-დამკვეთი/
+პროდუქტიც სწორად. `?granularity=monthly&from=2026-01-01`-ით —
+chart-ის ლეიბლი სწორად `"აგვ 2026"`-ზე შეიცვალა, ფილტრ-ფორმის
+ინფუთებმაც (`from`/`to`/`granularity`) გამოყენებული მნიშვნელობები
+სწორად აჩვენეს. ცარიელ პერიოდზე (`2020-01`) — ყველა 4 ბარათი `0`/
+`0.00`, სამივე empty-state ტექსტი (`analytics.empty`) სწორად
+გამოჩნდა. tenant 31-ის temp password აღდგენილია.
+
+### 4.93 ინვოისის დუბლირება — `/orders`, დეშბორდი და ინვოისის რედაქტირების გვერდი
+
+user-მა მოითხოვა: "დუბლირება" მოქმედება დაემატოს ყველა შეკვეთის
+ცხრილის მოქმედებებში და ინვოისის რედაქტირების გვერდზეც.
+"ცხრილის მოქმედებები" ორივე ადგილას მოვიაზრე — `/orders` **და**
+დეშბორდის "ბოლო ინვოისები" (`4.84`-ის დამკვიდრებული პარიტეტი
+ორ ცხრილს შორის, ერთგან დამატებული action მეორეშიც ჩნდება,
+თორემ პარიტეტი დაირღვეოდა).
+
+**`InvoiceController::duplicate()`** (ახალი, `POST /invoices/duplicate`)
+— იგივე `loadOwnedInvoiceForPdf()` ownership-შემოწმება, რასაც
+`sendEmail()`/`exportInvoicePdf()` იყენებენ, `Auth::requireNotImpersonating()`-ითურთ
+(write-მოქმედებაა). დამკვეთი/notes/items/is_zero/is_recurring
+ერთი-ერთზე კოპირდება, `document_state` კი **ყოველთვის** `draft`-ზე
+დაბრუნდება — დუბლიკატი ახალი დასაწყისია, არა "უკვე დამკვეთთან
+გაგზავნილის" ასლი. **`Invoice::validate()`-ს არ გადის** — საკუთარი,
+უკვე ვალიდური, ერთხელ უკვე შენახული მონაცემია, ხელახლა
+გადამოწმება აზრს მოკლებულია. ყოველთვის ახალი ინვოისის საკუთარ
+edit-ფორმაზე ბრუნდება (`/invoices?edit=<newId>`) — არა უკან იმ
+ცხრილზე, საიდანაც დაიწყო — დუბლირების მთელი აზრი ხომ ასლის
+გადახედვა/კორექტირებაა შენახვამდე.
+
+⚠️ **ცოცხლი ტესტირებისას რეალური ბაგი აღმოჩნდა და გასწორდა**:
+`Invoice::save()`-ის item-INSERT-ი უპირობოდ `(int) $item['unit_id']`-ს
+წერდა — ჩვეულებრივი ფორმის submit-ისთვის უვნებელია
+(`Invoice::validate()` ყოველთვის რეალურ unit-ს ითხოვს), მაგრამ
+`duplicate()`-ის კოპირებულ item-ებში ლეგასი (pre-`migrations/030`)
+ინვოისის `unit_id IS NULL` value `(int) null = 0`-ად გარდაიქმნებოდა
+— `0` კი არცერთ `units`-ის row-ს არ შეესაბამება, რაც `invoice_items`-ის
+`fk_invoice_items_unit` FK-ს არღვევდა და მთელ ტრანზაქციას
+Fatal Error-ით წყვეტდა (ცოცხლად დაფიქსირებული, tenant 31-ის
+ორიგინალური, migrations/030-მდელი ინვოისის დუბლირებისას).
+**გასწორებულია** root-ში — `Invoice::save()` ახლა `NULL`/`''`
+unit_id-ს ნამდვილ `NULL`-ად წერს (არა `0`-ად), ზუსტად ისე, როგორც
+წყარო row-ს ჰქონდა — ეს ასევე ზოგადად robustness-ფიქსია
+`Invoice::save()`-ის თავად, არა მხოლოდ `duplicate()`-ის ერთი
+caller-ისთვის.
+
+**`orders.php`/`dashboard.php`** — ახალი `<form>`+ღილაკი (`bi-copy`)
+share-link-ის შემდეგ, ყოველ მწკრივში. **`invoices.php`** — ახალი
+ღილაკი action-პანელში (share_link-ის შემდეგ, `<hr>`-მდე), **მხოლოდ**
+`$editingInvoice !== null`-ზე (ახალი, ჯერ შეუნახავი ინვოისისთვის
+დუბლირება აზრს მოკლებულია — `preview`/`email`/`share_link`-ის
+ორმაგი submit_action-ტრიკის საჭიროება აქ არ არსებობს, უბრალოდ
+ღილაკი არ ჩანს).
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+(1) FK-ბაგის აღმოჩენა+გასწორება ზემოთაა აღწერილი; (2) ლეგასი
+ინვოისის (`id=12`, `unit_id IS NULL`) დუბლირება `/orders`-იდან —
+ახალი ინვოისი (`id=39`, `sequence_number=2`) სწორად შეიქმნა, იგივე
+`customer_id`/`total`, `unit_id` კვლავ `NULL` (არა `0`), `draft`
+სტატუსით, გადამისამართდა `/invoices?edit=39`-ზე toast-ით "ინვოისი
+... შეიქმნა"; (3) ახალი, ნამდვილი `unit_id`-იანი `final`-სტატუსიანი
+ტესტ-ინვოისის (`id=40`) დუბლირება — ახალმა (`id=41`) `unit_id=5`
+სწორად შეინახა, `document_state` `final`→`draft`-ზე გადავიდა; (4)
+დეშბორდის საკუთარი "ბოლო ინვოისები" ცხრილიდანაც იგივე მოქმედება
+გამართულად იმუშავა. ყველა ტესტ-ინვოისი (`39`, `40`, `41`, `42`)
+წაშლილია, tenant 31-ის temp password აღდგენილია.
+
+### 4.94 დუბლირება აღარ წერს ბაზაში დაუყოვნებლივ — მხოლოდ "განახლების" დაჭერისას, საკუთარი ვიზუალით
+
+user-მა დააზუსტა `4.93`-ის ქცევა: (1) სათაურში "ინვოისის რედაქტირების"
+მაგივრად "დუბლირებული ინვოისი" უნდა ეწეროს; (2) ამ მდგომარეობის
+ფონი სხვა ტონალობის უნდა იყოს; (3) ბაზაში ჩაწერა **მხოლოდ** მაშინ
+უნდა მოხდეს, როცა "განახლება" დაჭერილია — არა დუბლირების ღილაკზე
+დაჭერისთანავე; (4) დუბლირების (ჯერ შენახვამდე) გვერდზე "დუბლირება"
+ღილაკი არ უნდა ჩანდეს.
+
+**გადაწყვეტა — `InvoiceController::duplicate()` აღარ წერს ბაზაში
+საერთოდ.** მთლიანად გადაკეთდა: `Invoice::save()`-ის პირდაპირი
+გამოძახების მაგივრად, უბრალოდ `flash('old', [...])`-ს აკეთებს —
+ზუსტად იგივე მექანიზმი, რასაც `index()`-ის `?edit=N` ტოტი და
+ჩავარდნილი ვალიდაციის resubmit უკვე იყენებენ ფორმის თავიდან
+დასახატად. **განზრახ არ დგება `invoice_id`/`updated_at`** — ეს
+ნიშნავს, `$editingInvoice` `null` რჩება შემდეგ load-ზეც, და
+`invoices.php`-ის `$editing` flag-იც `false`-ია — ასლი **რეალურ
+row-ად მხოლოდ მაშინ იქცევა**, როცა "განახლება" ნამდვილად
+დაიჭირება და ჩვეულებრივი `store()`-ის create-გზა გაეშვება, ზუსტად
+ისე, თითქოს user-ს ხელით აეკრიფა ახალი ინვოისი. ახალი `duplicate_of`
+გასაღები `old`-ში — მხოლოდ `invoices.php`-ისთვის ნიშანია, რომ ეს
+ჩვეულებრივი ცარიელი ახალი ინვოისი კი არა, დუბლირებული ასლია.
+
+**`invoices.php`** — ახალი `$duplicating = isset($old['duplicate_of'])`.
+Header-ის ფონი და სათაური სამ-მდგომარეობიანი გახდა: `$duplicating`
+→ `bg-info-subtle` + `t('inv.duplicate_title')` ("დუბლირებული
+ინვოისი"); `$editing` (ნამდვილი `?edit=N`) → ძველებურად
+`bg-warning-subtle` + `t('inv.edit_title')`; არცერთი → `bg-transparent`
++ `t('inv.new_title')`. Submit-ღილაკის ტექსტი: `$editing ||
+$duplicating` → `t('inv.update')` ("განახლება", user-ის ცალსახა
+მოთხოვნით — მართალია ტექნიკურად create-ია, არა update, მაგრამ
+user-ისთვის კონცეპტუალურად "უკვე მომზადებული ასლის დასრულებაა").
+`reset`-ის JS-ხელმძღვანელი განახლდა — ორივე შესაძლო non-default
+ტონი (`bg-warning-subtle`-იც და `bg-info-subtle`-იც) სუფთავდება,
+default "ცარიელ ახალზე" დაბრუნებისას.
+
+**"დუბლირება" ღილაკის დამალვა დუბლირების გვერდზე — დამატებითი კოდი
+არ დასჭირდა.** `invoices.php`-ის საკუთარი "დუბლირება" ღილაკი
+`4.93`-დანვე `$editingInvoice !== null`-ზეა დამოკიდებული — და ვინაიდან
+ეს ცვლადი ახლა `null` რჩება ზუსტად მაშინაც, როცა დუბლირების
+მდგომარეობაშია (არავითარი `?edit=N` არ ხდება), ღილაკი უკვე
+ავტომატურად არ ჩნდება, არაფრის შეცვლა არ დასჭირდა.
+
+**`Invoice::validate()`-ს ახლა გადის.** `4.93`-ში დუბლირება ამ ბიჯს
+გვერდს უვლიდა (თავად `Invoice::save()`-ს პირდაპირ იძახებდა) —
+ახლა, რაკი ჩვეულებრივი `store()`-ის გზით გადის, ლეგასი (unit-ის
+გარეშე) item ვალიდაციაზეც გაივლის, საჭიროების შემთხვევაში user-ს
+თავად სთხოვს ერთეულის არჩევას შენახვამდე — `4.93`-ის FK-ბაგის
+საჭიროება ამ ბილიკზე საერთოდ აღარ დგება (თუმცა `Invoice::save()`-ის
+NULL-ფიქსი კვლავ სასარგებლო robustness-გაუმჯობესებაა, უცვლელად
+რჩება).
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+(1) დუბლირებაზე დაჭერისთანავე — `bg-info-subtle` ფონი, "დუბლირებული
+ინვოისი" სათაური, "განახლება" ღილაკი, ცარიელი `invoice_id`, URL
+`/invoices#invoice-form` (არა `?edit=N`) — და **ბაზაში ამ დროისთვის
+არაფერია ჩაწერილი** (პირდაპირი DB query-თი დადასტურებული); (2)
+ლეგასი (`unit_id IS NULL`) წყაროს დუბლირებისას "განახლება"-ს
+დაჭერამ სწორად დააბრუნა ვალიდაციის შეცდომაზე (ერთეული აუცილებელია)
+— ბაზაში კვლავ არაფერი შეიცვალა, `4.93`-ის აღწერილი "immediate-write"
+ქცევა საერთოდ აღარ არსებობს ამ ბილიკზე; (3) ნამდვილი `unit_id`-იანი
+წყაროთი — "განახლება"-ს დაჭერამ ამჯერად რეალურად შექმნა ახალი
+ინვოისი (ბაზაში დადასტურებული, `document_state` სწორად `final`→`draft`),
+გვერდი ჩვეულებრივი "ახალი ინვოისი"-ის ცარიელ მდგომარეობაზე
+დაბრუნდა — იგივე ქცევა, რასაც ჩვეულებრივი ახალი ინვოისის
+"შენახვა"-ც აქამდეც იძლეოდა (`store()`-ის არსებული, ამ change-ის
+გარეთა კონვენცია). ტესტ-ინვოისები წაშლილია, tenant 31-ის temp
+password აღდგენილია.
+
+### 4.95 დუბლირების "განახლება" → წარმატებისას გადამისამართება `/orders`-ზე (+ ერთი ბაგის გასწორება ამავე დროს)
+
+user-მა მოითხოვა: დუბლირებული ინვოისის "განახლება"-ზე დაჭერისას
+(ანუ ბაზაში ჩაწერის შემდეგ), გვერდი გადავიდეს "ყველა შეკვეთაზე"
+(`/orders`) — არა ჩვეულებრივ ცარიელ "ახალი ინვოისი"-ს
+მდგომარეობაზე, რასაც ჩვეულებრივი ახალი ინვოისის შენახვა (და
+ნამდვილი ინვოისის რედაქტირებაც) დღემდე იძლეოდა. ეს ცვლილება
+**მხოლოდ** დუბლირების დასრულებას ეხება — ჩვეულებრივი "შენახვა"
+(ახალი ინვოისი) და ნამდვილი "განახლება" (`?edit=N`) უცვლელად
+ცარიელ `/invoices`-ზე ბრუნდება, რადგან user-ის მოთხოვნა კონკრეტულად
+დუბლირების ნაკადს ეხებოდა.
+
+**გადამწყვეტი დეტალი**: server-ს სჭირდებოდა ხერხი, გაერჩია
+"ეს create დუბლირებიდან მოვიდა" ჩვეულებრივი ხელით-აკრეფილი ახალი
+ინვოისისგან — `4.94`-ის `duplicate_of` მარკერი მანამდე მხოლოდ PHP-ის
+`$old`-ში იყო (view-ს რენდერისთვის), **არასდროს** ხდებოდა
+ნამდვილი HTML ფორმის ველი, ანუ submit-ზე საერთოდ არ იგზავნებოდა
+სერვერზე.
+
+**`invoices.php`** — ახალი `<input type="hidden" name="duplicate_of">`
+თავად `invoiceMainForm`-ში (`invoice_id`-ის გვერდით), `$old['duplicate_of']`-იდან
+შევსებული.
+
+**`InvoiceController::store()`**:
+- ვალიდაციის-შეცდომის ტოტი — **ამავე დროს გასწორებულია ცოცხლად
+  ნაპოვნი ბაგი**: ჩავარდნილი resubmit-ის `flash('old', ...)` აქამდე
+  `duplicate_of`-ს არ ინახავდა, ანუ დუბლირების ვალიდაციის შეცდომაზე
+  გვერდი "დუბლირებული ინვოისის" ვიზუალს (info-ტონი, სათაური)
+  კარგავდა და უბრალო "ახალ ინვოისად" გამოჩნდებოდა — ახლა
+  `$_POST['duplicate_of']`-იც ემატება flash-ში, ვიზუალი resubmit-ის
+  შემდეგაც შენარჩუნებულია.
+- წარმატების ტოტი — ახალი წესი, ყველა submit_action-სპეციფიკურ
+  ტოტს (`export_pdf_*`/`preview`/`email`/`share_link`) **შემდეგ**,
+  საბოლოო `redirect('/invoices')`-მდე: `$editingId === null &&
+  $duplicateOf !== ''` → `redirect('/orders')`. `$editingId ===
+  null`-ის დამატებითი შემოწმება (თუმცა `duplicate_of` პრაქტიკულად
+  არასდროს ახლავს ნამდვილ `?edit=N` submit-ს) — უფასო დაცვაა,
+  წესი ზუსტად "დუბლირება ახლახან რეალურ row-ად იქცა"-ს ერგება.
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+(1) ლეგასი (unit-ის გარეშე) წყაროს დუბლირება + "განახლება" →
+ვალიდაციის შეცდომა ("აირჩიე ერთეული"), **გვერდმა ვიზუალი
+შეინარჩუნა** (`bg-info-subtle`, "დუბლირებული ინვოისი", `duplicate_of=12`)
+— ბაგი დადასტურებულადაა გასწორებული; (2) ნამდვილი unit-იანი
+წყაროს დუბლირება + "განახლება" → ახალი ინვოისი ბაზაში დადასტურებულად
+შეიქმნა, გვერდი **`/orders`-ზე** გადავიდა (არა `/invoices`); (3)
+ჩვეულებრივი, ხელით-აკრეფილი ახალი ინვოისის შენახვა (`duplicate_of`
+ცარიელი) — უცვლელად ცარიელ `/invoices`-ზე დარჩა, ახალი წესი მასზე
+არ მოქმედებს. ტესტ-ინვოისები წაშლილია, tenant 31-ის temp password
+აღდგენილია.
+
+### 4.96 დუბლირება → `POST /invoices/duplicate`-იდან საკუთარ `?duplicate=N` entry point-ზე, `?edit=N`-ისგან დამოუკიდებელი კოდით
+
+user-მა მოითხოვა: დუბლირება გამოძახებულიყო ცალკე, `?edit=N`-ის
+იმავე ნიმუშის query-პარამეტრით (`invoices?duplicate=48`) —
+**განზრახ ცალკე, დამოუკიდებელი კოდით**, არა `?edit=N`-ის საერთო
+branch-ის გავლით — რომ ერთ ნაკადში მოგვიანებით დამატებულმა
+ცვლილებამ არასდროს "წაუხდინოს" მეორეს, თუნდაც ამან გარკვეული
+კოდის დუბლირება გამოიწვიოს (user-ის საკუთარი, ცალსახად გამოხატული
+არჩევანი — DRY-ის წინააღმდეგ, იზოლაციის სასარგებლოდ).
+
+**`InvoiceController`**:
+- ძველი `POST /invoices/duplicate` action (`duplicate()`, flash+redirect
+  მექანიზმი, `4.94`) **მთლიანად წაშლილია**.
+- `index()`-ს დაემატა ახალი, **დამოუკიდებელი** branch: `if ($old === []
+  && $editingInvoice === null && ctype_digit($_GET['duplicate'] ?? ''))`
+  — იმავე "`$old===[]` იგებს resubmit-ს" წესით, რასაც `?edit=N`-ის
+  branch-იც იყენებს, მაგრამ **ცალკე კოდის ბლოკად**, არა იმავე
+  if/else-ტოტად.
+- ახალი **`private loadDuplicateOld(int $sourceId, int $ruler): array`**
+  — თავისი, დამოუკიდებელი წყარო-ინვოისის ჩატვირთვისა და `$old`-ის
+  აწყობის ლოგიკა, განზრახ **არ იზიარებს** `?edit=N`-ის საკუთარ
+  inline-კოდს (თუმცა ორივე დღეს ერთმანეთს ჰგავს — მომავალში
+  თავისუფლად განსხვავებული გახდება). ცუდ/უცხო-ტენანტის id-ზე
+  ჩუმად აბრუნებს `[]`-ს (იგივე tolerant ქცევა, რასაც `?edit=N`-ის
+  ბადი id-იც იძლევა — ცარიელ "ახალ ინვოისზე" ვარდნა, არა 404).
+  **Cross-tenant დაცვა შენარჩუნებულია** — `$this->ownerTenant($invoice)
+  !== $ruler` შემოწმება (იგივე, რასაც `loadOwnedInvoiceForPdf()`
+  იყენებდა ძველ `duplicate()`-ში).
+
+**`orders.php`/`dashboard.php`/`invoices.php`** — "დუბლირება"-ს
+`<form method="post">`+ღილაკი → უბრალო `<a href="/invoices?duplicate=N">`
+ბმული, ზუსტად იგივე ნიმუში, რასაც რედაქტირების ფანქრის ბმული
+იყენებს (`/invoices?edit=N`) — `csrf_field()`/hidden `invoice_id`
+ფორმა აღარ სჭირდება, GET-ნავიგაციაა, არა write-action.
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+(1) **cross-tenant დაცვა** — test1-ით `/invoices?duplicate=5`
+(ნამდვილი tenant **1**-ის ინვოისი, მხოლოდ read-ით შემოწმებული) →
+ცარიელი "ახალი ინვოისი" ფორმა დაბრუნდა, არც ერთი მონაცემი არ
+გაჟონა; (2) საკუთარი ინვოისის (`id=12`) `/invoices?duplicate=12`-ით
+ჩატვირთვამ სწორად აჩვენა "დუბლირებული ინვოისი"/`bg-info-subtle`/
+`duplicate_of=12`, **ბაზაში არაფერი დაწერილა** (პირდაპირ
+გადამოწმებული); (3) ნამდვილი unit-იანი წყაროთი — სრული ციკლი
+(load → "განახლება" → ახალი row ბაზაში → გადამისამართება `/orders`-ზე)
+უცვლელად იმუშავა ახალი არქიტექტურითაც; (4) ლეგასი (unit-ის გარეშე)
+წყაროთი ვალიდაციის შეცდომაც — `4.95`-ის ვიზუალის-შენარჩუნების
+ფიქსი ახალ architecture-შიც უცვლელად მუშაობს. `/orders`-ისა და
+დეშბორდის ბმულებიც სწორი `?duplicate=N` href-ებით დადასტურდა.
+ტესტ-ინვოისები წაშლილია, tenant 31-ის temp password აღდგენილია.
+
+⚠️ **გვერდით აღმოჩენილი, ცალკე, out-of-scope უსაფრთხოების
+საკითხი** (ამ ცვლილებას არ ეხება, არც შეცვლილა): `?edit=N`-ის
+ძველი, `4.96`-მდელი branch-იც და `Invoice::save()`-ის `UPDATE`
+branch-იც **არცერთი ტენანტის საკუთრების შემოწმებას არ აკეთებენ** —
+`Invoice::find($editId)` არ ფილტრავს `created_by`/ruler-ით, და
+`UPDATE invoices ... WHERE id = ?`-საც არ აქვს ruler-შემოწმება.
+პრაქტიკულად ეს ნიშნავს: ნებისმიერ შესულ tenant-წევრს შეუძლია
+`?edit=<სხვისი-ID>`-ით ნებისმიერი **სხვა tenant-ის** ინვოისის
+ნახვა/რედაქტირება/გადაწერა, უბრალოდ ID-ის ცნობით/ცდით. ეს
+`loadOwnedInvoiceForPdf()`-ის (და ახლა `loadDuplicateOld()`-ის) მიერ
+დაცულ ყველა სხვა endpoint-ს (`show`/`exportInvoicePdf`/`sendEmail`/
+`preview`/ახლა `duplicate`) **არ ეხება** — მხოლოდ ეს ორი კონკრეტული
+adress (`?edit=N` + `store()`-ის UPDATE) რჩება ღია. საჭიროებს
+ცალკე, სპეციალურ ყურადღებას.
+
+### 4.97 ახალი ინვოისის action-პანელის ღილაკები — აღარ ინახავენ ჩუმად, დასტურის მოდალის გარეშე
+
+user-მა შენიშვნით მიმართა (სურათით, action-პანელის ღილაკები): როცა
+ინვოისი ჯერ არ არის შენახული, "ექსპორტი PDF"/"გადახედვა"/"მეილზე
+გაგზავნა"/"ბმულის გაზიარება" ღილაკებზე დაწკაპუნებისას საინფორმაციო
+მოდალი უნდა გამოვიდეს, რომელიც ინვოისის შექმნაზე დასტურს
+მოითხოვს — და მოთხოვნა კონკრეტულ საეჭვო ქცევასაც ითვალისწინებდა:
+**"შეამოწმე, ხომ არ ხდება ავტომატურად შესრულებამდე ინვოისის
+შექმნა"**.
+
+**გადამოწმებით დადასტურდა — დიახ, ზუსტად ასე ხდებოდა.** ეს 4
+ღილაკი (PDF-ის ორივე ვარიანტი, "გადახედვა", "მეილზე გაგზავნა",
+"ბმულის გაზიარება") ახალი/დუბლირებადი ინვოისისთვის (`$editingInvoice
+=== null`) ყოველთვის იყო ნამდვილი `type="submit"` ღილაკები
+(`name="submit_action"`), რომლებიც მთელ ფორმას პირდაპირ
+აგზავნიდნენ `InvoiceController::store()`-ში — ანუ ინვოისი
+**ჩუმად, დასტურის გარეშე** იქმნებოდა ბაზაში, სანამ მოთხოვნილი
+მოქმედება (PDF/preview/email/share) საერთოდ შესრულდებოდა. ("ვოთსაპზე
+გაგზავნა" ჯერ საერთოდ არაფრის-არმკეთებელი placeholder-ია, ამ
+საკითხს არ ეხება.)
+
+**გადაწყვეტა — მთლიანად client-side, `store()`-ს არაფერი შეხებია**:
+- ახალი `#invoiceConfirmCreateModal` (იგივე "own header/footer chrome"
+  სტილი, რასაც `invoiceEmailModal`-იც იყენებს) — საინფორმაციო ტექსტი
+  + "დიახ, შევქმნათ" ღილაკი.
+- ყველა 5 შესაბამის ღილაკს (2× PDF dropdown-item, "გადახედვა",
+  "მეილზე გაგზავნა", "ბმულის გაზიარება") დაემატა `js-confirm-create`
+  კლასი — **პირობითად**, მხოლოდ `$editingInvoice === null`-ზე (PDF
+  dropdown-ის ორივე item ყოველთვის submit_action-ია, ედითის დროსაც,
+  ამიტომ მათზე კლასი პირობითადაა დამატებული; დანარჩენი 3 ისედაც
+  მხოლოდ ამ mode-ში render-დება).
+- JS-ი (`click`) `preventDefault()`-ავს ღილაკის submit-ს, ინახავს
+  რომელი `submit_action` იყო დაჭერილი, მოდალს ხსნის. **მხოლოდ**
+  "დიახ, შევქმნათ"-ზე დაჭერისას ემატება hidden `submit_action`
+  input ფორმაში და `form.requestSubmit()` რეალურად ეშვება.
+
+ნამდვილი (უკვე შენახული) ინვოისის რედაქტირებისას ეს ღილაკები კვლავ
+პირდაპირი მოდალ-ტრიგერებია (`type="button"`, `js-confirm-create`
+კლასის გარეშე) — ისედაც არაფერი "იქმნება", უბრალოდ **განახლდება**,
+დასტურის საჭიროება არც არსებობდა.
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+(1) ახალ, ცარიელ ინვოისზე "გადახედვა"-ზე დაჭერისას — მოდალი
+გამოჩნდა (`modal fade show`), URL/ბაზა უცვლელი დარჩა (**ბაზაში
+წინასწარ არაფერი დაწერილა** — პირდაპირ დადასტურებული, ზუსტად
+user-ის ეჭვის საწინააღმდეგოდ ახლა); (2) "დიახ, შევქმნათ"-ზე
+დაჭერისას — ინვოისი რეალურად შეიქმნა ბაზაში, გვერდი გადავიდა
+`?edit=N`-ზე, preview-მოდალი ავტომატურად გაიხსნა (არსებული
+`?preview=1` მექანიზმი უცვლელად იმუშავა); (3) ნამდვილ, უკვე
+შენახულ ინვოისზე — `.js-confirm-create` საერთოდ არ ჩანს, ღილაკები
+პირდაპირი `type="button"` ტრიგერებია, უცვლელად; (4) დუბლირების
+preview-mode-შიც (`?duplicate=N`) ყველა 5 ღილაკს კლასი სწორად
+ჰქონდა. ტესტ-ინვოისი წაშლილია, tenant 31-ის temp password
+აღდგენილია.
+
+### 4.98 "დამატება" (ჩვეულებრივი ახალი ინვოისი) → წარმატებისას ისიც `/orders`-ზე
+
+user-მა მოითხოვა: `4.95`-ის წესი ("განახლება"-ს დაჭერისას
+წარმატებაზე გადამისამართება `/orders`-ზე) გავრცელდეს **ჩვეულებრივ,
+"დამატება" ღილაკზეც** (პლაინ ახალი ინვოისი, არა დუბლირება) — აქამდე
+მხოლოდ დუბლირების დასრულება მიდიოდა `/orders`-ზე, ჩვეულებრივი ახალი
+ინვოისის შენახვა კი ცარიელ `/invoices`-ზე ბრუნდებოდა.
+
+**`InvoiceController::store()`** — წარმატების საბოლოო წესი
+გამარტივდა: `$editingId === null && $duplicateOf !== ''` (მხოლოდ
+დუბლირება) → უბრალოდ **`$editingId === null`** (ნებისმიერი create,
+წარმომავლობის მიუხედავად). ეს ბუნებრივად მოიცავს ორივეს — ჩვეულებრივ
+"დამატებასაც" და დუბლირების "განახლებასაც" — ერთი პირობით.
+ნამდვილი რედაქტირება (`$editingId !== null`, "განახლება" არსებულ
+ინვოისზე) კვლავ უცვლელად ბრუნდება ცარიელ `/invoices`-ზე — ეს
+შემთხვევა ცალკე დარჩა, არ შეცვლილა.
+
+**გადამოწმებულია ცოცხლად** (tenant 31/test1-ით, temp password-ით):
+(1) ჩვეულებრივი ახალი ინვოისის "დამატება" → ინვოისი ბაზაში
+დადასტურებულად შეიქმნა (`id=58`), გვერდი **`/orders`-ზე** გადავიდა
+(აქამდე `/invoices` იყო); (2) ნამდვილი არსებული ინვოისის (`id=12`)
+"განახლება" → უცვლელად ცარიელ `/invoices`-ზე დარჩა, ახალი წესი მასზე
+არ მოქმედებს; ინვოისი 12-ის მონაცემები (`total=1656.00`,
+`document_state=draft`) resubmit-ის შემდეგაც უცვლელი დარჩა. ტესტ-
+ინვოისი წაშლილია, tenant 31-ის temp password აღდგენილია.
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.

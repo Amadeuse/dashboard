@@ -24,31 +24,72 @@ final class SuperUserController extends Controller
         Auth::requireSuperuser();
 
         $this->view('superuser', [
-            'title'         => t('superuser.title') . ' · ' . app_name(),
-            'tenants'       => User::allGroupedByTenant(),
-            'impersonating' => Auth::impersonating(),
+            'title'             => t('superuser.title') . ' · ' . app_name(),
+            'tenants'           => User::allGroupedByTenant(),
+            'impersonating'     => Auth::impersonating(),
+            // The specific person picked, not just the tenant — differs from
+            // 'impersonating' only when SuperUser browsed as one particular
+            // sub-user (4.86) — see superuser.php's per-row button styling.
+            'impersonatingUser' => Auth::impersonatingUserId(),
         ]);
     }
 
+    /**
+     * "აქტივობა" (4.89) — every logged-in request's own trail (ActivityLog,
+     * written from public/index.php's single choke point), optionally
+     * narrowed to one person via the left-hand user picker (?user_id=N).
+     * User::allGroupedByTenant() (superuser.php's own roster query, 4.85) —
+     * not a flat list — so the picker can indent each tenant's sub-users
+     * under their admin, same as that page already does.
+     */
+    public function activity(): void
+    {
+        Auth::requireSuperuser();
+
+        $selectedUserId = ctype_digit((string) ($_GET['user_id'] ?? '')) ? (int) $_GET['user_id'] : null;
+
+        $this->view('superuser-activity', [
+            'title'          => t('superuser.activity_title') . ' · ' . app_name(),
+            'tenantGroups'   => User::allGroupedByTenant(),
+            'selectedUserId' => $selectedUserId,
+            'entries'        => \App\Core\ActivityLog::all($selectedUserId),
+        ]);
+    }
+
+    /**
+     * $_POST['user_id'] is whichever row's "დათვალიერება" was clicked —
+     * either a root tenant's own, or (4.86) one of its sub-users', from
+     * superuser.php's child table. Either way Auth::tenantId() (ruler-scoped
+     * data: customers/products/organization) still resolves to the ROOT
+     * tenant — a sub-user shares their creator's data, they're not a tenant
+     * of their own — while Auth::invoiceScopeUserIds() narrows invoice-scoped
+     * views (orders.php, the dashboard) to just the specific person picked.
+     */
     public function impersonate(): void
     {
         Auth::requireSuperuser();
         csrf_verify();
 
-        $tenantId = (int) ($_POST['tenant_id'] ?? 0);
-        $tenant   = User::findById($tenantId);
+        $userId = (int) ($_POST['user_id'] ?? 0);
+        $target = User::findById($userId);
 
-        // Only a real root tenant (an admin with no creator of their own) is a
-        // valid impersonation target — not a sub-user id (Auth::tenantId()'s
-        // impersonation branch trusts this value as-is, it doesn't re-resolve
-        // through created_by the way it does for a normally logged-in sub-user)
-        // and not another superadmin.
+        if ($target === null || $target['role'] === 'superadmin') {
+            flash('notice', terr('superuser.err_invalid_tenant'));
+            redirect('/superuser');
+        }
+
+        $tenantId = $target['created_by'] !== null ? (int) $target['created_by'] : $userId;
+        $tenant   = $target['created_by'] !== null ? User::findById($tenantId) : $target;
+
+        // The root tenant behind $userId must itself be a real root admin —
+        // not another superadmin, and (a sub-user's created_by always points
+        // at one, but defend it anyway) not somehow another sub-user.
         if ($tenant === null || $tenant['created_by'] !== null || $tenant['role'] === 'superadmin') {
             flash('notice', terr('superuser.err_invalid_tenant'));
             redirect('/superuser');
         }
 
-        Auth::impersonate($tenantId);
+        Auth::impersonate($tenantId, $userId);
         redirect('/');
     }
 

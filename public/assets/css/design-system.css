@@ -175,6 +175,18 @@ body {
 .card > summary::-webkit-details-marker { display: none; }
 .ds-details-caret { transition: transform .15s ease; }
 details[open] > summary .ds-details-caret { transform: rotate(180deg); }
+
+/* ---- Per-user color dot (4.87) — users.php/orders.php/dashboard.php/
+   superuser.php, next to a person's name; same color as their chart bars. */
+.ds-color-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: .4rem; vertical-align: middle; flex-shrink: 0;
+}
+
+/* ---- Sub-users row (superuser.php) — same <details> trick, table context ---- */
+.ds-subusers > summary { cursor: pointer; list-style: none; }
+.ds-subusers > summary::-webkit-details-marker { display: none; }
+.ds-subusers > summary:hover { color: var(--bs-emphasis-color); }
 .card::details-content {
   block-size: 0; overflow: hidden;
   transition: block-size .2s ease, content-visibility .2s allow-discrete;
@@ -409,13 +421,60 @@ details.card { interpolate-size: allow-keywords; }
 [data-bs-theme="light"] .ds-icon-sun { display: none; }
 [data-bs-theme="light"] .ds-icon-moon { display: inline-block; }
 
-/* Printable pages (invoice-view.php etc.): chrome hides, the marked content
-   fills the page. `.no-print` is generic — any page can use it, not just
-   invoices. */
+/* `.no-print` — hide something only when printing/exporting, from inside
+   the normal app chrome. Generic, any page can use it. */
 @media print {
   .ds-sidebar, .ds-topbar, .no-print { display: none !important; }
   .ds-main { margin: 0 !important; }
   .ds-content { padding: 0 !important; }
+}
+
+/* ---- Standalone "document" pages — Controller::document(),
+   document/_layout.php (4.77 in handoff.md). No app chrome at all (that's
+   the layout's job, not CSS); this is just the single content card
+   simulated as a printed A4 sheet, centered on a muted background —
+   invoice-view.php's share-link target is the first and so far only user.
+   Values (body grey, page white/shadow/cm sizing, print reset) are the
+   user's own reference: gist.github.com/kivanio/2bebc38249ff6c23a2428b18f562f187
+   ("A4 CSS Page Template") — `width`/fixed `height` there became `max-width`/
+   `min-height` here, since that gist's own <page> blocks are blank canvases
+   the author paginates by hand, unlike a real invoice's variable length,
+   which a hard height would just clip instead of properly containing. */
+.ds-document-body { background: rgb(204, 204, 204); min-height: 100vh; }
+.ds-document-page {
+  display: flex;
+  flex-direction: column;
+  max-width: 21cm;
+  min-height: 29.7cm;
+  margin: 0.5cm auto;
+  background: #fff;
+  box-shadow: 0 0 0.5cm rgba(0, 0, 0, .5);
+}
+/* Inside the sheet itself, not a separate element below it (4.79) —
+   margin-top: auto is what pins it to the sheet's own bottom edge when the
+   invoice content is shorter than one page, while still just flowing after
+   it (not overlapping) once content actually fills or exceeds a page. */
+.ds-document-footer {
+  margin-top: auto;
+  padding: 1rem;
+  text-align: center;
+  font-size: .75rem;
+}
+.ds-document-footer-notice { color: #dc2626; }
+.ds-document-footer-credit {
+  color: var(--bs-secondary-color);
+  border-top: 1px solid var(--bs-border-color);
+  padding-top: .4rem;
+  margin-top: .25rem;
+  display: inline-block;
+}
+.ds-document-footer-credit a { color: var(--bs-primary); text-decoration: none; }
+@media print {
+  .ds-document-body, .ds-document-page { margin: 0; box-shadow: none; }
+  .ds-document-page { max-width: none; min-height: 0; }
+}
+@media (max-width: 576px) {
+  .ds-document-page { margin: 0; max-width: none; min-height: 0; }
 }
 
 /* Invoice item rows (invoices.php): the product ds-select sits label-less,

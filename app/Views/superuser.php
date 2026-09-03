@@ -2,9 +2,13 @@
 /**
  * @var array<int, array{tenant: array<string,mixed>, subUsers: array<int, array<string,mixed>>}> $tenants
  *   User::allGroupedByTenant() — every root tenant plus their sub-users.
- * @var ?int $impersonating current impersonation target, if any (the global
- *   banner in layout.php already shows/handles this — this page doesn't
- *   repeat it, just highlights the matching row below).
+ * @var ?int $impersonating current impersonation target (root tenant), if
+ *   any (the global banner in layout.php already shows/handles this — this
+ *   page doesn't repeat it, just highlights the matching row below).
+ * @var ?int $impersonatingUser the specific person picked (4.86) — the
+ *   tenant itself, or one particular sub-user; differs from $impersonating
+ *   only in the latter case. Drives each individual button's active state,
+ *   where $impersonating drives the whole row's highlight.
  */
 ?>
 
@@ -31,7 +35,7 @@
   <?php else: ?>
   <div class="card-body">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover table-striped align-middle mb-0">
         <thead>
           <tr class="text-secondary">
             <th><?= t('auth.fullName') ?></th>
@@ -44,6 +48,7 @@
           <?php foreach ($tenants as $tenantId => $group): $tenant = $group['tenant']; ?>
           <tr class="<?= $impersonating === $tenantId ? 'table-primary' : '' ?>">
             <td>
+              <?php if ($tenant['color'] !== null): ?><span class="ds-color-dot" style="background:<?= e($tenant['color']) ?>"></span><?php endif; ?>
               <?= e($tenant['name']) ?>
               <?php if ($impersonating === $tenantId): ?>
                 <span class="badge bg-primary rounded-pill ms-1"><?= t('superuser.currently_browsing') ?></span>
@@ -57,23 +62,14 @@
               <?php if ($group['subUsers'] === []): ?>
                 <span class="text-secondary">—</span>
               <?php else: ?>
-                <?php foreach ($group['subUsers'] as $sub): $subBlocked = $sub['blocked_at'] !== null; ?>
-                  <form method="post" action="/superuser/toggle-block" class="d-inline m-0"
-                        title="<?= e($subBlocked ? t('superuser.unblock') : t('superuser.block')) ?>">
-                    <?= csrf_field() ?>
-                    <input type="hidden" name="user_id" value="<?= (int) $sub['id'] ?>">
-                    <button type="submit" class="badge border-0 rounded-pill me-1 <?= $subBlocked ? 'bg-danger-subtle text-danger-emphasis' : 'bg-secondary-subtle text-secondary-emphasis' ?>">
-                      <?php if ($subBlocked): ?><i class="bi bi-lock-fill me-1"></i><?php endif; ?><?= e($sub['name']) ?>
-                    </button>
-                  </form>
-                <?php endforeach; ?>
+                <span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill"><?= count($group['subUsers']) ?></span>
               <?php endif; ?>
             </td>
             <td class="text-end">
               <form method="post" action="/superuser/impersonate" class="d-inline m-0">
                 <?= csrf_field() ?>
-                <input type="hidden" name="tenant_id" value="<?= (int) $tenantId ?>">
-                <button type="submit" class="btn btn-sm <?= $impersonating === $tenantId ? 'btn-primary' : 'btn-outline-primary' ?>">
+                <input type="hidden" name="user_id" value="<?= (int) $tenantId ?>">
+                <button type="submit" class="btn btn-sm <?= $impersonatingUser === $tenantId ? 'btn-primary' : 'btn-outline-primary' ?>">
                   <i class="bi bi-eye me-1"></i><?= t('superuser.browse_as') ?>
                 </button>
               </form>
@@ -87,6 +83,66 @@
               </form>
             </td>
           </tr>
+          <?php if ($group['subUsers'] !== []): ?>
+          <!-- Plain <details>, no JS/Bootstrap-collapse — same trick as
+               sidebar.php's nav groups (see design-system.css's
+               .ds-details-caret). A separate row/toggle, not the tenant's
+               own "დათვალიერება" button — that stays a direct one-click
+               impersonate so admins with sub-users don't lose the one-click
+               path. Each sub-user row's own "დათვალიერება" now submits its
+               OWN id (4.86) — SuperUserController::impersonate() resolves
+               the root tenant from it either way (ruler-scoped data:
+               customers/products/organization is always the root's), but
+               narrows invoice-scoped views (orders.php, the dashboard) to
+               just this one person — see Auth::invoiceScopeUserIds(). -->
+          <tr>
+            <td colspan="4" class="p-0 border-0">
+              <details class="ds-subusers">
+                <summary class="px-3 py-2 d-flex align-items-center gap-2 text-secondary small">
+                  <i class="bi bi-chevron-down ds-details-caret"></i>
+                  <?= count($group['subUsers']) ?> <?= t('superuser.subusers') ?>
+                </summary>
+                <div class="table-responsive bg-body-tertiary">
+                  <table class="table table-sm align-middle mb-0">
+                    <tbody>
+                      <?php foreach ($group['subUsers'] as $sub): $subBlocked = $sub['blocked_at'] !== null; ?>
+                      <tr>
+                        <td class="ps-4">
+                          <i class="bi bi-arrow-return-right text-secondary me-1"></i>
+                          <?php if ($sub['color'] !== null): ?><span class="ds-color-dot" style="background:<?= e($sub['color']) ?>"></span><?php endif; ?>
+                          <?= e($sub['name']) ?>
+                          <?php if ($subBlocked): ?>
+                            <span class="badge bg-danger-subtle text-danger-emphasis rounded-pill ms-1"><?= t('superuser.blocked_badge') ?></span>
+                          <?php endif; ?>
+                        </td>
+                        <td><a href="mailto:<?= e($sub['email']) ?>" class="text-decoration-none"><?= e($sub['email']) ?></a></td>
+                        <td></td>
+                        <td class="text-end">
+                          <form method="post" action="/superuser/impersonate" class="d-inline m-0">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="user_id" value="<?= (int) $sub['id'] ?>">
+                            <button type="submit" class="btn btn-sm <?= $impersonatingUser === (int) $sub['id'] ? 'btn-primary' : 'btn-outline-primary' ?>">
+                              <i class="bi bi-eye me-1"></i><?= t('superuser.browse_as') ?>
+                            </button>
+                          </form>
+                          <form method="post" action="/superuser/toggle-block" class="d-inline m-0">
+                            <?= csrf_field() ?>
+                            <input type="hidden" name="user_id" value="<?= (int) $sub['id'] ?>">
+                            <button type="submit" class="btn btn-sm <?= $subBlocked ? 'btn-success' : 'btn-outline-danger' ?>">
+                              <i class="bi <?= $subBlocked ? 'bi-unlock' : 'bi-lock' ?> me-1"></i>
+                              <?= $subBlocked ? t('superuser.unblock') : t('superuser.block') ?>
+                            </button>
+                          </form>
+                        </td>
+                      </tr>
+                      <?php endforeach; ?>
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </td>
+          </tr>
+          <?php endif; ?>
           <?php endforeach; ?>
         </tbody>
       </table>

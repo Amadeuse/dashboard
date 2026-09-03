@@ -24,10 +24,6 @@ $val = static fn(string $f): string => e((string) ($old[$f] ?? ''));
     <p class="ds-auth-subtitle"><?= t('auth.forgot.subtitle') ?></p>
   </div>
 
-  <?php if ($sent): ?>
-    <div class="alert alert-success d-flex align-items-center gap-2 mb-0"><i class="bi bi-envelope-check-fill"></i> <?= t('auth.forgot.sent') ?></div>
-  <?php endif; ?>
-
   <form class="ds-auth-panel" method="post" action="/forgot-password" novalidate>
     <?= csrf_field() ?>
     <div class="form-floating">
@@ -41,3 +37,6 @@ $val = static fn(string $f): string => e((string) ($old[$f] ?? ''));
 
   <p class="ds-auth-footer"><a class="ds-auth-link" href="/login"><?= t('auth.backToLogin') ?></a></p>
 </div>
+
+<?php // Flashed $sent now renders as a toast (4.82 in handoff.md), not an inline .alert.
+$scripts = ds_flash_toast($sent ? t('auth.forgot.sent') : null, 'success', 'bi-envelope-check-fill'); ?>

@@ -23,12 +23,6 @@ $roleLabels = \App\Models\User::roles();
   </div>
 </div>
 
-<?php if ($updated): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('profile.updated') ?>
-  </div>
-<?php endif; ?>
-
 <div class="card ds-card">
   <div class="card-body">
     <form method="post" action="/profile" enctype="multipart/form-data" novalidate>
@@ -106,7 +100,7 @@ $roleLabels = \App\Models\User::roles();
   </div>
 </div>
 
-<?php $scripts = <<<'HTML'
+<?php $scripts = ds_flash_toast($updated ? t('profile.updated') : null) . <<<'HTML'
 <script>
   document.getElementById('pf-avatar').addEventListener('change', (event) => {
     const preview = document.getElementById('pf-avatar-preview');

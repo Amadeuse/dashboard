@@ -9,9 +9,9 @@
  * @var array   $org            the organization row (Organization::get()), for partials/invoice-header.php
  * @var string  $invoicePrefix  organization.invoice_prefix, or "INV" if unset
  * @var array   $invoicesByCustomer  customer_id => list of ['number','total'], for the right column's history panel
- * @var ?array  $editingInvoice the invoice being edited (?edit=N in the URL, or a failed resubmit), or null when adding
+ * @var ?array  $editingInvoice the invoice being edited (?edit=N in the URL, or a failed resubmit), or null when adding — also null while merely *duplicating* one (?duplicate=N, 4.96), see $old['duplicate_of']
  * @var array   $errors         field => message, from the failed POST ('items_N' per line, 'items' if none)
- * @var array   $old            field => value, so a rejected form (or ?edit=N) comes back filled
+ * @var array   $old            field => value, so a rejected form (or ?edit=N / ?duplicate=N) comes back filled
  * @var ?string $created        formatted number ("PH 2026-08-13 0007") of the invoice just added
  * @var ?string $updated        formatted number of the invoice just edited
  * @var array   $emailErrors    'to'/'message' => message, from a failed "მეილზე გაგზავნა" submit — separate from $errors, a different form
@@ -27,14 +27,25 @@
  * that invoice into $old exactly like a failed-validation resubmit would,
  * so every bit of the rendering below (customer select, item rows, the
  * number/date line) needed zero new branching — it already knew how to
- * redraw itself from $old.
+ * redraw itself from $old. "დუბლირება" (?duplicate=N, 4.96) is the same
+ * idea, a real navigation into a pre-filled $old — but its own, separate
+ * index() branch/private method (loadDuplicateOld()), not a reuse of
+ * ?edit=N's own loading code, so a change meant for one path can't
+ * silently break the other (the user's own explicit request, accepting
+ * the resulting duplication between the two on purpose).
  *
  * Line items are the same repeatable-row UX as organization.php's IBAN
  * accounts (4.24 in handoff.md) — a product/qty/price row that auto-adds a
  * fresh empty one the moment its product is picked, generalized from one
  * input to a row of three plus a computed total.
  */
-$editing = ($old['invoice_id'] ?? '') !== '';
+$editing     = ($old['invoice_id'] ?? '') !== '';
+// A fresh copy staged by "დუბლირება" (InvoiceController::duplicate()) —
+// $old is populated but there's no real 'invoice_id', so $editing above
+// stays false (this becomes a genuine new row only once "განახლება" is
+// actually clicked) while this page still needs its own distinct
+// background tone/heading, not the blank "new invoice" look.
+$duplicating = isset($old['duplicate_of']);
 
 $val      = static fn(string $f): string => e((string) ($old[$f] ?? ''));
 $bad      = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
@@ -151,40 +162,20 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
   </div>
 </div>
 
-<?php if ($created !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('inv.created', e($created)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($updated !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('inv.updated', e($updated)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($emailSent !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('inv.email_sent', e($emailSent)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($emailFailed !== null): ?>
-  <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
-    <i class="bi bi-exclamation-triangle-fill"></i> <?= t('inv.email_failed', e($emailFailed)) ?>
-  </div>
-<?php endif; ?>
-<?php if (isset($errors['conflict'])): ?>
-  <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
-    <i class="bi bi-exclamation-triangle-fill"></i> <?= e($errors['conflict']) ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed created/updated/emailSent/emailFailed/conflict now render as toasts (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <div class="row g-3">
   <div class="col-lg-9">
     <div class="card ds-card" id="invoice-form">
-      <div class="card-header <?= $editing ? 'bg-warning-subtle' : 'bg-transparent' ?> d-flex flex-wrap justify-content-between align-items-center gap-2 py-3"
+      <?php
+        $headerBg    = $duplicating ? 'bg-info-subtle' : ($editing ? 'bg-warning-subtle' : 'bg-transparent');
+        $headerTitle = $duplicating ? t('inv.duplicate_title') : ($editing ? t('inv.edit_title') : t('inv.new_title'));
+      ?>
+      <div class="card-header <?= $headerBg ?> d-flex flex-wrap justify-content-between align-items-center gap-2 py-3"
            id="invoiceFormHeader" data-title-add="<?= e(t('inv.new_title')) ?>" data-title-edit="<?= e(t('inv.edit_title')) ?>">
         <div class="d-flex align-items-center gap-2">
           <i class="bi bi-receipt text-primary"></i>
-          <h2 class="h6 mb-0" id="invoiceFormTitle"><?= $editing ? t('inv.edit_title') : t('inv.new_title') ?></h2>
+          <h2 class="h6 mb-0" id="invoiceFormTitle"><?= $headerTitle ?></h2>
         </div>
         <div class="d-flex flex-wrap align-items-center gap-2"
              data-new-label="<?= e($previewNumber) ?>">
@@ -197,6 +188,12 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
       <form method="post" action="/invoices" id="invoiceMainForm" class="card-body pt-3" novalidate>
         <?= csrf_field() ?>
         <input type="hidden" name="invoice_id" id="invoice_id" value="<?= e((string) ($old['invoice_id'] ?? '')) ?>">
+        <!-- Only the marker store() needs to tell a duplicate-completion
+             create apart from an ordinary brand-new one (4.95) — round-trips
+             through a failed-validation resubmit's own flashed $old too
+             (see store()), so a rejected duplicate save keeps its
+             bg-info-subtle tone/heading instead of reverting to plain "new". -->
+        <input type="hidden" name="duplicate_of" value="<?= e((string) ($old['duplicate_of'] ?? '')) ?>">
         <input type="hidden" name="updated_at" value="<?= e((string) ($old['updated_at'] ?? '')) ?>">
 
         <?php require APP_PATH . '/Views/partials/invoice-header.php'; ?>
@@ -274,7 +271,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
                   <button type="reset" class="btn btn-outline-secondary"><?= t('inv.reset') ?></button>
                   <button type="submit" class="btn btn-primary" id="invoiceSubmitBtn"
                           data-label-add="<?= e(t('inv.save')) ?>" data-label-update="<?= e(t('inv.update')) ?>">
-                    <i class="bi bi-plus-lg me-1"></i><span id="invoiceSubmitLabel"><?= $editing ? t('inv.update') : t('inv.save') ?></span>
+                    <i class="bi bi-plus-lg me-1"></i><span id="invoiceSubmitLabel"><?= $editing || $duplicating ? t('inv.update') : t('inv.save') ?></span>
                   </button>
                 </div>
               </div>
@@ -320,12 +317,14 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
           </button>
           <ul class="dropdown-menu w-100">
             <li>
-              <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf_signed" class="dropdown-item">
+              <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf_signed"
+                      class="dropdown-item <?= $editingInvoice === null ? 'js-confirm-create' : '' ?>">
                 <i class="bi bi-pen me-1"></i><?= t('inv.export_signed') ?>
               </button>
             </li>
             <li>
-              <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf_unsigned" class="dropdown-item">
+              <button type="submit" form="invoiceMainForm" name="submit_action" value="export_pdf_unsigned"
+                      class="dropdown-item <?= $editingInvoice === null ? 'js-confirm-create' : '' ?>">
                 <i class="bi bi-file-earmark me-1"></i><?= t('inv.export_unsigned') ?>
               </button>
             </li>
@@ -339,7 +338,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
             <i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?>
           </button>
         <?php else: ?>
-          <button type="submit" form="invoiceMainForm" name="submit_action" value="preview" class="btn btn-outline-secondary">
+          <button type="submit" form="invoiceMainForm" name="submit_action" value="preview" class="btn btn-outline-secondary js-confirm-create">
             <i class="bi bi-eye me-1"></i><?= t('inv.action_preview') ?>
           </button>
         <?php endif; ?>
@@ -349,7 +348,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
             <i class="bi bi-envelope me-1"></i><?= t('inv.action_email') ?>
           </button>
         <?php else: ?>
-          <button type="submit" form="invoiceMainForm" name="submit_action" value="email" class="btn btn-outline-secondary">
+          <button type="submit" form="invoiceMainForm" name="submit_action" value="email" class="btn btn-outline-secondary js-confirm-create">
             <i class="bi bi-envelope me-1"></i><?= t('inv.action_email') ?>
           </button>
         <?php endif; ?>
@@ -359,9 +358,20 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
             <i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?>
           </button>
         <?php else: ?>
-          <button type="submit" form="invoiceMainForm" name="submit_action" value="share_link" class="btn btn-outline-secondary">
+          <button type="submit" form="invoiceMainForm" name="submit_action" value="share_link" class="btn btn-outline-secondary js-confirm-create">
             <i class="bi bi-link-45deg me-1"></i><?= t('inv.action_share_link') ?>
           </button>
+        <?php endif; ?>
+        <?php if ($editingInvoice !== null): ?>
+          <!-- Only once there's a real, saved invoice to copy from — unlike
+               preview/email/share_link above, duplicating a not-yet-saved
+               new invoice makes no sense, so this has no submit_action
+               fallback branch for that case, it's just absent instead.
+               A plain GET link (?duplicate=N, 4.96) — same navigation, not
+               a form submit, as the edit pencil's own ?edit=N link. -->
+          <a href="/invoices?duplicate=<?= (int) $editingInvoice['id'] ?>" class="btn btn-outline-secondary w-100">
+            <i class="bi bi-copy me-1"></i><?= t('inv.action_duplicate') ?>
+          </a>
         <?php endif; ?>
 
         <hr class="my-1">
@@ -452,6 +462,37 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
   </div>
 </div>
 
+<!-- "ეს მოქმედება ჯერ შეინახავს ინვოისს" — the action-panel's own
+     PDF-export/გადახედვა/მეილზე-გაგზავნა/ბმულის-გაზიარება buttons all
+     submit_action=... the whole main form when there's no real invoice
+     yet ($editingInvoice === null — a brand new one, or a staged
+     "დუბლირება" copy, 4.94), silently creating it before doing whatever
+     was actually clicked. user's own explicit request: ask first. Same
+     "own header/footer chrome" convention as invoiceEmailModal above.
+     JS below (js-confirm-create) intercepts every button carrying that
+     class, stashes which submit_action it was, and only actually submits
+     once "დიახ, შევქმნათ" is clicked. -->
+<div class="modal fade" id="invoiceConfirmCreateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-light">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-info-circle text-primary"></i>
+          <span class="fw-bold text-primary small text-uppercase"><?= t('inv.confirm_create_title') ?></span>
+        </div>
+        <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal" aria-label="<?= t('inv.close') ?>"></button>
+      </div>
+      <div class="modal-body">
+        <?= t('inv.confirm_create_body') ?>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal"><?= t('inv.close') ?></button>
+        <button type="button" class="btn btn-primary" id="invoiceConfirmCreateBtn"><?= t('inv.confirm_create_confirm') ?></button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <?php require APP_PATH . '/Views/partials/invoice-preview-modal.php'; ?>
 
 <!-- Same "own header/footer chrome" polish as invoice-preview-modal.php
@@ -522,7 +563,13 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
 </div>
 
 <?php
-$scripts = ds_invoice_preview_script() . ds_share_link_script() . <<<'HTML'
+$scripts = ds_invoice_preview_script() . ds_share_link_script()
+    . ds_flash_toast($created !== null ? t('inv.created', e($created)) : null)
+    . ds_flash_toast($updated !== null ? t('inv.updated', e($updated)) : null)
+    . ds_flash_toast($emailSent !== null ? t('inv.email_sent', e($emailSent)) : null)
+    . ds_flash_toast($emailFailed !== null ? t('inv.email_failed', e($emailFailed)) : null, 'warning', 'bi-exclamation-triangle-fill')
+    . ds_flash_toast(isset($errors['conflict']) ? e($errors['conflict']) : null, 'warning', 'bi-exclamation-triangle-fill')
+    . <<<'HTML'
 
 <script>
 (() => {
@@ -757,7 +804,10 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script() . <<<'HTML'
       updatedAtInput.value = '';
       labelSpan.textContent = submitBtn.dataset.labelAdd;
       numberSpan.textContent = meta.dataset.newLabel;
-      formHeader.classList.remove('bg-warning-subtle');
+      // Either of the two non-default tones (4.94's own bg-info-subtle for
+      // a staged "დუბლირება" copy, or the existing bg-warning-subtle for a
+      // real edit) — reset always drops back to the plain blank-add look.
+      formHeader.classList.remove('bg-warning-subtle', 'bg-info-subtle');
       formHeader.classList.add('bg-transparent');
       formTitle.textContent = formHeader.dataset.titleAdd;
       document.getElementById('status_draft').checked = true;
@@ -814,4 +864,50 @@ history.replaceState(null, '', location.pathname + location.search.replace(/[?&]
 </script>
 HTML;
 }
+
+// "ეს მოქმედება ჯერ შეინახავს ინვოისს" (see invoiceConfirmCreateModal
+// above) — every .js-confirm-create button is a real type="submit" with
+// its own name="submit_action" value, so clicking it directly would
+// submit (create) immediately; intercepted here instead, the value is
+// only actually attached to the form (as a plain hidden input — a
+// script-invoked requestSubmit() carries no "which button" info of its
+// own) once "დიახ, შევქმნათ" is clicked. Nothing to wire when editing a
+// real invoice — none of those buttons carry the class then.
+$scripts .= <<<'HTML'
+
+<script>
+(() => {
+  const form = document.getElementById('invoiceMainForm');
+  const modalEl = document.getElementById('invoiceConfirmCreateModal');
+  const confirmBtn = document.getElementById('invoiceConfirmCreateBtn');
+  const triggers = document.querySelectorAll('.js-confirm-create');
+  if (!form || !modalEl || !confirmBtn || triggers.length === 0) return;
+
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  let pendingAction = null;
+
+  triggers.forEach((btn) => {
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      pendingAction = btn.value;
+      modal.show();
+    });
+  });
+
+  confirmBtn.addEventListener('click', () => {
+    if (!pendingAction) return;
+    let hidden = form.querySelector('input[name="submit_action"]');
+    if (!hidden) {
+      hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = 'submit_action';
+      form.appendChild(hidden);
+    }
+    hidden.value = pendingAction;
+    modal.hide();
+    form.requestSubmit();
+  });
+})();
+</script>
+HTML;
 ?>
