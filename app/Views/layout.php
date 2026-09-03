@@ -30,9 +30,21 @@
   <?php require APP_PATH . '/Views/partials/topbar.php'; ?>
   <?php $impersonatingId = \App\Core\Auth::impersonating(); ?>
   <?php if ($impersonatingId !== null): ?>
-    <?php $impersonatedTenant = \App\Models\User::findById($impersonatingId); ?>
+    <?php
+      $impersonatedTenant  = \App\Models\User::findById($impersonatingId);
+      $impersonatedLabel   = $impersonatedTenant['name'] ?? '?';
+      // Narrowed to one specific sub-user (4.86) — say so in the banner too,
+      // since orders.php/the dashboard now show only their own numbers, not
+      // the whole team's; same person as the tenant itself shows just the
+      // tenant name, unchanged.
+      $impersonatingUserId = \App\Core\Auth::impersonatingUserId();
+      if ($impersonatingUserId !== null && $impersonatingUserId !== $impersonatingId) {
+          $impersonatedUser  = \App\Models\User::findById($impersonatingUserId);
+          $impersonatedLabel .= ' → ' . ($impersonatedUser['name'] ?? '?');
+      }
+    ?>
     <div class="alert alert-warning rounded-0 mb-0 py-2 px-3 d-flex align-items-center justify-content-between small">
-      <span><i class="bi bi-eye-fill me-2"></i><?= t('superuser.impersonating_banner', e($impersonatedTenant['name'] ?? '?')) ?></span>
+      <span><i class="bi bi-eye-fill me-2"></i><?= t('superuser.impersonating_banner', e($impersonatedLabel)) ?></span>
       <form method="post" action="/superuser/stop" class="mb-0">
         <?= csrf_field() ?>
         <button type="submit" class="btn btn-sm btn-outline-dark"><?= t('superuser.stop_impersonating') ?></button>
@@ -52,6 +64,12 @@
     static fn(array $n): array => ['type' => $n['type'], 'text' => t($n['key'])],
     \App\Core\Notifications::all()
 ), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;</script>
+<!-- dsNotify()'s own toast-header text (4.83 in handoff.md — standard
+     Bootstrap toast layout: icon, app name, timestamp, close). -->
+<script>
+  window.dsAppName = <?= json_encode(app_name(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  window.dsToastJustNow = <?= json_encode(t('toast.just_now'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+</script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="/assets/js/app.js"></script>
 <script src="/vendor/floating-label/js/floating-label.js"></script>

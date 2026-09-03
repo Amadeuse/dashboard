@@ -7,6 +7,10 @@ namespace App\Controllers;
 use App\Core\Auth;
 use App\Core\Controller;
 use App\Models\Customer;
+use App\Models\CustomerReport;
+use App\Models\Invoice;
+use App\Models\Organization;
+use App\Models\User;
 use PDOException;
 
 final class CustomerController extends Controller
@@ -23,6 +27,60 @@ final class CustomerController extends Controller
             'old'     => flash('old') ?? [],
             'created' => flash('created'),
             'updated' => flash('updated'),
+        ]);
+    }
+
+    /**
+     * One customer's report — customers.php's "რეპორტი" row-link (4.69).
+     * Invoices scoped the same way orders.php's list is (Invoice::all()'s
+     * own convention): every tenant member's invoices to this customer,
+     * not just the current user's own.
+     */
+    public function report(): void
+    {
+        $ruler    = Auth::tenantId();
+        $customer = Customer::find((int) ($_GET['id'] ?? 0), $ruler);
+
+        if ($customer === null) {
+            http_response_code(404);
+            (new ErrorController())->notFound();
+            return;
+        }
+
+        $memberIds     = User::tenantMemberIds($ruler);
+        $org           = Organization::get($ruler);
+        $invoicePrefix = (string) ($org['invoice_prefix'] ?? '') ?: 'INV';
+        $invoices      = CustomerReport::invoices($customer['id'], $memberIds);
+
+        // Inline "ნახვა" — rendered server-side for the default (most
+        // recent, $invoices is already sequence_number DESC) invoice so the
+        // page shows one on first load, not an empty panel; clicking a
+        // different row in the list re-fetches this same partial via
+        // InvoiceController::preview() (unchanged) instead of a modal (4.70
+        // — replaces the invoice-preview-modal.php this page used to embed).
+        $defaultInvoiceId   = $invoices[0]['id'] ?? null;
+        $invoicePreviewHtml = '';
+        if ($defaultInvoiceId !== null) {
+            $invoicePreviewHtml = $this->renderToString('invoice-preview', [
+                'invoice'   => Invoice::find($defaultInvoiceId),
+                'items'     => Invoice::itemsFor($defaultInvoiceId),
+                'org'       => $org,
+                'bankIbans' => Organization::bankIbans($org),
+            ]);
+        }
+
+        $this->view('customer-report', [
+            'title'              => $customer['customer_name'] . ' · ' . t('page.customers') . ' · ' . app_name(),
+            'customer'           => $customer,
+            'invoicePrefix'      => $invoicePrefix,
+            'currency'           => (string) $org['currency'],
+            'invoices'           => $invoices,
+            'defaultInvoiceId'   => $defaultInvoiceId,
+            'invoicePreviewHtml' => $invoicePreviewHtml,
+            'summary'            => CustomerReport::summary($customer['id'], $memberIds),
+            'statusTotals'       => CustomerReport::statusTotals($customer['id'], $memberIds),
+            'monthly'            => CustomerReport::monthlyTotals($customer['id'], $memberIds),
+            'topProducts'        => CustomerReport::topProducts($customer['id'], $memberIds),
         ]);
     }
 

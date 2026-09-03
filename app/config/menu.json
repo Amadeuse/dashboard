@@ -6,9 +6,8 @@
       {
         "label": "nav.analytics", "icon": "bi-bar-chart-fill",
         "children": [
-          { "label": "nav.analytics_overview", "url": "#" },
-          { "label": "nav.analytics_reports",  "url": "#" },
-          { "label": "nav.analytics_traffic",  "url": "#" }
+          { "label": "nav.analytics_overview", "url": "/analytics/overview" },
+          { "label": "nav.analytics_reports",  "url": "#" }
         ]
       },
       {

@@ -64,6 +64,19 @@ final class InvoiceController extends Controller
             }
         }
 
+        // "დუბლირება" — its own entry point (?duplicate=N), same shape as
+        // ?edit=N above but a deliberately separate branch/method
+        // (loadDuplicateOld() below), not a shared code path — the user's
+        // own explicit request, so a future change to either loading
+        // procedure can never accidentally affect the other, at the cost of
+        // some real duplication between them (was a POST /invoices/duplicate
+        // action flashing 'old' and redirecting here instead, until 4.96).
+        // Same "$old === []" precedence rule as ?edit= — a failed resubmit's
+        // own flashed $old always wins over a fresh ?duplicate= load too.
+        if ($old === [] && $editingInvoice === null && ctype_digit((string) ($_GET['duplicate'] ?? ''))) {
+            $old = $this->loadDuplicateOld((int) $_GET['duplicate'], $ruler);
+        }
+
         $invoicePrefix = (string) ($org['invoice_prefix'] ?? '') ?: 'INV';
 
         // What the next invoice's number would be right now — the card-header
@@ -129,16 +142,19 @@ final class InvoiceController extends Controller
 
     /**
      * The invoice list, browsed from the sidebar's შეკვეთები > ყველა შეკვეთა
-     * — see orders.php. Scoped to the whole tenant (the admin + every
-     * sub-user they created), same "the team together" scope the dashboard
-     * uses — not just the currently logged-in user's own invoices (was that
-     * narrower scope until 4.36: a sub-user's invoices were invisible here
-     * to their admin, even though the dashboard already counted them).
+     * — see orders.php. Auth::invoiceScopeUserIds() decides the actual
+     * scope: the whole tenant team when the ROOT admin themselves is
+     * looking (the admin + every sub-user they created, same "the team
+     * together" scope the dashboard uses), narrowed to just their own
+     * invoices for a logged-in sub-user, or for SuperUser browsing as one
+     * specific sub-user (4.86/4.88 — see that method's own docblock; this
+     * view-scope rule is distinct from Invoice::save()'s numbering, which
+     * always takes the whole team regardless of who's looking).
      */
     public function orders(): void
     {
         $ruler = Auth::tenantId();
-        $rows  = Invoice::all(User::tenantMemberIds($ruler));
+        $rows  = Invoice::all(Auth::invoiceScopeUserIds());
         $org   = Organization::get($ruler);
 
         // See index()'s own $workflow block for why this is guarded like this.
@@ -181,7 +197,7 @@ final class InvoiceController extends Controller
     public function exportOrdersPdf(): void
     {
         $ruler = Auth::tenantId();
-        $rows  = Invoice::all(User::tenantMemberIds($ruler));
+        $rows  = Invoice::all(Auth::invoiceScopeUserIds()); // same scope as orders() above (4.86)
         $org   = Organization::get($ruler);
 
         $html = $this->renderToString('pdf/orders', [
@@ -209,9 +225,15 @@ final class InvoiceController extends Controller
 
         [$clean, $errors] = Invoice::validate($_POST);
 
+        // Round-trips a staged "დუბლირება" copy's own marker (see
+        // invoices.php's hidden duplicate_of field, 4.95) through a failed
+        // resubmit — otherwise a rejected duplicate save would silently
+        // revert to the plain "new invoice" look on the very next render.
+        $duplicateOf = trim((string) ($_POST['duplicate_of'] ?? ''));
+
         if ($errors) {
             flash('errors', $errors);
-            flash('old', $clean + ['invoice_id' => $id, 'updated_at' => $expectedUpdatedAt]);
+            flash('old', $clean + ['invoice_id' => $id, 'updated_at' => $expectedUpdatedAt, 'duplicate_of' => $duplicateOf]);
             redirect('/invoices#invoice-form');
         }
 
@@ -285,6 +307,20 @@ final class InvoiceController extends Controller
             redirect('/invoices?edit=' . $invoiceId);
         }
 
+        // Any brand-new invoice — plain "დამატება" (4.97/current) just as
+        // much as a "განახლება"-completed "დუბლირება" copy (4.95, which
+        // first introduced this for the duplicate case specifically; the
+        // user's own follow-up request widened it to every create) — lands
+        // on /orders instead of the blank-form landing an actual *edit*
+        // still gets, so the just-created invoice is immediately visible in
+        // context among the rest. $editingId === null is exactly "this
+        // request just created a row, rather than updated one that already
+        // existed" — $duplicateOf no longer needs its own separate check
+        // here, every create takes this branch regardless of origin.
+        if ($editingId === null) {
+            redirect('/orders');
+        }
+
         redirect('/invoices');
     }
 
@@ -298,6 +334,14 @@ final class InvoiceController extends Controller
      *      the logged-in viewer must belong to the same tenant that issued
      *      the invoice. Anyone else gets 404, not 403 — doesn't confirm the
      *      id even exists to someone probing it.
+     *
+     * document() (Controller.php, 4.77), not view() — no app chrome
+     * (sidebar/topbar) and no buttons at all, on-page or in a toolbar
+     * (there used to be "PDF შენახვა"/"ბეჭდვა" here — removed, along with
+     * the $viewToken they needed, per the user's explicit request: this is
+     * meant to read as the invoice itself, simulated on an A4 page, not an
+     * app screen — same "one document, nothing else" spirit as the PDF this
+     * mirrors. Printing/saving is still just the browser's own Ctrl+P.
      */
     public function show(): void
     {
@@ -308,21 +352,13 @@ final class InvoiceController extends Controller
             return;
         }
 
-        $this->view('invoice-view', [
+        $this->document('invoice-view', [
             'title'         => $ctx['number'] . ' · ' . app_name(),
             'invoice'       => $ctx['invoice'],
             'invoiceNumber' => $ctx['number'],
             'items'         => Invoice::itemsFor($id),
             'org'           => $ctx['org'],
             'bankIbans'     => Organization::bankIbans($ctx['org']),
-            // "PDF შენახვა" (invoice-view.php) links straight to
-            // exportInvoicePdf() with this token — that route accepts the
-            // same share-link bypass this page does, so an anonymous
-            // customer viewing via a shared link can still download the
-            // real PDF, not just window.print(). Always the invoice's own
-            // token, never the $_GET one — a logged-in tenant viewer got
-            // here without a token in the URL at all.
-            'viewToken'     => (string) $ctx['invoice']['view_token'],
         ]);
     }
 
@@ -413,8 +449,9 @@ final class InvoiceController extends Controller
     }
 
     /**
-     * "მეილზე გაგზავნა" — invoices.php's own modal (4.55), and orders.php's
-     * same modal per-row (4.62) — always behind login (loadOwnedInvoiceForPdf(),
+     * "მეილზე გაგზავნა" — invoices.php's own modal (4.55), orders.php's
+     * same modal per-row (4.62), and dashboard.php's own "Recent invoices"
+     * table (4.84) — always behind login (loadOwnedInvoiceForPdf(),
      * no anonymous/token path — unlike show()/exportInvoicePdf(), sending mail
      * is never something a share-link viewer does). Attaches the same PDF
      * exportInvoicePdf() would download. "From" stays this app's own verified
@@ -435,9 +472,14 @@ final class InvoiceController extends Controller
         }
 
         // Which page's modal this came from — whitelisted, not an open
-        // redirect (the form only ever sends its own hardcoded hidden value).
-        // Absent/anything else keeps the original /invoices behaviour.
-        $fromOrders = ($_POST['redirect'] ?? '') === '/orders';
+        // redirect (the form only ever sends its own hardcoded hidden
+        // value). /orders and / (dashboard.php's own row-action modal,
+        // 4.84) are both "a list of many invoices" contexts — always land
+        // back on themselves, success or failure, same as each other.
+        // Absent/anything else (invoices.php's own modal never sends this
+        // field at all) keeps the original single-invoice-form behaviour
+        // below instead.
+        $listRedirect = in_array($_POST['redirect'] ?? '', ['/orders', '/'], true) ? $_POST['redirect'] : null;
 
         $to      = trim((string) ($_POST['to'] ?? ''));
         $message = trim((string) ($_POST['message'] ?? ''));
@@ -453,7 +495,7 @@ final class InvoiceController extends Controller
         if ($errors) {
             flash('email_errors', $errors);
             flash('email_old', ['to' => $to, 'message' => $message]);
-            redirect($fromOrders ? '/orders?email_error=' . $id : '/invoices?edit=' . $id . '&email=1#invoice-form');
+            redirect($listRedirect !== null ? $listRedirect . '?email_error=' . $id : '/invoices?edit=' . $id . '&email=1#invoice-form');
         }
 
         $html = $this->renderToString('pdf/invoice', [
@@ -492,18 +534,71 @@ final class InvoiceController extends Controller
 
         flash($sent ? 'email_sent' : 'email_failed', $ctx['number']);
 
-        // A successful send from /invoices also just flipped this invoice
-        // draft→final (markFinal() above) — staying on ?edit=N leaves the
-        // "დამატება"/save button sitting right there, one misclick away from
-        // re-submitting the same form and creating a second, duplicate
-        // invoice. Bouncing to the dashboard instead removes that button
-        // from the page entirely. Only for an actual delivery — a failed
-        // send changes nothing, so staying put to retry is still safe (and
-        // more useful); /orders never had this risk (no form to resubmit).
-        if ($sent && !$fromOrders) {
+        // A list-page context (/orders, / — 4.84) always lands back on
+        // itself, success or failure alike: no form there to protect from
+        // an accidental resubmit. The invoices.php single-invoice-form
+        // context (no $listRedirect) keeps its own original rule instead —
+        // a successful send just flipped this invoice draft→final
+        // (markFinal() above), and staying on ?edit=N leaves the
+        // "დამატება"/save button sitting right there, one misclick away
+        // from re-submitting the same form and creating a second,
+        // duplicate invoice, so it bounces to the dashboard; a failed send
+        // changes nothing, so staying put to retry is still safe (and
+        // more useful).
+        if ($listRedirect !== null) {
+            redirect($listRedirect);
+        }
+        if ($sent) {
             redirect('/');
         }
-        redirect($fromOrders ? '/orders' : '/invoices?edit=' . $id . '#invoice-form');
+        redirect('/invoices?edit=' . $id . '#invoice-form');
+    }
+
+    /**
+     * "დუბლირება"'s own $old-builder — called only from index()'s own
+     * `?duplicate=N` branch above. Deliberately NOT shared with the ?edit=N
+     * branch's own inline logic just above it in index(), even though the
+     * two look almost identical right now (4.96, user's own explicit
+     * request: independent procedures, so a change meant for one can never
+     * silently break the other). Silently returns [] on a bad id or a
+     * cross-tenant one — same "just fall back to a blank new-invoice form"
+     * tolerance the ?edit=N branch itself already has for a bad id,
+     * kept consistent rather than 404ing (this is a GET that only ever
+     * pre-fills a form, nothing is exposed beyond what the form already
+     * shows a tenant member for their own new invoices anyway).
+     *
+     * No 'invoice_id'/'updated_at' key — $editingInvoice/$editing both stay
+     * false on the resulting render, so the copy only actually becomes a
+     * real row once "განახლება" is clicked and the normal store() create
+     * path runs, same as typing a brand new invoice by hand would.
+     * 'duplicate_of' is the one addition invoices.php reads to tell this
+     * apart from an ordinary blank new-invoice load. document_state is
+     * forced to 'draft' regardless of the source's own state — a duplicate
+     * is a new start, not a copy of "already sent to the customer".
+     *
+     * @return array<string,mixed>
+     */
+    private function loadDuplicateOld(int $sourceId, int $ruler): array
+    {
+        $invoice = Invoice::find($sourceId);
+        if ($invoice === null || $this->ownerTenant($invoice) !== $ruler) {
+            return [];
+        }
+
+        $items = Invoice::itemsFor($sourceId);
+
+        return [
+            'duplicate_of'    => (string) $sourceId,
+            'customer_id'     => (string) $invoice['customer_id'],
+            'document_state'  => Invoice::DOCUMENT_STATES[0],
+            'is_zero'         => $invoice['is_zero'] ? 1 : 0,
+            'is_recurring'    => $invoice['is_recurring'] ? 1 : 0,
+            'notes'           => (string) ($invoice['notes'] ?? ''),
+            'item_product_id' => array_column($items, 'product_id'),
+            'item_unit_id'    => array_column($items, 'unit_id'),
+            'item_quantity'   => array_column($items, 'quantity'),
+            'item_unit_price' => array_column($items, 'unit_price'),
+        ];
     }
 
     /**

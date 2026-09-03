@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Core\ActivityLog;
 use App\Core\Auth;
 use App\Core\ModuleRegistry;
 use App\Core\Router;
@@ -39,8 +40,19 @@ require __DIR__ . '/../app/bootstrap.php';
 // cookie) — concurrent users on different sessions never see each other's
 // login state, see Auth's docblock.
 $requestPath = rtrim(parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/', '/') ?: '/';
-if (!Auth::check() && !in_array($requestPath, PUBLIC_PATHS, true)) {
+$loggedIn    = Auth::check();
+if (!$loggedIn && !in_array($requestPath, PUBLIC_PATHS, true)) {
     redirect('/login');
+}
+
+// SuperUser's activity log (4.89, /superuser/activity) — one row per
+// authenticated request, "who went where and when". Single choke point:
+// every page view and form submit a logged-in user makes already passes
+// through here, so no per-controller call sites are needed to stay
+// complete. $_SESSION['user_id'] directly (not Auth::user(), which would
+// re-run the same check() work Auth::check() above just did).
+if ($loggedIn) {
+    ActivityLog::record((int) $_SESSION['user_id'], $_SERVER['REQUEST_METHOD'] ?? 'GET', $_SERVER['REQUEST_URI'] ?? $requestPath);
 }
 
 $router = new Router();

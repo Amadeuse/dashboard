@@ -5,44 +5,21 @@
  * @var array  $items          this invoice's line items, product_name joined in (Invoice::itemsFor())
  * @var array  $org            the organization row (Organization::get())
  * @var array  $bankIbans      organization's bank accounts (Organization::bankIbans())
- * @var string $viewToken      this invoice's own view_token — always passed
- *   to "PDF შენახვა"'s link, so it downloads via exportInvoicePdf() whether
- *   the viewer is logged in or here through an anonymous shared link.
  *
- * A printable document, not a form. The toolbar (number/date + Save PDF/
- * Print) is `.no-print` — design-system.css hides it and the app chrome
- * (sidebar/topbar) together in @media print, so Ctrl+P / the print button
- * leave only the card that follows. "Print" still just calls window.print()
- * (that's genuinely what it should do); "Save PDF" now downloads the real
- * mPDF file (App\Core\Pdf, see handoff.md 4.37) via exportInvoicePdf(),
- * same as every other "PDF ექსპორტი" button in the app, instead of relying
- * on the browser's own print-to-PDF.
+ * A printable document, not a form — and, since 4.77, not an app screen
+ * either: rendered via Controller::document() (no sidebar/topbar, no
+ * buttons anywhere, not even a print/save-PDF toolbar) inside
+ * document/_layout.php's own A4-simulated page (.ds-document-page,
+ * design-system.css). Ctrl+P still works — that's the browser's own
+ * feature, nothing here needs to offer it. Reached two ways, both handled
+ * by InvoiceController::show(): a share-link's own view_token (no login),
+ * or a logged-in tenant viewer's own "ბეჭდვა" navigation.
  */
 $uploadUrl = '/assets/uploads/organization/';
 $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
 ?>
 
-<div class="card ds-card mb-3 no-print">
-  <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2 py-2">
-    <div>
-      <span class="fw-bold text-primary text-uppercase small"><?= t('inv.number') ?></span>
-      <span class="text-secondary mx-1">|</span>
-      <span class="fw-semibold"><?= e($invoiceNumber) ?></span>
-      <span class="text-secondary ms-2"><?= e(ds_date($invoice['issue_date'])) ?></span>
-    </div>
-    <div class="d-flex gap-3">
-      <a href="/invoices/export-pdf?id=<?= (int) $invoice['id'] ?>&token=<?= e($viewToken) ?>" class="btn btn-link text-decoration-none p-0">
-        <i class="bi bi-file-earmark-pdf me-1"></i><?= t('inv.save_pdf') ?>
-      </a>
-      <button type="button" class="btn btn-link text-decoration-none p-0" onclick="window.print()">
-        <i class="bi bi-printer me-1"></i><?= t('inv.print') ?>
-      </button>
-    </div>
-  </div>
-</div>
-
-<div class="card ds-card">
-  <div class="card-body p-4 p-md-5">
+<div class="p-4 p-md-5">
 
     <?php require APP_PATH . '/Views/partials/invoice-header.php'; ?>
 
@@ -62,7 +39,7 @@ $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
     </div>
 
     <div class="table-responsive">
-      <table class="table mb-4">
+      <table class="table table-striped mb-4">
         <thead>
           <tr class="text-secondary small text-uppercase border-bottom">
             <th><?= t('inv.product') ?></th>
@@ -106,5 +83,4 @@ $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
     </div>
     <?php endif; ?>
 
-  </div>
 </div>

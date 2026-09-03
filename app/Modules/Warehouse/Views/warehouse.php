@@ -37,11 +37,7 @@ $existingImage = (string) ($old['existing_image'] ?? '');
   </div>
 </div>
 
-<?php if ($saved !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('warehouse.saved', e($saved)) ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed $saved now renders as a toast (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <!-- ---- Add / edit ---- -->
 <details class="card ds-card mb-3" id="warehouse-form" open>
@@ -218,7 +214,9 @@ $existingImage = (string) ($old['existing_image'] ?? '');
 </div>
 
 <?php
-$scripts = ds_table_script() . <<<'HTML'
+$scripts = ds_table_script()
+    . ds_flash_toast($saved !== null ? t('warehouse.saved', e($saved)) : null)
+    . <<<'HTML'
 
 <script>
   // Same add/rename-over-AJAX pattern products.php uses for its own unit

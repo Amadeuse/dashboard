@@ -28,11 +28,7 @@ $emailMessageDefaultVal = e((string) ($old['email_message_default'] ?? $org['ema
   </div>
 </div>
 
-<?php if ($updated): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('org.updated') ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed $updated now renders as a toast (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <div class="card ds-card">
   <div class="card-body">
@@ -228,7 +224,7 @@ $emailMessageDefaultVal = e((string) ($old['email_message_default'] ?? $org['ema
   </div>
 </div>
 
-<?php $scripts = <<<'HTML'
+<?php $scripts = ds_flash_toast($updated ? t('org.updated') : null) . <<<'HTML'
 <script>
   ['org_logo', 'org_signature'].forEach((id) => {
     document.getElementById(id).addEventListener('change', (event) => {

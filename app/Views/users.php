@@ -35,16 +35,7 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
   </div>
 </div>
 
-<?php if ($created !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('users.created', e($created)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($updated !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('users.updated', e($updated)) ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed created/updated now render as toasts (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <!-- ---- Add / edit ---- -->
 <details class="card ds-card mb-3" id="user-form" open>
@@ -125,6 +116,16 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
               <div class="form-text"><?= t('auth.password.hint') ?></div>
             <?php endif; ?>
           </div>
+
+          <div class="col-md-6">
+            <label for="user_color" class="form-label small mb-1 text-secondary"><?= t('users.color') ?></label>
+            <div class="d-flex align-items-center gap-2">
+              <input type="color" class="form-control form-control-color <?= $bad('color') ?>" id="user_color" name="color"
+                     value="<?= e($old['color'] ?? \App\Models\User::nextColor(\App\Core\Auth::tenantId())) ?>" title="<?= t('users.color') ?>">
+              <span class="form-text mt-0"><?= t('users.color_hint') ?></span>
+            </div>
+            <?php if (isset($errors['color'])): ?><div class="invalid-feedback d-block"><?= e($errors['color']) ?></div><?php endif; ?>
+          </div>
         </div>
       </div>
     </div>
@@ -150,7 +151,7 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
   <div class="card-body">
     <div class="ds-table" data-ds-table data-per-page="10" data-per-page-options="10,25,50,100">
       <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
+        <table class="table table-hover table-striped align-middle mb-0">
           <thead>
             <tr class="text-secondary">
               <th></th>
@@ -168,15 +169,16 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
                   data-email="<?= e($u['email']) ?>"
                   data-phone="<?= e((string) ($u['phone'] ?? '')) ?>"
                   data-role="<?= e($u['role']) ?>"
+                  data-color="<?= e((string) ($u['color'] ?? '')) ?>"
                   data-avatar="<?= $u['avatar'] !== null ? e($avatarUrl . $u['avatar']) : '' ?>">
-                <td style="width:48px;">
+                <td class="ds-table-col-avatar">
                   <?php if ($u['avatar'] !== null): ?>
                     <img src="<?= e($avatarUrl . $u['avatar']) ?>" alt="" class="rounded-circle" style="width:32px;height:32px;object-fit:cover;">
                   <?php else: ?>
                     <span class="ds-avatar ds-avatar-soft" style="width:32px;height:32px;font-size:.8rem;"><?= e(mb_strtoupper(mb_substr($u['name'], 0, 1))) ?></span>
                   <?php endif; ?>
                 </td>
-                <td><?= e($u['name']) ?></td>
+                <td><?php if ($u['color'] !== null): ?><span class="ds-color-dot" style="background:<?= e($u['color']) ?>"></span><?php endif; ?><?= e($u['name']) ?></td>
                 <td data-order="<?= e($u['email']) ?>"><a href="mailto:<?= e($u['email']) ?>" class="text-decoration-none"><?= e($u['email']) ?></a></td>
                 <td data-order="<?= e((string) ($u['phone'] ?? '')) ?>"><?= e((string) ($u['phone'] ?? '—')) ?></td>
                 <td><span class="badge bg-secondary-subtle text-secondary-emphasis rounded-pill"><?= e($roles[$u['role']] ?? $u['role']) ?></span></td>
@@ -190,7 +192,10 @@ $bad = static fn(string $f): string => isset($errors[$f]) ? 'is-invalid' : '';
 </details>
 
 <?php
-$scripts = ds_table_script() . <<<'HTML'
+$scripts = ds_table_script()
+    . ds_flash_toast($created !== null ? t('users.created', e($created)) : null)
+    . ds_flash_toast($updated !== null ? t('users.updated', e($updated)) : null)
+    . <<<'HTML'
 
 <script>
   document.getElementById('user_avatar').addEventListener('change', (event) => {
@@ -227,7 +232,7 @@ $scripts = ds_table_script() . <<<'HTML'
     const placeholder    = document.getElementById('userAvatarPlaceholder');
     if (!table || !form) return;
 
-    const FIELDS = ['name', 'email', 'phone', 'role'];
+    const FIELDS = ['name', 'email', 'phone', 'role', 'color'];
 
     table.addEventListener('click', (event) => {
       if (event.target.closest('a')) return; // mailto: links keep working

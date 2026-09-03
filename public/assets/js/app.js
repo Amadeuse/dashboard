@@ -54,29 +54,48 @@
   document.addEventListener("input", clearInvalid);
   document.addEventListener("change", clearInvalid);
 
-  // Flash messages (e.g. "customer added") fade out on their own — no close
-  // button needed. bootstrap.Alert already owns the fade + DOM removal, so
-  // this just schedules the same close() a manual dismiss button would call.
-  document.querySelectorAll(".ds-alert-autodismiss").forEach((el) => {
-    setTimeout(() => bootstrap.Alert.getOrCreateInstance(el).close(), 4000);
-  });
-
-  // Global toast helper — for errors caught client-side (e.g. a file rejected
-  // before it's even submitted), where there's no page reload to hang a flash
-  // message off of. `message` is always our own translated text, never raw
-  // user input, so it's fine to drop straight into innerHTML.
-  window.dsNotify = (message, type = "danger") => {
+  // Global toast helper — originally just for errors caught client-side
+  // (e.g. a file rejected before it's even submitted, no page reload to
+  // hang a flash message off of), now every flash message (e.g. "customer
+  // added") goes through it too (ds_flash_toast(), helpers.php — 4.82 in
+  // handoff.md), not a page-top .alert banner. Standard Bootstrap toast
+  // layout (4.83) — plain white toast, .toast-header (icon, app name,
+  // "just now", close) + .toast-body — not the colored text-bg-{type}
+  // block this used to be; only the header icon still carries the type's
+  // color, .btn-close is always the right (dark) one now that the toast
+  // itself is never a dark background. `message` is always our own
+  // translated text, never raw user input, so it's fine to drop straight
+  // into innerHTML.
+  const DS_TOAST_ICON = {
+    success: "bi-check-circle-fill",
+    danger: "bi-exclamation-octagon-fill",
+    warning: "bi-exclamation-triangle-fill",
+    info: "bi-info-circle-fill",
+  };
+  const DS_TOAST_COLOR = {
+    success: "text-success",
+    danger: "text-danger",
+    warning: "text-warning",
+    info: "text-info",
+  };
+  window.dsNotify = (message, type = "danger", icon = null) => {
     const container = document.getElementById("dsToastContainer");
     if (!container) return;
 
+    const iconClass = icon || DS_TOAST_ICON[type] || "bi-bell-fill";
+    const colorClass = DS_TOAST_COLOR[type] || "text-secondary";
+
     const toastEl = document.createElement("div");
-    toastEl.className = `toast align-items-center text-bg-${type} border-0`;
+    toastEl.className = "toast";
     toastEl.setAttribute("role", "alert");
     toastEl.innerHTML = `
-      <div class="d-flex">
-        <div class="toast-body">${message}</div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-      </div>`;
+      <div class="toast-header">
+        <i class="bi ${iconClass} ${colorClass} me-2"></i>
+        <strong class="me-auto">${window.dsAppName ?? ""}</strong>
+        <small class="text-body-secondary">${window.dsToastJustNow ?? ""}</small>
+        <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+      <div class="toast-body">${message}</div>`;
     container.appendChild(toastEl);
 
     const toast = bootstrap.Toast.getOrCreateInstance(toastEl, { autohide: true, delay: 6000 });

@@ -72,7 +72,15 @@ final class Auth
         return true;
     }
 
-    /** $remember re-issues the session cookie with a 30-day lifetime instead of "until browser close". */
+    /**
+     * $remember re-issues the session cookie with a 30-day lifetime instead
+     * of "until browser close". The one shared call site every login path
+     * (password, OTP, Google, fresh registration) ends up at — logging here
+     * once, with a synthetic ('POST', '/login') pair rather than whatever
+     * the real request path was (/login/otp/verify, /auth/google/callback,
+     * /register, ...), means the activity log (4.89) always reads as one
+     * clean "შესვლა" regardless of which mechanism was used.
+     */
     public static function login(int $userId, bool $remember = false): void
     {
         session_regenerate_id(true);
@@ -87,12 +95,27 @@ final class Auth
                 'samesite' => 'Lax',
             ]);
         }
+
+        ActivityLog::record($userId, 'POST', '/login');
     }
 
+    /**
+     * Same shared-choke-point logging as login() above — also reached by
+     * check()'s own auto-logout branches (idle timeout, a mid-session
+     * block), not just AuthController::logout()'s "გასვლა" button, so an
+     * expired/blocked session still leaves an activity-log trail instead of
+     * just silently vanishing. $userId is read before the session keys are
+     * unset, not after.
+     */
     public static function logout(): void
     {
-        unset($_SESSION['user_id'], $_SESSION['last_activity'], $_SESSION['impersonating_tenant']);
+        $userId = (int) ($_SESSION['user_id'] ?? 0);
+        unset($_SESSION['user_id'], $_SESSION['last_activity'], $_SESSION['impersonating_tenant'], $_SESSION['impersonating_user']);
         session_regenerate_id(true);
+
+        if ($userId !== 0) {
+            ActivityLog::record($userId, 'POST', '/logout');
+        }
     }
 
     /**
@@ -245,20 +268,63 @@ final class Auth
         }
     }
 
-    /** "Browse as this tenant" — the caller (SuperUserController) has already checked requireSuperuser(). */
-    public static function impersonate(int $tenantUserId): void
+    /**
+     * "Browse as this tenant" — the caller (SuperUserController) has already
+     * checked requireSuperuser(). $tenantUserId is always a root tenant (the
+     * only valid Auth::tenantId() value); $asUserId is the specific person
+     * SuperUser actually picked (superuser.php's per-row vs per-sub-user
+     * "დათვალიერება", 4.86) — the root tenant itself when omitted, or one
+     * particular sub-user. See invoiceScopeUserIds() for why the two can
+     * differ.
+     */
+    public static function impersonate(int $tenantUserId, ?int $asUserId = null): void
     {
         $_SESSION['impersonating_tenant'] = $tenantUserId;
+        $_SESSION['impersonating_user']   = $asUserId ?? $tenantUserId;
     }
 
     public static function stopImpersonating(): void
     {
-        unset($_SESSION['impersonating_tenant']);
+        unset($_SESSION['impersonating_tenant'], $_SESSION['impersonating_user']);
     }
 
     /** Which tenant a superadmin is currently browsing as, or null if they haven't picked one yet. */
     public static function impersonating(): ?int
     {
         return isset($_SESSION['impersonating_tenant']) ? (int) $_SESSION['impersonating_tenant'] : null;
+    }
+
+    /**
+     * Which specific person (the root tenant itself, or one particular
+     * sub-user) SuperUser picked to browse as — null outside impersonation.
+     * Always equal to impersonating() unless a sub-user was specifically
+     * picked (4.86); see invoiceScopeUserIds().
+     */
+    public static function impersonatingUserId(): ?int
+    {
+        return isset($_SESSION['impersonating_user']) ? (int) $_SESSION['impersonating_user'] : null;
+    }
+
+    /**
+     * The user id(s) invoice-scoped views (orders.php, the dashboard) should
+     * include. The tenant's root admin sees the whole team (User::
+     * tenantMemberIds()) — everyone else sees only their own invoices:
+     * a normally-logged-in sub-user (4.88 — supersedes 4.36's "sub-user
+     * sees the whole team here too" for these *view* scopes specifically;
+     * Invoice::save()'s sequence numbering and previewNextSequenceNumber()
+     * still take the whole team directly from User::tenantMemberIds(),
+     * unrelated to what's merely *shown*), or SuperUser browsing as one
+     * specific sub-user rather than the tenant root (4.86). $actingAs is
+     * whichever of the two applies: the impersonated person when SuperUser
+     * picked one, otherwise the actual logged-in user themselves.
+     *
+     * @return list<int>
+     */
+    public static function invoiceScopeUserIds(): array
+    {
+        $ruler    = self::tenantId();
+        $actingAs = self::impersonatingUserId() ?? (int) ($_SESSION['user_id'] ?? $ruler);
+
+        return $actingAs !== $ruler ? [$actingAs] : User::tenantMemberIds($ruler);
     }
 }

@@ -88,6 +88,16 @@ $val = static fn(string $f): string => e((string) ($old[$f] ?? ''));
     </div>
     <?php if (isset($errors['password_confirm'])): ?><div class="invalid-feedback d-block"><?= e($errors['password_confirm']) ?></div><?php endif; ?>
 
+    <div>
+      <label for="rg-color" class="form-label small mb-1 text-secondary"><?= t('auth.color') ?></label>
+      <div class="d-flex align-items-center gap-2">
+        <input id="rg-color" name="color" type="color" class="form-control form-control-color <?= isset($errors['color']) ? 'is-invalid' : '' ?>"
+               value="<?= e($old['color'] ?? \App\Models\User::nextColor(null)) ?>" title="<?= t('auth.color') ?>">
+        <span class="form-text mt-0"><?= t('auth.color.hint') ?></span>
+      </div>
+      <?php if (isset($errors['color'])): ?><div class="invalid-feedback d-block"><?= e($errors['color']) ?></div><?php endif; ?>
+    </div>
+
     <div class="form-check d-flex align-items-start gap-2 mb-0">
       <input class="form-check-input mt-1" type="checkbox" id="rg-terms">
       <label class="form-check-label small" for="rg-terms"><?= t('auth.agreeTerms') ?></label>

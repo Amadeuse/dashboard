@@ -57,7 +57,7 @@ $uploadUrl      = '/assets/uploads/organization/';
 </div>
 
 <div class="table-responsive mb-3">
-  <table class="table table-sm align-middle mb-0">
+  <table class="table table-sm table-striped align-middle mb-0">
     <thead class="table-light">
       <tr class="text-secondary small">
         <th>#</th>

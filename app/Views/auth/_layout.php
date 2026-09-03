@@ -35,7 +35,21 @@
   </div>
 </main>
 
+<!-- Same toast container/helper as the main app (layout.php) — auth pages
+     had neither before (4.82 in handoff.md): login's "reset link sent"/
+     forgot-password's own notice were plain inline .alert-s, the only ones
+     left once every other flash in the app moved to a toast. app.js's
+     other listeners (sidebar/theme toggle, module-toggle forms, etc.) are
+     all scoped to elements that don't exist on this layout, so loading the
+     whole file here is a no-op for those, not just for dsNotify. -->
+<div class="toast-container position-fixed top-0 end-0 p-3" id="dsToastContainer" style="z-index:1080;"></div>
+<script>
+  window.dsAppName = <?= json_encode(app_name(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+  window.dsToastJustNow = <?= json_encode(t('toast.just_now'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
+</script>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/assets/js/app.js"></script>
 <script src="/vendor/floating-label/js/floating-label.js"></script>
 <script>
 (() => {

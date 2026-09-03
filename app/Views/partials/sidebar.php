@@ -45,12 +45,26 @@
 
       <?php // Not in menu.json — menu.json has no role-visibility concept, and this
             // is the only item that has ever needed one, so a special case here is
-            // less machinery than adding one for a single link. ?>
+            // less machinery than adding one for a single group. Hand-built (not
+            // menu.json-driven), but same <details name="ds-nav"> markup as the
+            // loop above (4.89) — a real first-level dropdown now (მომხმარებლები/
+            // აქტივობა), not a single flat link, sharing the same accordion group
+            // and its own "current route keeps it open" rule. ?>
       <?php if ((\App\Core\Auth::user()['role'] ?? null) === 'superadmin'): ?>
         <p class="ds-nav-section"><?= t('nav.superuser') ?></p>
-        <a href="/superuser" class="ds-nav-link <?= ds_is_current('/superuser') ? 'active' : '' ?>">
-          <i class="bi bi-shield-lock-fill"></i> <?= t('nav.superuser') ?>
-        </a>
+        <?php $superuserOpen = ds_is_current('/superuser') || ds_is_current('/superuser/activity'); ?>
+        <details class="ds-nav-group" name="ds-nav"<?= $superuserOpen ? ' open' : '' ?>>
+          <summary class="ds-nav-link">
+            <i class="bi bi-shield-lock-fill"></i> <?= t('nav.superuser') ?>
+            <i class="bi bi-chevron-down ds-nav-caret"></i>
+          </summary>
+          <a href="/superuser" class="ds-nav-link ds-nav-sublink <?= ds_is_current('/superuser') ? 'active' : '' ?>">
+            <?= t('nav.superuser_users') ?>
+          </a>
+          <a href="/superuser/activity" class="ds-nav-link ds-nav-sublink <?= ds_is_current('/superuser/activity') ? 'active' : '' ?>">
+            <?= t('nav.superuser_activity') ?>
+          </a>
+        </details>
       <?php endif; ?>
     </nav>
   </div>

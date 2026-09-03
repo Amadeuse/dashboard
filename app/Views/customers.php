@@ -66,16 +66,7 @@ $field = static function (string $name, string $label, string $type = 'text', st
   </div>
 </div>
 
-<?php if ($created !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('cust.created', e($created)) ?>
-  </div>
-<?php endif; ?>
-<?php if ($updated !== null): ?>
-  <div class="alert alert-success fade show d-flex align-items-center gap-2 ds-alert-autodismiss" role="alert">
-    <i class="bi bi-check-circle-fill"></i> <?= t('cust.updated', e($updated)) ?>
-  </div>
-<?php endif; ?>
+<?php // Flashed created/updated now render as toasts (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
 
 <!-- ---- New customer ---- -->
 <details class="card ds-card mb-3" id="customer-form" open>
@@ -172,7 +163,7 @@ $field = static function (string $name, string $label, string $type = 'text', st
     <div class="card-body">
     <div class="ds-table" data-ds-table data-per-page="10" data-per-page-options="10,25,50,100">
     <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
+      <table class="table table-hover table-striped align-middle mb-0">
         <thead>
           <tr class="text-secondary">
             <th><?= t('cust.name') ?></th>
@@ -180,6 +171,7 @@ $field = static function (string $name, string $label, string $type = 'text', st
             <th><?= t('cust.contact') ?></th>
             <th><?= t('cust.phone') ?></th>
             <th><?= t('cust.email') ?></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -229,6 +221,11 @@ $field = static function (string $name, string $label, string $type = 'text', st
                 <span class="text-secondary">—</span>
               <?php endif; ?>
             </td>
+            <td class="text-end" data-order="">
+              <a href="/customers/report?id=<?= (int) $c['id'] ?>" class="btn btn-sm btn-outline-secondary" title="<?= t('cust.report') ?>">
+                <i class="bi bi-bar-chart"></i>
+              </a>
+            </td>
           </tr>
           <?php endforeach; ?>
         </tbody>
@@ -242,7 +239,10 @@ $field = static function (string $name, string $label, string $type = 'text', st
 <?php
 // The tax id button searches the list below for what is typed — the "do we already
 // have this customer?" check, which is the question you ask before adding one.
-$scripts = ds_table_script() . <<<'HTML'
+$scripts = ds_table_script()
+    . ds_flash_toast($created !== null ? t('cust.created', e($created)) : null)
+    . ds_flash_toast($updated !== null ? t('cust.updated', e($updated)) : null)
+    . <<<'HTML'
 
 <script>
   document.getElementById('taxidLookup').addEventListener('click', () => {
