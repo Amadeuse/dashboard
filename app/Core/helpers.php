@@ -24,6 +24,20 @@ function app_version(): string
     return (string) env('APP_VERSION', '1.0');
 }
 
+/**
+ * A local asset URL with the file's own mtime appended (?v=...), so an edited
+ * stylesheet/script can never be served from a stale browser cache. Added in
+ * 4.109 after a CSS height fix looked "not applied" for exactly that reason —
+ * the browser was still on the previous version of ds-date-range.css while the
+ * server had the new one. CDN links don't go through here (they're versioned).
+ */
+function ds_asset(string $path): string
+{
+    $mtime = @filemtime(ROOT_PATH . '/public' . $path);
+
+    return $mtime !== false ? $path . '?v=' . $mtime : $path;
+}
+
 /** Public base URL (scheme added if .env's APP_URL doesn't have one), or '' if APP_URL isn't set — nothing to link to yet. */
 function app_url(): string
 {
@@ -168,10 +182,11 @@ function ds_table_script(): string
         'prev'    => t('table.prev'),
         'next'    => t('table.next'),
         'pages'   => t('table.pages'),
+        'filterAll' => t('table.filter_all'),
     ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 
     return "<script>window.dsTableLabels = $labels;</script>\n"
-         . '<script src="/vendor/table/js/ds-table.js"></script>';
+         . '<script src="' . ds_asset('/vendor/table/js/ds-table.js') . '"></script>';
 }
 
 /**

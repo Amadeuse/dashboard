@@ -119,7 +119,7 @@ $emailBad = static fn(string $f): string => isset($emailErrors[$f]) ? 'is-invali
             <tr class="text-secondary">
               <th><?= t('inv.number') ?></th>
               <th><?= t('orders.customer') ?></th>
-              <th><?= t('inv.creator') ?></th>
+              <th data-filterable="true"><?= t('inv.creator') ?></th>
               <th><?= t('orders.date') ?></th>
               <th><?= t('orders.amount') ?> (<?= e(currency_symbol($currency)) ?>)</th>
               <th><?= t('orders.status') ?></th>
@@ -264,12 +264,14 @@ $jsDatasets = json_encode(array_map(static fn(array $s): array => [
     'borderRadius'    => 4,
 ], $revenue['series']), JSON_UNESCAPED_UNICODE);
 
+// heredoc below interpolates variables, not calls — resolve the URL first.
+$chartJs = ds_asset('/vendor/chartjs/js/chart.umd.min.js');
 $scripts = ds_table_script() . ds_invoice_preview_script() . ds_share_link_script()
     . ds_flash_toast($notice !== null ? e($notice) : null, 'warning', 'bi-exclamation-triangle-fill')
     . ds_flash_toast($emailSent !== null ? t('inv.email_sent', e($emailSent)) : null)
     . ds_flash_toast($emailFailed !== null ? t('inv.email_failed', e($emailFailed)) : null, 'warning', 'bi-exclamation-triangle-fill')
     . <<<HTML
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="$chartJs"></script>
 <script>
   new Chart(document.getElementById('revenueChart'), {
     type: 'bar',

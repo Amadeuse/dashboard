@@ -174,8 +174,10 @@ if ($trend['labels'] !== []) {
     $jsLabels = json_encode(array_map($granularityLabel, $trend['labels']), JSON_UNESCAPED_UNICODE);
     $jsData   = json_encode($trend['data']);
 
+    // heredoc below interpolates variables, not calls — resolve the URL first.
+    $chartJs = ds_asset('/vendor/chartjs/js/chart.umd.min.js');
     $scripts = <<<HTML
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="$chartJs"></script>
 <script>
   new Chart(document.getElementById('analyticsTrendChart'), {
     type: 'line',

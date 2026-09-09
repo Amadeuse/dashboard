@@ -263,8 +263,10 @@ $jsDatasets = json_encode(array_map(static fn(array $s): array => [
 
 $scripts = ds_table_script();
 if ($monthly['months'] !== []) {
+    // heredoc below interpolates variables, not calls — resolve the URL first.
+    $chartJs = ds_asset('/vendor/chartjs/js/chart.umd.min.js');
     $scripts .= <<<HTML
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="$chartJs"></script>
 <script>
   new Chart(document.getElementById('customerVolumeChart'), {
     type: 'bar',

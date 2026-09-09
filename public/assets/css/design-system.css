@@ -20,6 +20,16 @@
   --bs-border-radius-2xl: var(--ds-radius);
   --bs-border-radius-pill: var(--ds-radius);
 
+  /* One height for every control that can sit in a row with the others:
+     buttons, the date-range field, the table toolbar's search/filter/
+     page-size (4.107/4.108). Every one of them reads this token — nothing
+     relies on Bootstrap's own padding arithmetic happening to land on the
+     same number any more (it didn't, reliably). The value is still that
+     arithmetic (line-height 1.5em + .375rem padding top and bottom + 1px
+     border each side), just so the default look doesn't change; edit it
+     here and every control follows. */
+  --ds-control-height: calc(1.5rem + .75rem + 2px);
+
   --ds-sidebar-width: 248px;
   --ds-topbar-height: 56px;
   --ds-sidebar-bg: #0f1425;
@@ -52,6 +62,26 @@ html { font-size: 90%; }
 body {
   font-family: var(--ds-font-sans);
   background-color: var(--bs-tertiary-bg);
+}
+
+/* ---- Default-size buttons take their height from the same token as every
+   other row-level control (4.108), so a button and a ds-date-range /
+   ds-table toolbar field beside it are identical by construction rather
+   than by both happening to compute to the same number.
+   min-height, not height: a label that ever wraps to two lines still grows
+   instead of being clipped. padding-block goes to 0 because the token
+   already accounts for it — the flex centring keeps the label in the
+   middle. Excluded on purpose: .btn-sm (row-action icons in tables, meant
+   to stay small), .btn-lg, and .btn-link (a text trigger inside a table
+   cell, e.g. customer-report.php's invoice numbers — forcing a control
+   height on those would inflate the row). ---- */
+.btn:not(.btn-sm):not(.btn-lg):not(.btn-link) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ds-control-height);
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 /* ---- Primary color propagation (Bootstrap 5.3 bakes literal hex into

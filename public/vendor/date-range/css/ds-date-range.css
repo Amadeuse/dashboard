@@ -1,0 +1,120 @@
+/* ==========================================================================
+   ds-date-range — a "from → to" date-range field (see ds-date-range.js)
+
+   One bordered field holding a single read-only text input; clicking it
+   opens flatpickr's own two-month range calendar (4.106 in handoff.md —
+   the native <input type="date"> pair this replaced never looked right,
+   and neither of the two hand-rolled passes before it did either). The
+   real values ride along in two hidden from/to inputs, so the surrounding
+   form still submits plain ?from=&to= exactly as before.
+
+   The field's height comes from --ds-control-height (design-system.css,
+   4.107) — the one token every row-level control in this app shares, so
+   this never drifts from the buttons beside it. The fallback in the var()
+   keeps the component usable if it's dropped into a project that has no
+   such token.
+
+   Markup:
+     <div class="ds-date-range" data-ds-date-range data-max="2026-09-05">
+       <i class="bi bi-calendar3 ds-date-range-icon"></i>
+       <input type="text" class="ds-date-range-input" data-ds-date-range-display placeholder="...">
+       <input type="hidden" name="from" value="..." data-ds-date-range-from>
+       <input type="hidden" name="to"   value="..." data-ds-date-range-to>
+     </div>
+   Add .ds-date-range-active for a persisted "this range is the one
+   currently applied" state.
+   ========================================================================== */
+
+.ds-date-range {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  min-height: var(--ds-control-height, 2.375rem);
+  padding: 0 .75rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  background: var(--bs-body-bg);
+  transition: border-color .15s ease, box-shadow .15s ease;
+  cursor: pointer;
+}
+.ds-date-range:hover,
+.ds-date-range.ds-date-range-active {
+  border-color: var(--bs-primary);
+}
+.ds-date-range:focus-within {
+  border-color: var(--bs-primary);
+  box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .12);
+}
+
+.ds-date-range-icon {
+  color: var(--bs-secondary-color);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.ds-date-range-input {
+  border: none;
+  background: transparent;
+  padding: 0;
+  width: 14.5rem; /* fits "2026-08-18 — 2026-08-24" at 1rem without clipping */
+  min-width: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--bs-body-color);
+  cursor: pointer;
+}
+.ds-date-range-input:focus {
+  outline: none;
+  box-shadow: none;
+}
+.ds-date-range-input::placeholder {
+  color: var(--bs-secondary-color);
+  opacity: 1;
+}
+
+/* ---- flatpickr, retinted to this design system ---------------------------
+   flatpickr ships its own blue (#569ff7) and square-ish chrome; everything
+   below only recolours/rounds it — no layout of its own is overridden, so a
+   flatpickr upgrade can't quietly break the calendar's own geometry. */
+.flatpickr-calendar {
+  border-radius: var(--ds-radius);
+  box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .12);
+  font-family: inherit;
+}
+.flatpickr-day {
+  border-radius: var(--ds-radius);
+}
+.flatpickr-day:hover,
+.flatpickr-day:focus {
+  background: rgba(var(--bs-primary-rgb), .1);
+  border-color: transparent;
+}
+.flatpickr-day.today {
+  border-color: var(--bs-primary);
+}
+.flatpickr-day.selected,
+.flatpickr-day.startRange,
+.flatpickr-day.endRange,
+.flatpickr-day.selected:hover,
+.flatpickr-day.startRange:hover,
+.flatpickr-day.endRange:hover {
+  background: var(--bs-primary);
+  border-color: var(--bs-primary);
+  color: #fff;
+}
+.flatpickr-day.inRange,
+.flatpickr-day.inRange:hover {
+  background: rgba(var(--bs-primary-rgb), .12);
+  border-color: transparent;
+  /* flatpickr fills the gaps between cells with a box-shadow, not a
+     background — it has to be recoloured too or the row looks striped. */
+  box-shadow: -5px 0 0 rgba(var(--bs-primary-rgb), .12), 5px 0 0 rgba(var(--bs-primary-rgb), .12);
+}
+.flatpickr-months .flatpickr-prev-month:hover svg,
+.flatpickr-months .flatpickr-next-month:hover svg {
+  fill: var(--bs-primary);
+}
+.flatpickr-current-month .flatpickr-monthDropdown-months:focus,
+.numInput.cur-year:focus {
+  outline: none;
+}

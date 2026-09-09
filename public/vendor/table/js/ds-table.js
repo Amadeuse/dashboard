@@ -21,6 +21,13 @@
  * Column options on <th>:
  *   data-sortable="false"                 exclude from sorting
  *   data-type="text|number|date"          force the comparison
+ *   data-filterable="true"                auto-build a "filter by this
+ *                                          column" <select> in the toolbar —
+ *                                          options are that column's own
+ *                                          distinct values (cellValue(), same
+ *                                          source search/sort read), sorted;
+ *                                          skipped entirely if there's fewer
+ *                                          than 2 (nothing to filter by)
  * Cell option on <td>:
  *   data-order="2026-07-26"               sort and search on this, not the text
  *
@@ -38,6 +45,7 @@
     prev: 'Previous',
     next: 'Next',
     pages: 'Pages',
+    filterAll: 'All',
   };
 
   class DsTable {
@@ -66,6 +74,7 @@
         .filter((n) => n > 0);
       this.perPage = Number(root.dataset.perPage) || this.perPageOptions[0] || 10;
       this.query = '';
+      this.columnFilters = {}; // column index → selected value, '' meaning "all"
       this.page = 1;
       this.sortCol = root.dataset.sort === undefined ? null : Number(root.dataset.sort);
       this.dir = root.dataset.dir === 'desc' ? 'desc' : 'asc';
@@ -106,6 +115,31 @@
         });
         bar.appendChild(group);
       }
+
+      // <th data-filterable="true"> → an auto-built "filter by this column"
+      // <select>, options taken from that column's own distinct values
+      // (cellValue() — same source search/sort already read, so a color-dot
+      // span or a data-order override behaves exactly the same way here).
+      // Skipped when there's fewer than 2 distinct values — nothing to
+      // usefully filter by (e.g. a single-person tenant's own table).
+      Array.from(this.table.querySelectorAll('thead th')).forEach((th, index) => {
+        if (th.dataset.filterable !== 'true') return;
+
+        const values = Array.from(new Set(this.rows.map((row) => cellValue(row, index)).filter((v) => v !== '')))
+          .sort((a, b) => collator.compare(a, b));
+        if (values.length < 2) return;
+
+        const filterSelect = el('select', 'form-select form-select-sm ds-table-filter');
+        filterSelect.setAttribute('aria-label', th.textContent.trim());
+        filterSelect.add(new Option(this.labels.filterAll, ''));
+        values.forEach((v) => filterSelect.add(new Option(v, v)));
+        filterSelect.addEventListener('change', () => {
+          this.columnFilters[index] = filterSelect.value;
+          this.page = 1;
+          this.render();
+        });
+        bar.appendChild(filterSelect);
+      });
 
       const label = el('label', 'ds-table-per-page');
       label.textContent = this.labels.perPage;
@@ -228,9 +262,12 @@
     }
 
     render() {
-      this.filtered = this.query
-        ? this.rows.filter((row) => row.dsSearchText.includes(this.query))
-        : this.rows;
+      const activeFilters = Object.entries(this.columnFilters).filter(([, v]) => v !== '');
+
+      this.filtered = this.rows.filter((row) => {
+        if (this.query && !row.dsSearchText.includes(this.query)) return false;
+        return activeFilters.every(([index, value]) => cellValue(row, index) === value);
+      });
 
       const total = this.filtered.length;
       const pages = Math.max(1, Math.ceil(total / this.perPage));

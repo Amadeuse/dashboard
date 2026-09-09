@@ -85,24 +85,38 @@ final class Invoice
      *   $invoicesByCustomer on /invoices stays unfiltered (null) on purpose:
      *   a customer's full invoice history is relevant there regardless of
      *   who created each one.
+     * @param array{0:string,1:string}|null $dateRange when given, only
+     *   invoices with issue_date in [from, to] (both 'Y-m-d', inclusive) —
+     *   orders.php's own "მიმდინარე თვე"/"მიმდინარე წელი"/"დროის
+     *   მონაკვეთი" period filter (4.100), independent of $createdByIds.
      * @return array<int, array<string, mixed>> newest first, with the customer's
      *   name/tax id/email and the creator's name/color (orders.php's table,
      *   and its "მეილზე გაგზავნა" prefill / creator-color dot, 4.87) joined
      *   in. creator_name/creator_color are NULL for invoices predating
      *   created_by (migrations/021).
      */
-    public static function all(?array $createdByIds = null): array
+    public static function all(?array $createdByIds = null, ?array $dateRange = null): array
     {
         $sql = 'SELECT i.*, c.customer_name, c.customer_taxid, c.customer_email, u.name AS creator_name, u.color AS creator_color
                   FROM invoices i
                   JOIN customers c ON c.id = i.customer_id
                   LEFT JOIN users u ON u.id = i.created_by';
-        $args = [];
+        $args  = [];
+        $where = [];
 
         if ($createdByIds !== null) {
             $ph = implode(',', array_fill(0, max(count($createdByIds), 1), '?'));
-            $sql .= " WHERE i.created_by IN ($ph)";
-            $args = $createdByIds;
+            $where[] = "i.created_by IN ($ph)";
+            $args = array_merge($args, $createdByIds);
+        }
+
+        if ($dateRange !== null) {
+            $where[] = 'i.issue_date BETWEEN ? AND ?';
+            $args = array_merge($args, $dateRange);
+        }
+
+        if ($where !== []) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
         }
 
         $sql .= ' ORDER BY i.id DESC';

@@ -14,6 +14,9 @@
  * @var ?string $emailSent      formatted number of the invoice an email was just sent for
  * @var ?string $emailFailed    formatted number of the invoice an email failed to send for (SMTP down/misconfigured — see App\Core\Mailer)
  * @var string  $appUrl         app_url() — base for each row's "ბმულის გაზიარება" link (4.68), possibly '' (see helpers.php)
+ * @var string  $period         raw ?period= ('', 'month', or 'year') — the active preset, if any (4.100)
+ * @var string  $periodFrom     raw ?from= — only meaningful when $period === '' (a custom "დროის მონაკვეთი")
+ * @var string  $periodTo       raw ?to=, same rule as $periodFrom
  *
  * The list half of what used to be one /invoices page (see 4.25 in
  * handoff.md) — creating/editing lives on /invoices, this is browsing.
@@ -41,6 +44,18 @@ $taxId = static function (array $row): string {
     $value = (string) ($row['customer_taxid'] ?? '');
     return $value !== '' && $value !== '0' ? e($value) : '<span class="text-secondary">—</span>';
 };
+
+// "პერიოდი" — ცალკეული ღილაკები, არა dropdown (4.101, user's own explicit
+// request: a segmented button group reads at a glance, no extra click to
+// even see the choices). $periodQuery is appended to the PDF-export links
+// so a filtered view exports exactly what's on screen. $periodRangeActive
+// is specifically "a custom range, not a preset" — drives the inline
+// date-range mini-form's own highlight (4.102 — no longer a modal).
+$periodActive      = $period !== '' || ($periodFrom !== '' && $periodTo !== '');
+$periodRangeActive = $period === '' && $periodActive;
+$periodQuery = $period !== ''
+    ? '&period=' . urlencode($period)
+    : ($periodActive ? '&from=' . urlencode($periodFrom) . '&to=' . urlencode($periodTo) : '');
 
 // Same map dashboard.php's own status badge uses.
 $documentStateBadgeClass = [
@@ -73,21 +88,51 @@ $paymentBadgeClass = [
       </ol>
     </nav>
   </div>
-  <?php if ($rows !== []): ?>
-    <!-- Same "ხელმოწერით"/"ხელმოწერის გარეშე" choice as invoices.php's own
-         export dropdown (4.63 in handoff.md) — a plain ?sign= link here
-         instead of a form submit, this page has no single invoice to save
-         first. -->
-    <div class="dropdown">
-      <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-        <i class="bi bi-file-earmark-pdf me-1"></i> <?= t('orders.export_pdf') ?>
-      </button>
-      <ul class="dropdown-menu dropdown-menu-end">
-        <li><a class="dropdown-item" href="/orders/export-pdf?sign=1"><i class="bi bi-pen me-1"></i><?= t('inv.export_signed') ?></a></li>
-        <li><a class="dropdown-item" href="/orders/export-pdf?sign=0"><i class="bi bi-file-earmark me-1"></i><?= t('inv.export_unsigned') ?></a></li>
-      </ul>
+  <div class="d-flex flex-wrap gap-2">
+    <!-- "პერიოდი" (4.100/4.101/4.102) — a segmented button group, not a
+         dropdown (every choice visible at a glance, no extra click). month/
+         year are plain links (just a different ?period= to land on, no
+         form needed); "დროის მონაკვეთი" is the ds-date-range component
+         (public/vendor/date-range, 4.104 — a joined "from – to" pill,
+         eui.elastic.co-style but built on two plain native date inputs, no
+         JS calendar library) — own small GET form, submitted by its own
+         checkmark button. Position is the user's own explicit request:
+         directly beside "ექსპორტი PDF", filter first, export second. -->
+    <div class="btn-group" role="group" aria-label="<?= t('orders.period_filter') ?>">
+      <a href="/orders" class="btn <?= !$periodActive ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_all') ?></a>
+      <a href="/orders?period=month" class="btn <?= $period === 'month' ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_month') ?></a>
+      <a href="/orders?period=year" class="btn <?= $period === 'year' ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_year') ?></a>
     </div>
-  <?php endif; ?>
+    <form method="get" action="/orders" class="d-flex align-items-center gap-2">
+      <div class="ds-date-range <?= $periodRangeActive ? 'ds-date-range-active' : '' ?>"
+           data-ds-date-range data-max="<?= e(date('Y-m-d')) ?>">
+        <i class="bi bi-calendar3 ds-date-range-icon"></i>
+        <input type="text" class="ds-date-range-input" data-ds-date-range-display
+               placeholder="<?= t('orders.period_range') ?>" aria-label="<?= t('orders.period_range') ?>">
+        <input type="hidden" name="from" value="<?= e($periodFrom) ?>" data-ds-date-range-from>
+        <input type="hidden" name="to" value="<?= e($periodTo) ?>" data-ds-date-range-to>
+      </div>
+      <button type="submit" class="btn <?= $periodRangeActive ? 'btn-primary' : 'btn-outline-secondary' ?>" title="<?= t('orders.period_range') ?>">
+        <i class="bi bi-check-lg"></i>
+      </button>
+    </form>
+    <?php if ($rows !== []): ?>
+      <!-- Same "ხელმოწერით"/"ხელმოწერის გარეშე" choice as invoices.php's own
+           export dropdown (4.63 in handoff.md) — a plain ?sign= link here
+           instead of a form submit, this page has no single invoice to save
+           first. $periodQuery carries the active period filter through, so
+           the export reflects exactly the filtered rows on screen. -->
+      <div class="dropdown">
+        <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-file-earmark-pdf me-1"></i> <?= t('orders.export_pdf') ?>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="/orders/export-pdf?sign=1<?= $periodQuery ?>"><i class="bi bi-pen me-1"></i><?= t('inv.export_signed') ?></a></li>
+          <li><a class="dropdown-item" href="/orders/export-pdf?sign=0<?= $periodQuery ?>"><i class="bi bi-file-earmark me-1"></i><?= t('inv.export_unsigned') ?></a></li>
+        </ul>
+      </div>
+    <?php endif; ?>
+  </div>
 </div>
 
 <div class="card ds-card">
@@ -106,7 +151,7 @@ $paymentBadgeClass = [
             <th><?= t('inv.number') ?></th>
             <th><?= t('inv.customer') ?></th>
             <th><?= t('cust.taxid') ?></th>
-            <th><?= t('inv.creator') ?></th>
+            <th data-filterable="true"><?= t('inv.creator') ?></th>
             <th><?= t('inv.total') ?> (<?= e(currency_symbol($currency)) ?>)</th>
             <th><?= t('orders.status') ?></th>
             <th><?= t('inv.actions') ?></th>

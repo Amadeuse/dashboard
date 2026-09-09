@@ -26,11 +26,21 @@
   border-radius: var(--ds-radius);
   background: var(--bs-body-bg);
   box-shadow: none;
-  padding: .5rem .75rem;
+  padding-left: .75rem;
+  padding-right: .75rem;
 }
 .ds-table-search .form-control:focus {
   border-color: var(--bs-primary);
   box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .12);
+}
+
+/* ---- Column filter (<th data-filterable="true">) — auto-built, sits between search and page-size ---- */
+.ds-table-filter {
+  width: auto;
+  min-width: 11rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  background-color: var(--bs-body-bg);
 }
 
 .ds-table-per-page {
@@ -43,6 +53,27 @@
   color: var(--bs-secondary-color);
 }
 .ds-table-per-page select { width: auto; }
+
+/* ---- Same height everywhere in the toolbar — the search box is a plain
+   .form-control, the two selects are .form-select-sm, three different
+   Bootstrap size scales that don't line up on their own. One rule here
+   (not per-element padding fiddling) so every toolbar control — search,
+   any data-filterable column filter, page-size — reads as one row instead
+   of a jagged one; applies to every .ds-table on every page, not just
+   /orders (the user's own explicit request). The height itself comes from
+   --ds-control-height (design-system.css, 4.107), the same token every
+   other row-level control in the app uses, with a fallback so this file
+   still stands on its own elsewhere. Only vertical metrics are forced —
+   horizontal padding stays each element's own (the selects need their
+   native dropdown-arrow spacing left alone). */
+.ds-table-search .form-control,
+.ds-table-filter,
+.ds-table-per-page select {
+  height: var(--ds-control-height, 2.375rem);
+  padding-top: .375rem;
+  padding-bottom: .375rem;
+  font-size: .875rem;
+}
 
 /* ---- One type size/family for the whole table; header bold, data regular ---- */
 .ds-table th,

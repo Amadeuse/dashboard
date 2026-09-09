@@ -5,16 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= e($title ?? 'Nova Dashboard') ?></title>
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+Georgian:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="<?= ds_asset('/vendor/google-fonts/css/fonts.css') ?>" rel="stylesheet">
 
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="/assets/fonts/bpg-arial-caps/css/bpg-arial-caps.min.css" rel="stylesheet">
-  <link href="/assets/css/design-system.css" rel="stylesheet">
-  <link href="/vendor/floating-label/css/floating-label.css" rel="stylesheet">
-  <link href="/assets/css/auth.css" rel="stylesheet">
+  <link href="<?= ds_asset('/vendor/bootstrap/css/bootstrap.min.css') ?>" rel="stylesheet">
+  <link href="<?= ds_asset('/vendor/bootstrap-icons/font/bootstrap-icons.min.css') ?>" rel="stylesheet">
+  <link href="<?= ds_asset('/assets/fonts/bpg-arial-caps/css/bpg-arial-caps.min.css') ?>" rel="stylesheet">
+  <link href="<?= ds_asset('/assets/css/design-system.css') ?>" rel="stylesheet">
+  <link href="<?= ds_asset('/vendor/floating-label/css/floating-label.css') ?>" rel="stylesheet">
+  <link href="<?= ds_asset('/assets/css/auth.css') ?>" rel="stylesheet">
 </head>
 <body>
 
@@ -48,9 +46,9 @@
   window.dsToastJustNow = <?= json_encode(t('toast.just_now'), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP) ?>;
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="/assets/js/app.js"></script>
-<script src="/vendor/floating-label/js/floating-label.js"></script>
+<script src="<?= ds_asset('/vendor/bootstrap/js/bootstrap.bundle.min.js') ?>"></script>
+<script src="<?= ds_asset('/assets/js/app.js') ?>"></script>
+<script src="<?= ds_asset('/vendor/floating-label/js/floating-label.js') ?>"></script>
 <script>
 (() => {
   const photo = document.querySelector('.ds-auth-visual-photo');

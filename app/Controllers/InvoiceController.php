@@ -154,8 +154,10 @@ final class InvoiceController extends Controller
     public function orders(): void
     {
         $ruler = Auth::tenantId();
-        $rows  = Invoice::all(Auth::invoiceScopeUserIds());
-        $org   = Organization::get($ruler);
+        $period = (string) ($_GET['period'] ?? '');
+        $range  = $this->resolveOrdersRange();
+        $rows   = Invoice::all(Auth::invoiceScopeUserIds(), $range);
+        $org    = Organization::get($ruler);
 
         // See index()'s own $workflow block for why this is guarded like this.
         $workflow = [];
@@ -172,6 +174,17 @@ final class InvoiceController extends Controller
             'invoicePrefix' => (string) ($org['invoice_prefix'] ?? '') ?: 'INV',
             'currency'      => (string) $org['currency'],
             'total'         => count($rows),
+            // "პერიოდი" dropdown (4.100) — 'month'/'year' need nothing more
+            // than $period itself for their own label; the "დროის
+            // მონაკვეთი" modal's own date inputs pre-fill from $range only
+            // when it's actually a custom one (not a month/year preset's
+            // own computed bounds, and never an invalid/unparsed ?from=&to=
+            // that resolveOrdersRange() already silently ignored — $range
+            // is exactly what got applied to $rows above, so this can never
+            // show "active" while secretly filtering by nothing).
+            'period'        => $period,
+            'periodFrom'    => $period === '' && $range !== null ? $range[0] : '',
+            'periodTo'      => $period === '' && $range !== null ? $range[1] : '',
             // "მეილზე გაგზავნა" modal state — same flash keys sendEmail()
             // already uses for /invoices (4.55), reused here since only one
             // of the two pages is ever the redirect target of a given submit.
@@ -197,7 +210,10 @@ final class InvoiceController extends Controller
     public function exportOrdersPdf(): void
     {
         $ruler = Auth::tenantId();
-        $rows  = Invoice::all(Auth::invoiceScopeUserIds()); // same scope as orders() above (4.86)
+        // Same scope (4.86) and same period filter (4.100) as orders() above
+        // — orders.php's export links carry the active ?period=/?from=&to=
+        // forward, so "ექსპორტი PDF" reflects whatever's actually on screen.
+        $rows  = Invoice::all(Auth::invoiceScopeUserIds(), $this->resolveOrdersRange());
         $org   = Organization::get($ruler);
 
         $html = $this->renderToString('pdf/orders', [
@@ -703,5 +719,43 @@ final class InvoiceController extends Controller
         $creator = $invoice['created_by'] !== null ? User::findById((int) $invoice['created_by']) : null;
 
         return $creator !== null ? (int) ($creator['created_by'] ?? $creator['id']) : null;
+    }
+
+    /**
+     * orders()/exportOrdersPdf()'s own "პერიოდი" filter (4.100) —
+     * ?period=month|year (full calendar bounds, not just "so far": no
+     * invoice is ever dated in the future — Invoice::save() always stamps
+     * issue_date as today() — so a month/year's own last day is exactly as
+     * inclusive as "today" would be) or a custom ?from=&to= range from the
+     * "დროის მონაკვეთი" modal. Null (no filter — every invoice, unchanged
+     * default) when neither is present/valid, same "just fall back, don't
+     * error" tolerance AnalyticsController's own resolveRange() uses.
+     *
+     * @return array{0:string,1:string}|null
+     */
+    private function resolveOrdersRange(): ?array
+    {
+        $period = (string) ($_GET['period'] ?? '');
+        if ($period === 'month') {
+            return [date('Y-m-01'), date('Y-m-t')];
+        }
+        if ($period === 'year') {
+            return [date('Y-01-01'), date('Y-12-31')];
+        }
+
+        $from = (string) ($_GET['from'] ?? '');
+        $to   = (string) ($_GET['to'] ?? '');
+        if (self::isValidOrdersDate($from) && self::isValidOrdersDate($to)) {
+            return $from <= $to ? [$from, $to] : [$to, $from];
+        }
+
+        return null;
+    }
+
+    private static function isValidOrdersDate(string $value): bool
+    {
+        $d = \DateTime::createFromFormat('Y-m-d', $value);
+
+        return $d !== false && $d->format('Y-m-d') === $value;
     }
 }
