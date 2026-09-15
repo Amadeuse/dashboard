@@ -70,6 +70,68 @@ filled in. It carries the whole contract: layout, routing, the four hook
 points, the core API, the multi-tenancy rule, the security requirements, the
 visual rules and the test commands.
 
+## Where to develop: the modules.loc sandbox
+
+Developing a module inside the live project has one real risk, and it is not
+the code — it is **install**. `ModuleRegistry::install()` runs a module's
+migrations against whatever database the app is pointed at, so a wrong
+`CREATE TABLE` or `ALTER` in a module you are still writing lands on real data.
+The test harness is isolated; clicking *Install* in the settings page is not.
+
+So module work happens in a **second instance of this same repository**:
+
+| | dashboard.loc | modules.loc |
+|---|---|---|
+| code | this repo | a clone of it |
+| database | the real one | its own (`invoice_dev`) |
+| outbound mail / API keys | configured | blank on purpose |
+
+One codebase, two environments. Not a second copy of the core — a stripped
+"module SDK" would drift from core the moment core changed, and a module would
+pass against the SDK while breaking in the app. Same reason the test harness
+boots real core instead of stubs.
+
+### Setting one up
+
+```
+git clone <this repo> C:/OSPanel/home/modules.loc
+cp -r vendor C:/OSPanel/home/modules.loc/vendor      # or: composer install
+```
+
+`.osp/project.ini` (OSPanel reads the folder name as the domain):
+
+```ini
+[modules.loc]
+
+http_engine = Apache
+php_engine  = PHP-8.2
+web_root    = {base_dir}/public
+```
+
+Then copy `.env.example` to `.env` and change what must differ — **`DB_NAME`
+above all**, since a shared database defeats the whole point — and blank
+`MAIL_*`, `PIXABAY_API_KEY`, `GOOGLE_CLIENT_*` and `SMS_*` so a sandbox cannot
+send mail or spend quota. Create the database, then:
+
+```
+php migrate.php
+```
+
+Restart OSPanel so the new vhost is picked up.
+
+### Working in it
+
+```
+cd C:/OSPanel/home/modules.loc
+git pull origin main                    # take core changes
+cp -r tools/module-kit/ModuleTemplate app/Modules/YourCode
+php tools/module-kit/module-test.php YourCode
+```
+
+Install and enable it from **Settings → Modules**, click around, break things.
+Nothing here can reach real data. When the module is finished, copy the folder
+back (or commit it from this instance) and ship the ZIP.
+
 ## Ship it
 
 ```
