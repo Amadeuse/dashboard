@@ -38,9 +38,9 @@ final class Env
     }
 
     /**
-     * Overrides one value after load() — for the module test harness
-     * (tools/module-kit/module-test.php), which points DB_NAME at a scratch
-     * database so a module's tests can never touch real data. Must be called
+     * Overrides one value after load() — for the module test harness in the
+     * modules.loc project, which points DB_NAME at a scratch database so a
+     * module's tests can never touch real data. Must be called
      * before anything opens a connection, since Db holds one PDO for the
      * process. Not for application code: config belongs in .env.
      */

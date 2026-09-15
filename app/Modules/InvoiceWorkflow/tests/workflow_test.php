@@ -3,7 +3,11 @@
 declare(strict_types=1);
 
 /**
- * Run with:  php tools/module-kit/module-test.php InvoiceWorkflow
+ * Run in the modules.loc project:  php tools/module-kit/module-test.php InvoiceWorkflow
+ *
+ * (The harness lives there, not here — modules are developed and tested in
+ * that sandbox and arrive in this app as a finished ZIP. tests/ ships with
+ * the module so the harness can run them wherever the module is worked on.)
  *
  * The harness has already copied the live schema into a scratch database, run
  * this module's migrations, seeded users 1 (tenant) and 2 (member), signed

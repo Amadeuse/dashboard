@@ -15,5 +15,5 @@ are impossible to infer from the code and have already cost one wrong fix each.
   (the `index.php` argument is required — it acts as the router script)
 - Docroot is `public/`; `app/` sits outside it on purpose.
 - Routes: `app/routes.php`. Models: `app/Models/`. Strings: `app/lang/{ka,en}.php`.
-- Modules: `app/Modules/<Code>/` — contract at `/help/modules`, kit in `tools/module-kit/`. Develop them in the `modules.loc` sandbox, not here.
+- Modules: `app/Modules/<Code>/` — contract at `/help/modules`. **Never develop a module here**: that happens in the separate `C:\OSPanel\home\modules.loc` project (its own repo, its own database, carries the template + test harness). A finished module arrives here as a ZIP through Settings → Modules.
 - **Reply to the user in Georgian.**
