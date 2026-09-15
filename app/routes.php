@@ -8,6 +8,8 @@ use App\Controllers\CustomerController;
 use App\Controllers\DashboardController;
 use App\Controllers\InvoiceController;
 use App\Controllers\LookupController;
+use App\Controllers\HelpController;
+use App\Controllers\ModuleAssetController;
 use App\Controllers\ModuleController;
 use App\Controllers\OrganizationController;
 use App\Controllers\ProductController;
@@ -53,8 +55,19 @@ $router->post('/invoices/send-email', [InvoiceController::class, 'sendEmail']);
 $router->get('/orders', [InvoiceController::class, 'orders']);
 $router->get('/orders/export-pdf', [InvoiceController::class, 'exportOrdersPdf']);
 
+// A module's own CSS/JS — they live outside the docroot, so PHP serves them
+// (see ds_module_assets()). Static path + query params: the Router matches
+// literal paths only.
+$router->get('/help', [HelpController::class, 'index']);
+$router->get('/help/modules', [HelpController::class, 'modules']);
+
+$router->get('/modules/asset', [ModuleAssetController::class, 'show']);
+
 $router->get('/settings/modules', [ModuleController::class, 'index']);
+$router->post('/settings/modules/upload', [ModuleController::class, 'upload']);
 $router->post('/settings/modules/install', [ModuleController::class, 'install']);
+$router->post('/settings/modules/uninstall', [ModuleController::class, 'uninstall']);
+$router->post('/settings/modules/remove-files', [ModuleController::class, 'removeFiles']);
 $router->post('/settings/modules/enable', [ModuleController::class, 'enable']);
 $router->post('/settings/modules/disable', [ModuleController::class, 'disable']);
 

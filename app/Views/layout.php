@@ -23,6 +23,10 @@
   <link href="<?= ds_asset('/vendor/date-range/css/ds-date-range.css') ?>" rel="stylesheet">
   <!-- gb_symbols: icon set requested for project-specific glyphs (e.g. gb_rs) not in Bootstrap Icons -->
   <link href="<?= ds_asset('/assets/fonts/gb/style.css') ?>" rel="stylesheet">
+  <!-- Enabled modules' own assets, last so a module can adjust its own
+       layout — but never core's: the design tokens above are what it must
+       read colour/type from (4.113, /help/modules). -->
+  <?= ds_module_assets() ?>
 </head>
 <body>
 

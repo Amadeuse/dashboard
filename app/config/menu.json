@@ -2,39 +2,86 @@
   {
     "section": "nav.main",
     "items": [
-      { "label": "nav.dashboard", "icon": "bi-grid-1x2-fill", "url": "/" },
       {
-        "label": "nav.analytics", "icon": "bi-bar-chart-fill",
+        "label": "nav.dashboard",
+        "icon": "bi-grid-1x2-fill",
+        "url": "/"
+      },
+      {
+        "label": "nav.analytics",
+        "icon": "bi-bar-chart-fill",
         "children": [
-          { "label": "nav.analytics_overview", "url": "/analytics/overview" },
-          { "label": "nav.analytics_reports",  "url": "#" }
+          {
+            "label": "nav.analytics_overview",
+            "url": "/analytics/overview"
+          },
+          {
+            "label": "nav.analytics_reports",
+            "url": "#"
+          }
         ]
       },
       {
-        "label": "nav.orders", "icon": "bi-cart3",
+        "label": "nav.orders",
+        "icon": "bi-cart3",
         "children": [
-          { "label": "nav.orders_all",     "url": "/orders" },
-          { "label": "nav.orders_pending", "url": "#" },
-          { "label": "nav.orders_new",     "url": "/invoices" }
+          {
+            "label": "nav.orders_all",
+            "url": "/orders"
+          },
+          {
+            "label": "nav.orders_pending",
+            "url": "#"
+          },
+          {
+            "label": "nav.orders_new",
+            "url": "/invoices"
+          }
         ]
       },
-      { "label": "nav.customers", "icon": "bi-people-fill", "url": "/customers" },
-      { "label": "nav.products", "icon": "bi-box-seam", "url": "/products" }
+      {
+        "label": "nav.customers",
+        "icon": "bi-people-fill",
+        "url": "/customers"
+      },
+      {
+        "label": "nav.products",
+        "icon": "bi-box-seam",
+        "url": "/products"
+      }
     ]
   },
   {
     "section": "nav.system",
     "items": [
-      { "label": "nav.design_system", "icon": "bi-palette-fill", "url": "/style-guide" },
       {
-        "label": "nav.settings", "icon": "bi-gear-fill",
+        "label": "nav.design_system",
+        "icon": "bi-palette-fill",
+        "url": "/style-guide"
+      },
+      {
+        "label": "nav.settings",
+        "icon": "bi-gear-fill",
         "children": [
-          { "label": "nav.settings_general", "url": "/settings/organization" },
-          { "label": "nav.settings_users",   "url": "/settings/users" },
-          { "label": "nav.settings_modules", "url": "/settings/modules" }
+          {
+            "label": "nav.settings_general",
+            "url": "/settings/organization"
+          },
+          {
+            "label": "nav.settings_users",
+            "url": "/settings/users"
+          },
+          {
+            "label": "nav.settings_modules",
+            "url": "/settings/modules"
+          }
         ]
       },
-      { "label": "nav.help", "icon": "bi-question-circle-fill", "url": "#" }
+      {
+        "label": "nav.help",
+        "icon": "bi-question-circle-fill",
+        "url": "/help"
+      }
     ]
   }
 ]

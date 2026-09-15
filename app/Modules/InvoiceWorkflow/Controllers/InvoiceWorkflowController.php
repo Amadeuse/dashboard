@@ -5,76 +5,91 @@ declare(strict_types=1);
 namespace App\Modules\InvoiceWorkflow\Controllers;
 
 use App\Core\Auth;
-use App\Core\Controller;
-use App\Models\User;
+use App\Core\Db;
 use App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow;
 
 /**
- * Payment/cancellation tracking, independent of invoices.status — see
- * InvoiceWorkflow model docblock and handoff.md. No GET page of its own:
- * the badge + these forms are rendered inline on orders.php/invoices.php
- * (core), only when this module is enabled.
+ * Routes registered by Module.php land here — all of them under
+ * /m/invoiceworkflow/, enforced by ModuleRouter.
+ *
+ * The prefix is collision-proofing, not access control, so every action below
+ * does its own two checks before writing: csrf_verify(), and that the invoice
+ * really belongs to the caller's tenant. A module is trusted code running
+ * with full Db access; that makes these checks the module author's job, and
+ * skipping them here would be an IDOR in the module rather than in core.
  */
-final class InvoiceWorkflowController extends Controller
+final class InvoiceWorkflowController
 {
     public function updatePayment(): void
     {
-        $invoiceId = $this->guard();
+        $id = $this->ownedInvoiceId();
+        csrf_verify();
 
-        if ($invoiceId !== null) {
-            [$clean, $errors] = InvoiceWorkflow::validate($_POST);
-            if ($errors === []) {
-                InvoiceWorkflow::setPayment($invoiceId, $clean['payment_state'], $clean['paid_amount']);
-            }
-        }
+        InvoiceWorkflow::setPayment(
+            $id,
+            (string) ($_POST['payment_state'] ?? 'unpaid'),
+            (float) ($_POST['paid_amount'] ?? 0),
+        );
 
-        redirect($this->backTo());
+        $this->back();
     }
 
     public function cancel(): void
     {
-        $invoiceId = $this->guard();
-        if ($invoiceId !== null) {
-            InvoiceWorkflow::cancel($invoiceId);
-        }
-
-        redirect($this->backTo());
+        $id = $this->ownedInvoiceId();
+        csrf_verify();
+        InvoiceWorkflow::setCancelled($id, true);
+        $this->back();
     }
 
     public function uncancel(): void
     {
-        $invoiceId = $this->guard();
-        if ($invoiceId !== null) {
-            InvoiceWorkflow::uncancel($invoiceId);
-        }
-
-        redirect($this->backTo());
-    }
-
-    /** Shared csrf/impersonation/ownership check for all three actions — the owned invoice id, or null if rejected. */
-    private function guard(): ?int
-    {
+        $id = $this->ownedInvoiceId();
         csrf_verify();
-        Auth::requireNotImpersonating();
-
-        $invoiceId = (string) ($_POST['invoice_id'] ?? '');
-        if (!ctype_digit($invoiceId)) {
-            return null;
-        }
-
-        $memberIds = User::tenantMemberIds(Auth::tenantId());
-        if (!InvoiceWorkflow::invoiceOwnedBy((int) $invoiceId, $memberIds)) {
-            return null;
-        }
-
-        return (int) $invoiceId;
+        InvoiceWorkflow::setCancelled($id, false);
+        $this->back();
     }
 
-    /** Same open-redirect guard as ModuleController::backTo() — stay on the page the form was submitted from. */
-    private function backTo(): string
+    /**
+     * The posted invoice id, but only if it was created by someone in the
+     * caller's own tenant — otherwise 404, the same answer a non-existent id
+     * gets, so this can't be used to probe which ids exist.
+     */
+    private function ownedInvoiceId(): int
+    {
+        Auth::requireUser();
+
+        $id  = (int) ($_POST['invoice_id'] ?? 0);
+        $ids = Auth::invoiceScopeUserIds();
+        if ($id <= 0 || $ids === []) {
+            $this->deny();
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $found = Db::all(
+            "SELECT id FROM invoices WHERE id = ? AND created_by IN ($placeholders)",
+            array_merge([$id], $ids)
+        );
+
+        if ($found === []) {
+            $this->deny();
+        }
+
+        return $id;
+    }
+
+    private function deny(): never
+    {
+        http_response_code(404);
+        (new \App\Controllers\ErrorController())->notFound();
+        exit;
+    }
+
+    /** Back where the form was submitted from, same-origin paths only. */
+    private function back(): never
     {
         $to = (string) ($_POST['redirect'] ?? '');
-
-        return str_starts_with($to, '/') && !str_starts_with($to, '//') ? $to : '/orders';
+        redirect(str_starts_with($to, '/') && !str_starts_with($to, '//') ? $to : '/orders');
+        exit;
     }
 }

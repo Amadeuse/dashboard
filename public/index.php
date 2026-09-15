@@ -58,13 +58,11 @@ if ($loggedIn) {
 $router = new Router();
 require APP_PATH . '/routes.php';   // registers core routes on $router
 
-// Enabled modules register their own routes and Hooks::on(...) listeners.
-// enabledCodes() is one cheap query — never a disk scan — since this runs
-// on every request, not just the modules admin page.
-foreach (ModuleRegistry::enabledCodes() as $code) {
-    require APP_PATH . "/Modules/$code/Module.php";
-    $class = "App\\Modules\\$code\\Module";
-    (new $class())->register($router);
-}
+// Modules this tenant has enabled register their own routes (forced under
+// /m/<code>/) and their Hooks::on(...) listeners. Each one is loaded inside
+// try/catch in there: module code is third-party code, and one broken module
+// must not fatal the whole app — least of all the settings page where it
+// would be switched off.
+ModuleRegistry::boot($router);
 
 $router->dispatch($_SERVER['REQUEST_URI'] ?? '/');

@@ -40,4 +40,28 @@ final class Hooks
     {
         return implode('', array_map('strval', self::call($point, $context)));
     }
+
+    /**
+     * For *.data points: every listener returns a map keyed by module code,
+     * merged into one array so a view can read $moduleData['Warehouse'][$id]
+     * without knowing which modules answered.
+     *
+     * This is the point the first module system never had, and its absence is
+     * why the removed InvoiceWorkflow was hardcoded into InvoiceController:
+     * a listing needs its extra column fetched once for the whole page, and a
+     * render-only hook would have left each module querying per row (4.113).
+     *
+     * @return array<string, mixed>
+     */
+    public static function merge(string $point, array $context = []): array
+    {
+        $out = [];
+        foreach (self::call($point, $context) as $result) {
+            if (is_array($result)) {
+                $out += $result;
+            }
+        }
+
+        return $out;
+    }
 }

@@ -36,4 +36,16 @@ final class Env
     {
         return self::$vars[$key] ?? $default;
     }
+
+    /**
+     * Overrides one value after load() — for the module test harness
+     * (tools/module-kit/module-test.php), which points DB_NAME at a scratch
+     * database so a module's tests can never touch real data. Must be called
+     * before anything opens a connection, since Db holds one PDO for the
+     * process. Not for application code: config belongs in .env.
+     */
+    public static function set(string $key, mixed $value): void
+    {
+        self::$vars[$key] = $value;
+    }
 }

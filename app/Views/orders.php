@@ -63,15 +63,6 @@ $documentStateBadgeClass = [
     'final' => 'bg-info-subtle text-info-emphasis',
 ];
 
-// InvoiceWorkflow (payment/cancellation) is independent of the status above
-// — see handoff.md and $workflow's own docblock in InvoiceController::orders().
-// $workflow is keyed by invoice id and only has entries when the module is
-// enabled, so this stays a no-op badge-wise when it's off.
-$paymentBadgeClass = [
-    'unpaid'  => 'bg-danger-subtle text-danger-emphasis',
-    'partial' => 'bg-warning-subtle text-warning-emphasis',
-    'paid'    => 'bg-success-subtle text-success-emphasis',
-];
 ?>
 
 <?php // Flashed emailSent/emailFailed now render as toasts (ds_flash_toast(), appended to $scripts below) — see 4.82 in handoff.md. ?>
@@ -169,15 +160,10 @@ $paymentBadgeClass = [
               <span class="badge rounded-pill <?= $documentStateBadgeClass[$inv['document_state']] ?>">
                 <?= t('inv.status_' . $inv['document_state']) ?>
               </span>
-              <?php if (isset($workflow[$inv['id']])): $wf = $workflow[$inv['id']]; ?>
-                <?php if ($wf['cancelled_at'] !== null): ?>
-                  <span class="badge rounded-pill bg-dark-subtle text-dark-emphasis"><?= t('workflow.cancelled_label') ?></span>
-                <?php else: ?>
-                  <span class="badge rounded-pill <?= $paymentBadgeClass[$wf['payment_state']] ?>">
-                    <?= t('workflow.payment_' . $wf['payment_state']) ?>
-                  </span>
-                <?php endif; ?>
-              <?php endif; ?>
+              <?php // Extension point (4.113): modules add their own badge here.
+                    // $moduleData came from the invoice.list.data hook, fetched
+                    // once for the whole page — see InvoiceController::orders(). ?>
+              <?= \App\Core\Hooks::render('render.invoice.row.badges', ['invoice' => $inv, 'data' => $moduleData]) ?>
             </td>
             <td class="text-end">
               <button type="button" class="btn btn-sm btn-outline-secondary" title="<?= t('inv.view') ?>"

@@ -1,0 +1,2 @@
+Modules live here, one folder per module. Kept in git so the directory
+exists on a fresh clone — ModuleRegistry::discover() globs it.

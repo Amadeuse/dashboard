@@ -104,14 +104,12 @@ function ds_lang_url(string $code): string
  *        { "label": "lang.key", "icon": "bi-…", "url": "/path" },
  *        { "label": "lang.key", "icon": "bi-…", "children": [{ "label": …, "url": … }] }
  *   ]}]
- * Read on every request (so edits show on refresh); broken JSON throws instead of
- * silently rendering an empty nav.
- */
-/**
- * Core menu.json, with each enabled module's own menu.json item merged into
- * the section it names — same "read fresh, throw loudly on malformed JSON"
- * contract as the core file. A module without a menu.json (most won't need
- * one) is simply skipped.
+ * Read on every request (so edits show on refresh); broken core JSON throws
+ * instead of silently rendering an empty nav.
+ *
+ * Each enabled module's own menu.json item is merged into the section it
+ * names. Unlike the core file, a module's is third-party: malformed JSON
+ * there costs that module its menu entry, not the whole sidebar.
  */
 function ds_menu(): array
 {
@@ -123,16 +121,24 @@ function ds_menu(): array
     );
 
     foreach (ModuleRegistry::enabledCodes() as $code) {
-        $file = APP_PATH . "/Modules/$code/menu.json";
+        $file = ModuleRegistry::dir($code) . '/menu.json';
         if (!is_file($file)) {
             continue;
         }
 
-        $fragment = json_decode(file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
+        // Third-party JSON: a broken menu.json costs that module its menu
+        // entry, not the whole sidebar.
+        $fragment = json_decode((string) file_get_contents($file), true);
+        if (!is_array($fragment) || !isset($fragment['section'], $fragment['item'])) {
+            continue;
+        }
+
+        Lang::loadModule($code);
+        $item = ds_module_menu_item($fragment['item'], '/m/' . strtolower($code));
 
         foreach ($menu as &$section) {
             if ($section['section'] === $fragment['section']) {
-                $section['items'][] = $fragment['item'];
+                $section['items'][] = $item;
                 break;
             }
         }
@@ -140,6 +146,77 @@ function ds_menu(): array
     }
 
     return $menu;
+}
+
+/**
+ * A module's menu URLs are written relative to the module ('/things'), and
+ * resolved here against its own /m/<code> base — the same rule ModuleRouter
+ * applies to its routes, so a menu entry and the route it points at can't
+ * drift apart. An absolute core path ('/orders') is left alone: a module may
+ * legitimately link into the app it extends.
+ */
+function ds_module_menu_item(array $item, string $base): array
+{
+    if (isset($item['url']) && is_string($item['url'])) {
+        $url = $item['url'];
+        $item['url'] = str_starts_with($url, $base) || !str_starts_with($url, '/')
+            ? $url
+            : $base . $url;
+    }
+
+    foreach ($item['children'] ?? [] as $i => $child) {
+        $item['children'][$i] = ds_module_menu_item($child, $base);
+    }
+
+    return $item;
+}
+
+/**
+ * <link>/<script> tags for every enabled module that ships assets/module.css
+ * or assets/module.js — the only way a module gets its own CSS/JS in, since
+ * layout.php's own list is core-only and a module may not edit it.
+ *
+ * The URLs point at ModuleAssetController, not at a file the web server can
+ * see: modules live under app/, which is outside the docroot by design, so
+ * they are read and streamed by PHP instead of being copied into public/ at
+ * install time (one copy on disk, nothing to re-sync when a module is
+ * updated, and no symlinks — this runs on Windows too). Each carries the
+ * file's own mtime, so the browser caches it and PHP is not asked twice.
+ * ponytail: fine for the couple of small files a module ships; if modules
+ * ever carry real asset payloads, extract them to public/ on install.
+ *
+ * Module CSS is for layout only: colour, type and radius must come from the
+ * design tokens (--ds-*, --bs-*), so a module looks like the app it is
+ * installed into and follows its theme. That rule is documented for authors
+ * at /help/modules; it is a convention, not something CSS can enforce.
+ */
+function ds_module_asset_url(string $code, string $file): string
+{
+    $path = ModuleRegistry::dir($code) . '/assets/' . $file;
+
+    return '/modules/asset?' . http_build_query([
+        'code' => $code,
+        'file' => $file,
+        'v'    => is_file($path) ? filemtime($path) : 0,
+    ]);
+}
+
+/** The <link>/<script> tags themselves — see ds_module_asset_url() above. */
+function ds_module_assets(): string
+{
+    $out = '';
+    foreach (ModuleRegistry::enabledCodes() as $code) {
+        $dir = ModuleRegistry::dir($code) . '/assets/';
+
+        if (is_file($dir . 'module.css')) {
+            $out .= '<link href="' . e(ds_module_asset_url($code, 'module.css')) . '" rel="stylesheet">' . PHP_EOL;
+        }
+        if (is_file($dir . 'module.js')) {
+            $out .= '<script src="' . e(ds_module_asset_url($code, 'module.js')) . '" defer></script>' . PHP_EOL;
+        }
+    }
+
+    return $out;
 }
 
 /** Is this the route currently being rendered? */

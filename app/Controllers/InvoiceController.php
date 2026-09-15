@@ -6,6 +6,7 @@ namespace App\Controllers;
 
 use App\Core\Auth;
 use App\Core\Controller;
+use App\Core\Hooks;
 use App\Core\Mailer;
 use App\Core\ModuleRegistry;
 use App\Core\Pdf;
@@ -90,19 +91,6 @@ final class InvoiceController extends Controller
             $invoicePrefix,
         );
 
-        // InvoiceWorkflow (payment/cancellation tracking) is optional and
-        // fully independent of core status — see handoff.md. null means
-        // "don't show its UI" (module off, or nothing to edit yet); the
-        // module's own class is never `use`-imported here, only referenced
-        // by FQCN behind this guard, same spirit as ds_menu()'s module
-        // awareness in helpers.php.
-        $workflow = null;
-        if ($editingInvoice !== null
-            && in_array('InvoiceWorkflow', ModuleRegistry::enabledCodes(), true)
-            && class_exists(\App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::class)) {
-            $workflow = \App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::for((int) $editingInvoice['id']);
-        }
-
         // Grouped by customer, for the "this customer's other invoices" panel —
         // computed here (not in the view) since it needs the same numbering
         // rule ($invoicePrefix) the view already applies to every other number.
@@ -128,7 +116,6 @@ final class InvoiceController extends Controller
             // invoice, same "nothing to share yet" gap store()'s
             // submit_action=share_link branch bridges (see there).
             'shareUrl'      => $editingInvoice !== null ? $this->shareUrl($editingInvoice) : '',
-            'workflow'      => $workflow,
             'errors'        => $errors,
             'old'           => $old,
             'emailErrors'   => $emailErrors,
@@ -159,17 +146,18 @@ final class InvoiceController extends Controller
         $rows   = Invoice::all(Auth::invoiceScopeUserIds(), $range);
         $org    = Organization::get($ruler);
 
-        // See index()'s own $workflow block for why this is guarded like this.
-        $workflow = [];
-        if (in_array('InvoiceWorkflow', ModuleRegistry::enabledCodes(), true)
-            && class_exists(\App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::class)) {
-            $workflow = \App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow::forMany(array_column($rows, 'id'));
-        }
+        // Extension point (4.113). A module that adds per-invoice data — the
+        // removed InvoiceWorkflow's payment state was exactly this — gets the
+        // whole page of ids at once and returns a map keyed by invoice id, so
+        // it runs one query for the page instead of one per row. Core never
+        // learns what is in that map; it hands it to the view, which passes
+        // each row's slice back to the render hook below.
+        $moduleData = Hooks::merge('invoice.list.data', ['ids' => array_column($rows, 'id')]);
 
         $this->view('orders', [
             'title'         => t('nav.orders_all') . ' · ' . app_name(),
             'rows'          => $rows,
-            'workflow'      => $workflow,
+            'moduleData'    => $moduleData,
             'org'           => $org,
             'invoicePrefix' => (string) ($org['invoice_prefix'] ?? '') ?: 'INV',
             'currency'      => (string) $org['currency'],
@@ -264,6 +252,15 @@ final class InvoiceController extends Controller
             User::tenantMemberIds($ruler),
             (int) $org['invoice_start_number'],
         );
+
+        if ($invoiceId !== null) {
+            // Extension point (4.113): the invoice is written and its id is
+            // known. A module storing its own per-invoice row hangs it here —
+            // after the write, so it never persists anything for a save that
+            // failed the optimistic-lock check below. Listeners return
+            // nothing; this is a notification, not a filter.
+            Hooks::call('invoice.saved', ['id' => $invoiceId, 'isNew' => $editingId === null]);
+        }
 
         if ($invoiceId === null) {
             // Someone else saved this invoice after the form was loaded (or

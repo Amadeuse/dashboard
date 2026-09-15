@@ -400,52 +400,11 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
           <input class="form-check-input" type="checkbox" id="invoice_recurring" name="is_recurring" form="invoiceMainForm" <?= !empty($old['is_recurring']) ? 'checked' : '' ?>>
           <label class="form-check-label" for="invoice_recurring"><?= t('inv.flag_recurring') ?></label>
         </div>
-
-        <?php if ($workflow !== null):
-          $wfInvoiceId = (int) $editingInvoice['id'];
-          $wfRedirect  = '/invoices?edit=' . $wfInvoiceId;
-          $paymentBadgeClass = [
-              'unpaid'  => 'bg-danger-subtle text-danger-emphasis',
-              'partial' => 'bg-warning-subtle text-warning-emphasis',
-              'paid'    => 'bg-success-subtle text-success-emphasis',
-          ];
-        ?>
-        <hr class="my-1">
-        <div class="d-flex align-items-center gap-2">
-          <span class="text-secondary small"><?= t('workflow.label') ?>:</span>
-          <?php if ($workflow['cancelled_at'] !== null): ?>
-            <span class="badge rounded-pill bg-dark-subtle text-dark-emphasis"><?= t('workflow.cancelled_label') ?></span>
-          <?php else: ?>
-            <span class="badge rounded-pill <?= $paymentBadgeClass[$workflow['payment_state']] ?>">
-              <?= t('workflow.payment_' . $workflow['payment_state']) ?>
-            </span>
-          <?php endif; ?>
-        </div>
-
-        <form method="post" action="/invoice-workflow/payment" class="d-flex gap-1">
-          <?= csrf_field() ?>
-          <input type="hidden" name="invoice_id" value="<?= $wfInvoiceId ?>">
-          <input type="hidden" name="redirect" value="<?= e($wfRedirect) ?>">
-          <select class="form-select form-select-sm" name="payment_state" data-ds-select
-                  data-search-placeholder="<?= t('table.search') ?>" data-no-results="<?= t('table.empty') ?>"
-                  data-clear-label="<?= t('cust.clear_field') ?>">
-            <option value="unpaid" <?= $workflow['payment_state'] === 'unpaid' ? 'selected' : '' ?>><?= t('workflow.payment_unpaid') ?></option>
-            <option value="partial" <?= $workflow['payment_state'] === 'partial' ? 'selected' : '' ?>><?= t('workflow.payment_partial') ?></option>
-            <option value="paid" <?= $workflow['payment_state'] === 'paid' ? 'selected' : '' ?>><?= t('workflow.payment_paid') ?></option>
-          </select>
-          <input type="number" step="0.01" min="0" class="form-control form-control-sm" name="paid_amount" value="<?= e($workflow['paid_amount']) ?>">
-          <button type="submit" class="btn btn-sm btn-outline-secondary flex-shrink-0"><i class="bi bi-check-lg"></i></button>
-        </form>
-
-        <form method="post" action="/invoice-workflow/<?= $workflow['cancelled_at'] !== null ? 'uncancel' : 'cancel' ?>">
-          <?= csrf_field() ?>
-          <input type="hidden" name="invoice_id" value="<?= $wfInvoiceId ?>">
-          <input type="hidden" name="redirect" value="<?= e($wfRedirect) ?>">
-          <button type="submit" class="btn btn-sm btn-outline-<?= $workflow['cancelled_at'] !== null ? 'secondary' : 'danger' ?> w-100">
-            <?= $workflow['cancelled_at'] !== null ? t('workflow.uncancel') : t('workflow.cancel') ?>
-          </button>
-        </form>
-        <?php endif; ?>
+        <?php // Extension point (4.113): a module's own panel for this invoice
+              // — where InvoiceWorkflow's payment/cancel controls used to be
+              // hardcoded. $editingInvoice is null while a new invoice is
+              // still unsaved, so a module can tell "editing" from "creating". ?>
+        <?= \App\Core\Hooks::render('render.invoice.form.aside', ['invoice' => $editingInvoice]) ?>
       </div>
     </div>
 

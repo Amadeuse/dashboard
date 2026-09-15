@@ -46,6 +46,42 @@ final class Lang
         return self::$current;
     }
 
+    /** @var list<string> module codes whose strings are already merged in */
+    private static array $loadedModules = [];
+
+    /**
+     * Merges app/Modules/<Code>/lang/<lang>.php into the string table (4.113).
+     *
+     * A module keeps its own text, which is the whole point: the first module
+     * system put module strings in app/lang/*.php, so removing a module left
+     * its text behind in core and shipping one meant editing a core file.
+     * Core strings win on a key collision — a module can add vocabulary, never
+     * silently redefine core wording. Falls back to the default language when
+     * the module hasn't been translated into the current one, and does nothing
+     * at all when it ships no lang/ directory.
+     */
+    public static function loadModule(string $code): void
+    {
+        if (in_array($code, self::$loadedModules, true) || !ModuleRegistry::isValidCode($code)) {
+            return;
+        }
+        self::$loadedModules[] = $code;
+
+        $dir  = APP_PATH . '/Modules/' . $code . '/lang/';
+        $file = $dir . self::$current . '.php';
+        if (!is_file($file)) {
+            $file = $dir . self::fallback() . '.php';
+        }
+        if (!is_file($file)) {
+            return;
+        }
+
+        $strings = require $file;
+        if (is_array($strings)) {
+            self::$strings += $strings;   // '+' keeps existing core keys
+        }
+    }
+
     public static function get(string $key, array $args = []): string
     {
         $s = self::$strings[$key] ?? $key; // missing key shows itself — easy to spot

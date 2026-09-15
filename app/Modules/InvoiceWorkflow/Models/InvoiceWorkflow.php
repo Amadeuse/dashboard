@@ -7,100 +7,71 @@ namespace App\Modules\InvoiceWorkflow\Models;
 use App\Core\Db;
 
 /**
- * `invoice_workflow` — 1:1 with `invoices` (invoice_id is both PK and FK,
- * see migrations/001_create_invoice_workflow.sql). No row means the invoice
- * has never been touched by this module — reads fall back to the same
- * defaults a fresh row would have (unpaid, 0.00, not cancelled), so callers
- * never need to special-case "row missing" themselves.
+ * Payment/cancellation state for an invoice, independent of the core
+ * invoices.document_state field.
+ *
+ * A module may use core's own Db/Auth — it is trusted code, not sandboxed
+ * (see /help/modules). What it may not do is reach into core *tables* it
+ * doesn't own: this one owns `invoice_workflow` and nothing else, joining to
+ * `invoices` only through the foreign key its migration declares.
  */
 final class InvoiceWorkflow
 {
-    private const DEFAULT = ['payment_state' => 'unpaid', 'paid_amount' => '0.00', 'cancelled_at' => null];
+    public const STATES = ['unpaid', 'partial', 'paid'];
 
-    /** @param list<int> $invoiceIds @return array<int, array{payment_state:string,paid_amount:string,cancelled_at:?string}> keyed by invoice_id — every requested id present, missing rows filled with the default */
+    public static function for(int $invoiceId): array
+    {
+        $row = Db::all('SELECT * FROM invoice_workflow WHERE invoice_id = ?', [$invoiceId])[0] ?? null;
+
+        return $row ?? [
+            'invoice_id'    => $invoiceId,
+            'payment_state' => 'unpaid',
+            'paid_amount'   => '0.00',
+            'cancelled_at'  => null,
+        ];
+    }
+
+    /**
+     * One query for a whole page of invoices, keyed by invoice id — this is
+     * what the invoice.list.data hook exists for. Doing it per row would put
+     * a query behind every line of /orders.
+     *
+     * @param  list<int> $invoiceIds
+     * @return array<int, array<string, mixed>>
+     */
     public static function forMany(array $invoiceIds): array
     {
-        if ($invoiceIds === []) {
+        $ids = array_values(array_filter(array_map('intval', $invoiceIds)));
+        if ($ids === []) {
             return [];
         }
 
-        $ph = implode(',', array_fill(0, count($invoiceIds), '?'));
-        $rows = Db::all("SELECT * FROM invoice_workflow WHERE invoice_id IN ($ph)", $invoiceIds);
-
-        $byId = array_fill_keys($invoiceIds, self::DEFAULT);
-        foreach ($rows as $row) {
-            $byId[(int) $row['invoice_id']] = $row;
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $out = [];
+        foreach (Db::all("SELECT * FROM invoice_workflow WHERE invoice_id IN ($placeholders)", $ids) as $row) {
+            $out[(int) $row['invoice_id']] = $row;
         }
 
-        return $byId;
+        return $out;
     }
 
-    /** @return array{payment_state:string,paid_amount:string,cancelled_at:?string} */
-    public static function for(int $invoiceId): array
+    public static function setPayment(int $invoiceId, string $state, float $paidAmount): void
     {
-        $rows = Db::all('SELECT * FROM invoice_workflow WHERE invoice_id = ?', [$invoiceId]);
+        if (!in_array($state, self::STATES, true)) {
+            return;
+        }
 
-        return $rows[0] ?? self::DEFAULT;
-    }
-
-    public static function setPayment(int $invoiceId, string $paymentState, string $paidAmount): void
-    {
         Db::conn()->prepare(
-            'INSERT INTO invoice_workflow (invoice_id, payment_state, paid_amount)
-             VALUES (?, ?, ?)
+            'INSERT INTO invoice_workflow (invoice_id, payment_state, paid_amount) VALUES (?, ?, ?)
              ON DUPLICATE KEY UPDATE payment_state = VALUES(payment_state), paid_amount = VALUES(paid_amount)'
-        )->execute([$invoiceId, $paymentState, $paidAmount]);
+        )->execute([$invoiceId, $state, max(0, $paidAmount)]);
     }
 
-    public static function cancel(int $invoiceId): void
+    public static function setCancelled(int $invoiceId, bool $cancelled): void
     {
         Db::conn()->prepare(
-            'INSERT INTO invoice_workflow (invoice_id, cancelled_at) VALUES (?, NOW())
-             ON DUPLICATE KEY UPDATE cancelled_at = NOW()'
-        )->execute([$invoiceId]);
-    }
-
-    public static function uncancel(int $invoiceId): void
-    {
-        Db::conn()->prepare(
-            'INSERT INTO invoice_workflow (invoice_id, cancelled_at) VALUES (?, NULL)
-             ON DUPLICATE KEY UPDATE cancelled_at = NULL'
-        )->execute([$invoiceId]);
-    }
-
-    /** @return array{0: array{payment_state:string,paid_amount:string}, 1: array<string,string>} [clean input, errors] */
-    public static function validate(array $input): array
-    {
-        $clean = [
-            'payment_state' => trim((string) ($input['payment_state'] ?? '')),
-            'paid_amount'   => trim((string) ($input['paid_amount'] ?? '0')),
-        ];
-
-        $errors = [];
-
-        if (!in_array($clean['payment_state'], ['unpaid', 'partial', 'paid'], true)) {
-            $errors['payment_state'] = terr('workflow.err_payment_state');
-        }
-
-        if (!is_numeric($clean['paid_amount']) || (float) $clean['paid_amount'] < 0) {
-            $errors['paid_amount'] = terr('workflow.err_paid_amount');
-        }
-
-        return [$clean, $errors];
-    }
-
-    /** Is $invoiceId owned by one of $memberIds (Auth::tenantId()'s whole team, see User::tenantMemberIds())? */
-    public static function invoiceOwnedBy(int $invoiceId, array $memberIds): bool
-    {
-        if ($memberIds === []) {
-            return false;
-        }
-
-        $ph = implode(',', array_fill(0, count($memberIds), '?'));
-
-        return Db::all(
-            "SELECT 1 FROM invoices WHERE id = ? AND created_by IN ($ph)",
-            [$invoiceId, ...$memberIds]
-        ) !== [];
+            'INSERT INTO invoice_workflow (invoice_id, cancelled_at) VALUES (?, ?)
+             ON DUPLICATE KEY UPDATE cancelled_at = VALUES(cancelled_at)'
+        )->execute([$invoiceId, $cancelled ? date('Y-m-d H:i:s') : null]);
     }
 }

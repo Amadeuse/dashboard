@@ -1,0 +1,28 @@
+/* ==========================================================================
+   ModuleTemplate — layout only.
+
+   Colour, type and radius come from the design tokens, never from values
+   written here: that is what makes a module follow the app's theme (light and
+   dark) instead of fighting it. A hard-coded #hex in this file is a bug.
+
+   Loaded automatically when the module is enabled (ds_module_assets()).
+   ========================================================================== */
+
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.tpl-item {
+  padding: 1rem;
+  /* tokens, not literals */
+  border: 1px solid var(--bs-border-color);
+  border-radius: var(--ds-radius);
+  background: var(--bs-body-bg);
+}
+
+.tpl-item-label {
+  font-weight: 600;
+  color: var(--bs-body-color);
+}
