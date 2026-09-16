@@ -46,6 +46,14 @@ final class InvoiceController extends Controller
             $editId  = (int) $_GET['edit'];
             $invoice = Invoice::find($editId);
 
+            // Another tenant's invoice is not this tenant's to see (4.132):
+            // treated exactly like a non-existent id, so the response can't
+            // be used to tell which ids exist — the same choice
+            // loadDuplicateOld() already makes for ?duplicate=N.
+            if ($invoice !== null && $this->ownerTenant($invoice) !== $ruler) {
+                $invoice = null;
+            }
+
             if ($invoice !== null) {
                 $editingInvoice = $invoice;
                 $items = Invoice::itemsFor($editId);
@@ -94,8 +102,14 @@ final class InvoiceController extends Controller
         // Grouped by customer, for the "this customer's other invoices" panel —
         // computed here (not in the view) since it needs the same numbering
         // rule ($invoicePrefix) the view already applies to every other number.
+        // Scoped like every other listing (4.132): Invoice::all() with no
+        // argument is *every tenant's* invoices, and this array is serialised
+        // into a data- attribute — so an unscoped call put the whole system's
+        // invoice numbers and totals into any tenant's page source. The panel
+        // never *showed* them (customers are tenant-scoped, so a foreign
+        // customer id is never selected), which is why it went unnoticed.
         $invoicesByCustomer = [];
-        foreach (Invoice::all() as $inv) {
+        foreach (Invoice::all(Auth::invoiceScopeUserIds()) as $inv) {
             $invoicesByCustomer[(int) $inv['customer_id']][] = [
                 'number' => Invoice::number($inv, $invoicePrefix),
                 'total'  => number_format((float) $inv['total'], 2),
@@ -222,6 +236,20 @@ final class InvoiceController extends Controller
 
         $id        = trim((string) ($_POST['invoice_id'] ?? ''));
         $editingId = ctype_digit($id) ? (int) $id : null;
+
+        // The posted invoice_id is a hidden field — i.e. attacker-controlled.
+        // Before anything is validated or written, the row it names has to
+        // be this tenant's (4.132); otherwise Invoice::save()'s UPDATE would
+        // overwrite another tenant's invoice on nothing but a guessed id.
+        // 404, same as show()/preview() answer a foreign id.
+        if ($editingId !== null) {
+            $target = Invoice::find($editingId);
+            if ($target === null || $this->ownerTenant($target) !== Auth::tenantId()) {
+                http_response_code(404);
+                (new ErrorController())->notFound();
+                return;
+            }
+        }
         // Only meaningful for an edit — a hidden field the form was rendered
         // with (see invoices.php), Invoice::save() uses it as the optimistic-
         // locking check against the row's real updated_at.
