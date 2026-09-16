@@ -84,10 +84,11 @@ $documentStateBadgeClass = [
          dropdown (every choice visible at a glance, no extra click). month/
          year are plain links (just a different ?period= to land on, no
          form needed); "დროის მონაკვეთი" is the ds-date-range component
-         (public/vendor/date-range, 4.104 — a joined "from – to" pill,
-         eui.elastic.co-style but built on two plain native date inputs, no
-         JS calendar library) — own small GET form, submitted by its own
-         checkmark button. Position is the user's own explicit request:
+         (public/vendor/date-range — flatpickr in range mode since 4.106,
+         after two hand-rolled attempts on native date inputs didn't hold;
+         the visible input is display-only, hidden from/to inputs carry the
+         ISO dates) — own small GET form, submitted by its own checkmark
+         button. Position is the user's own explicit request:
          directly beside "ექსპორტი PDF", filter first, export second. -->
     <div class="btn-group" role="group" aria-label="<?= t('orders.period_filter') ?>">
       <a href="/orders" class="btn <?= !$periodActive ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_all') ?></a>
