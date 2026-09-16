@@ -19,21 +19,25 @@ use App\Models\Organization;
  */
 final class AnalyticsController extends Controller
 {
-    private const GRANULARITIES = ['daily', 'weekly', 'monthly'];
-
     public function overview(): void
     {
         $ruler = Auth::tenantId();
         $org   = Organization::get($ruler);
 
-        $granularity = in_array($_GET['granularity'] ?? '', self::GRANULARITIES, true) ? $_GET['granularity'] : 'daily';
-        $userIds     = Auth::invoiceScopeUserIds();
+        $userIds = Auth::invoiceScopeUserIds();
 
         // Same period control /orders has (4.100–4.108): all / month / year /
         // custom range. "All" here has to become a real from–to because the
         // Analytics model's queries take one, so it runs from the scope's
         // earliest invoice to today.
         [$from, $to, $period] = $this->resolveRange($userIds);
+
+        // The trend chart's bucket follows the period rather than being a
+        // second control (4.122 — the user's call: with the period fixed to
+        // all/month/year/range, choosing day/week/month on top of it stopped
+        // meaning anything; "this month by month" is one bar). A month is
+        // read by day, a year by month, and a free range by how long it is.
+        $granularity = self::granularityFor($period, $from, $to);
 
         $this->view('analytics-overview', [
             'title'        => t('nav.analytics_overview') . ' · ' . app_name(),
@@ -79,6 +83,26 @@ final class AnalyticsController extends Controller
         }
 
         return [Analytics::earliestDate($userIds) ?? date('Y-m-d'), date('Y-m-d'), ''];
+    }
+
+    /**
+     * Day for a month; month for a year; for a free range (or "all"), day up
+     * to ~a month, week up to ~half a year, month beyond — the same thresholds
+     * most analytics tools auto-pick, so the chart stays readable whether the
+     * span is nine days or three years.
+     */
+    private static function granularityFor(string $period, string $from, string $to): string
+    {
+        if ($period === 'month') {
+            return 'daily';
+        }
+        if ($period === 'year') {
+            return 'monthly';
+        }
+
+        $days = (int) ((strtotime($to) - strtotime($from)) / 86400) + 1;
+
+        return $days <= 31 ? 'daily' : ($days <= 182 ? 'weekly' : 'monthly');
     }
 
     private static function isValidDate(string $value): bool
