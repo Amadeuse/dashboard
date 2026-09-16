@@ -53,14 +53,22 @@ final class Analytics
     }
 
     /**
-     * One point per bucket — day/ISO-week/month, oldest first. Sparse: a
-     * bucket with no invoices simply isn't in the result (same "no zero-
-     * padding" choice CustomerReport::monthlyTotals() already makes), the
-     * view fills gaps itself if it wants a continuous axis.
+     * One point per bucket — day / ISO week / month — for EVERY bucket in the
+     * range, oldest first, zero where nothing was invoiced (4.123).
      *
-     * @return array{labels: list<string>, data: list<float>} labels are raw
-     *   bucket keys ('2026-08-29' / '2026-W35' / '2026-08') — the view turns
-     *   them into display strings, same split CustomerReport.php uses.
+     * It used to be sparse (only buckets with invoices), which is what made
+     * the chart look different every time: a month with one invoiced day was
+     * a single dot, the x-axis jumped over empty days, and its spacing meant
+     * nothing. A continuous, evenly divided axis needs the empty buckets in
+     * the series, and that is a fact about the range, not the data — so it
+     * is built here, where the range is known.
+     *
+     * Each point carries the bucket's real start and end dates so the view
+     * can label it in words ("31 აგვ – 6 სექ") instead of the storage key
+     * ('2026-W36'). Keys match MySQL's own DATE_FORMAT for the join: %Y-%m-%d,
+     * %x-W%v (ISO year-week, Monday-first — PHP's 'o-\WW'), %Y-%m.
+     *
+     * @return list<array{key:string, start:string, end:string, total:float}>
      */
     public static function revenueTrend(array $userIds, string $from, string $to, string $granularity): array
     {
@@ -69,20 +77,66 @@ final class Analytics
             'monthly' => '%Y-%m',
             default   => '%Y-%m-%d',
         };
-        $ph   = self::placeholders($userIds);
-        $rows = Db::all(
+        $ph     = self::placeholders($userIds);
+        $totals = [];
+        foreach (Db::all(
             "SELECT DATE_FORMAT(issue_date, '$format') AS bucket, SUM(total) AS total
                FROM invoices
               WHERE created_by IN ($ph) AND issue_date BETWEEN ? AND ?
-              GROUP BY bucket
-              ORDER BY bucket",
+              GROUP BY bucket",
             [...$userIds, $from, $to]
-        );
+        ) as $r) {
+            $totals[$r['bucket']] = round((float) $r['total'], 2);
+        }
 
-        return [
-            'labels' => array_column($rows, 'bucket'),
-            'data'   => array_map(static fn(array $r): float => round((float) $r['total'], 2), $rows),
-        ];
+        $out = [];
+        foreach (self::buckets($from, $to, $granularity) as [$key, $start, $end]) {
+            $out[] = ['key' => $key, 'start' => $start, 'end' => $end, 'total' => $totals[$key] ?? 0.0];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Every bucket touching [$from, $to]: [key, start, end] triples. A week
+     * or month that only partly overlaps the range is still one whole
+     * bucket — its label says Mon–Sun, its total counts only days inside
+     * the range (the query's BETWEEN does that).
+     *
+     * @return list<array{0:string,1:string,2:string}>
+     */
+    private static function buckets(string $from, string $to, string $granularity): array
+    {
+        $out    = [];
+        $cursor = new \DateTimeImmutable($from);
+        $last   = new \DateTimeImmutable($to);
+
+        switch ($granularity) {
+            case 'monthly':
+                $cursor = $cursor->modify('first day of this month');
+                while ($cursor <= $last) {
+                    $out[] = [$cursor->format('Y-m'), $cursor->format('Y-m-d'), $cursor->format('Y-m-t')];
+                    $cursor = $cursor->modify('first day of next month');
+                }
+                break;
+
+            case 'weekly':
+                $cursor = $cursor->modify('monday this week');
+                while ($cursor <= $last) {
+                    $out[] = [$cursor->format('o-\WW'), $cursor->format('Y-m-d'), $cursor->modify('+6 days')->format('Y-m-d')];
+                    $cursor = $cursor->modify('+7 days');
+                }
+                break;
+
+            default:
+                while ($cursor <= $last) {
+                    $d     = $cursor->format('Y-m-d');
+                    $out[] = [$d, $d, $d];
+                    $cursor = $cursor->modify('+1 day');
+                }
+        }
+
+        return $out;
     }
 
     /** @return array<int, array{name:string, count:int, total:float}> up to $limit customers, highest total first. */

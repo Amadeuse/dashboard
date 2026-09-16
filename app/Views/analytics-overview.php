@@ -6,7 +6,7 @@
  * @var string $period   '' (all time) | 'month' | 'year' | 'range' — which toolbar control is active
  * @var string $granularity 'daily'|'weekly'|'monthly' — the trend chart's bucket, derived from the period (not a control)
  * @var array  $summary  Analytics::summary() — count/total/average/finalRate
- * @var array  $trend    Analytics::revenueTrend() — {labels, data}
+ * @var array  $trend    Analytics::revenueTrend() — one {key,start,end,total} per bucket, zero-filled
  * @var array  $topCustomers Analytics::topCustomers() — up to 5, {name,count,total}
  * @var array  $topProducts  Analytics::topProducts() — up to 5, {name,quantity,revenue}
  *
@@ -16,11 +16,18 @@
  * (always the current calendar year). User's own explicit request (4.92 in
  * handoff.md) — the filter, the trend chart, and the two "top" cards.
  */
-$granularityLabel = static fn(string $bucket): string => match ($granularity) {
-    'daily'   => ds_date($bucket),
-    'monthly' => t('month.' . (int) substr($bucket, 5, 2)) . ' ' . substr($bucket, 0, 4),
-    default   => $bucket, // weekly: 'YYYY-Www' ISO week, shown as-is
+// x-axis labels in words (4.123). Each trend point carries its bucket's
+// real start/end dates, so a week reads "31 აგვ – 6 სექ" rather than the
+// storage key '2026-W36' — and a day "16 სექ", not the full ds_date() with
+// the year, which is noise 31 times in a row. The year stays only where a
+// bucket can't be placed without it (months).
+$dm = static fn(string $ymd): string => (int) substr($ymd, 8, 2) . ' ' . t('month.' . (int) substr($ymd, 5, 2));
+$bucketLabel = static fn(array $b): string => match ($granularity) {
+    'daily'   => $dm($b['start']),
+    'weekly'  => $dm($b['start']) . ' – ' . $dm($b['end']),
+    default   => t('month.' . (int) substr($b['start'], 5, 2)) . ' ' . substr($b['start'], 0, 4),
 };
+$hasRevenue = array_sum(array_column($trend, 'total')) > 0;
 ?>
 
 <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
@@ -114,7 +121,7 @@ $granularityLabel = static fn(string $bucket): string => match ($granularity) {
     <div class="card ds-card h-100">
       <div class="card-body">
         <h2 class="h6 fw-bold mb-3"><?= t('analytics.chart_title') ?></h2>
-        <?php if ($trend['labels'] === []): ?>
+        <?php if (!$hasRevenue): ?>
           <div class="text-center text-secondary py-5">
             <i class="bi bi-bar-chart d-block mb-2" style="font-size:2rem;opacity:.4;"></i>
             <?= t('analytics.empty') ?>
@@ -169,32 +176,31 @@ $granularityLabel = static fn(string $bucket): string => match ($granularity) {
 </div>
 
 <?php
-if ($trend['labels'] !== []) {
-    $jsLabels = json_encode(array_map($granularityLabel, $trend['labels']), JSON_UNESCAPED_UNICODE);
-    $jsData   = json_encode($trend['data']);
+if ($hasRevenue) {
+    $jsLabels = json_encode(array_map($bucketLabel, $trend), JSON_UNESCAPED_UNICODE);
+    $jsData   = json_encode(array_column($trend, 'total'));
 
     // heredoc below interpolates variables, not calls — resolve the URL first.
     $chartJs = ds_asset('/vendor/chartjs/js/chart.umd.min.js');
     $scripts = <<<HTML
 <script src="$chartJs"></script>
 <script>
+  // Bars, like the dashboard's revenue chart (4.123): one look whether the
+  // range holds one bucket or sixty. The old line chart drew a lone dot for
+  // a single point and a smoothed curve for many — "a different style every
+  // time". Colour from the theme token, so it follows --bs-primary rather
+  // than carrying its own hex.
+  const primary = getComputedStyle(document.documentElement).getPropertyValue('--bs-primary').trim() || '#0d6efd';
   new Chart(document.getElementById('analyticsTrendChart'), {
-    type: 'line',
+    type: 'bar',
     data: {
       labels: $jsLabels,
-      datasets: [{
-        data: $jsData,
-        borderColor: '#4f46e5',
-        backgroundColor: 'rgba(79,70,229,.1)',
-        fill: true,
-        tension: .3,
-        pointRadius: 3,
-      }],
+      datasets: [{ data: $jsData, backgroundColor: primary, borderRadius: 4, maxBarThickness: 40 }],
     },
     options: {
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { display: false } },
+        x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0 } },
         y: { grid: { color: 'rgba(148,163,184,.15)' }, beginAtZero: true },
       },
     }

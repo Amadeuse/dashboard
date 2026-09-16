@@ -734,7 +734,7 @@ final class InvoiceController extends Controller
     {
         $period = (string) ($_GET['period'] ?? '');
         if ($period === 'month') {
-            return [date('Y-m-01'), date('Y-m-t')];
+            return [date('Y-m-01'), date('Y-m-d')];
         }
         if ($period === 'year') {
             return [date('Y-01-01'), date('Y-12-31')];
