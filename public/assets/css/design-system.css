@@ -339,6 +339,21 @@ details.card { interpolate-size: allow-keywords; }
   box-shadow: var(--ds-shadow-sm);
 }
 
+/* A titled section at the top of a .ds-card — analytics-overview.php's
+   three cards (4.124). Bootstrap's own .card-header, brought onto the
+   design tokens: its top corners follow --ds-radius (Bootstrap computes
+   its inner radius from its own card variable, which .ds-card doesn't set,
+   so the corners would otherwise be a different curve from the card's),
+   and its tint/border from the theme, so it separates from the body in
+   both light and dark. */
+.ds-card > .card-header {
+  padding: .75rem 1rem;
+  background: var(--bs-tertiary-bg);
+  border-bottom: 1px solid var(--bs-border-color);
+  border-top-left-radius: calc(var(--ds-radius) - 1px);
+  border-top-right-radius: calc(var(--ds-radius) - 1px);
+}
+
 /* A .ds-card wrapped in this — dashboard.php's stat cards — lifts on hover to read as clickable. */
 .ds-card-link {
   display: block;

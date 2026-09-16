@@ -116,11 +116,13 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
 </div>
 
 <div class="row g-3">
-  <!-- Revenue trend -->
+  <!-- Revenue trend — no h-100: the user doesn't want it stretched down to
+       the height of the two cards beside it (4.124); it ends where the
+       chart ends. -->
   <div class="col-lg-8">
-    <div class="card ds-card h-100">
+    <div class="card ds-card">
+      <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.chart_title') ?></h2></div>
       <div class="card-body">
-        <h2 class="h6 fw-bold mb-3"><?= t('analytics.chart_title') ?></h2>
         <?php if (!$hasRevenue): ?>
           <div class="text-center text-secondary py-5">
             <i class="bi bi-bar-chart d-block mb-2" style="font-size:2rem;opacity:.4;"></i>
@@ -136,8 +138,8 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
   <!-- Top customers + top products -->
   <div class="col-lg-4 d-flex flex-column gap-3">
     <div class="card ds-card">
+      <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.top_customers') ?></h2></div>
       <div class="card-body">
-        <h2 class="h6 fw-bold mb-3"><?= t('analytics.top_customers') ?></h2>
         <?php if ($topCustomers === []): ?>
           <div class="text-secondary small"><?= t('analytics.empty') ?></div>
         <?php else: ?>
@@ -155,8 +157,8 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
     </div>
 
     <div class="card ds-card">
+      <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('cust.report_top_products') ?></h2></div>
       <div class="card-body">
-        <h2 class="h6 fw-bold mb-3"><?= t('cust.report_top_products') ?></h2>
         <?php if ($topProducts === []): ?>
           <div class="text-secondary small"><?= t('analytics.empty') ?></div>
         <?php else: ?>
