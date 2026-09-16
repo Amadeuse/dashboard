@@ -18,6 +18,18 @@ use App\Core\Db;
  */
 final class Analytics
 {
+    /** First issue_date in scope, or null with no invoices — the "all time" lower bound. */
+    public static function earliestDate(array $userIds): ?string
+    {
+        if ($userIds === []) {
+            return null;
+        }
+        $ph  = self::placeholders($userIds);
+        $min = Db::all("SELECT MIN(issue_date) AS d FROM invoices WHERE created_by IN ($ph)", $userIds)[0]['d'] ?? null;
+
+        return $min !== null ? (string) $min : null;
+    }
+
     /** @return array{count:int, total:float, average:float, finalRate:float} finalRate is 0-100, 0 when there are no invoices at all. */
     public static function summary(array $userIds, string $from, string $to): array
     {

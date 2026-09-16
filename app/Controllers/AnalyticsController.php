@@ -26,16 +26,21 @@ final class AnalyticsController extends Controller
         $ruler = Auth::tenantId();
         $org   = Organization::get($ruler);
 
-        [$from, $to] = $this->resolveRange();
         $granularity = in_array($_GET['granularity'] ?? '', self::GRANULARITIES, true) ? $_GET['granularity'] : 'daily';
+        $userIds     = Auth::invoiceScopeUserIds();
 
-        $userIds = Auth::invoiceScopeUserIds();
+        // Same period control /orders has (4.100–4.108): all / month / year /
+        // custom range. "All" here has to become a real from–to because the
+        // Analytics model's queries take one, so it runs from the scope's
+        // earliest invoice to today.
+        [$from, $to, $period] = $this->resolveRange($userIds);
 
         $this->view('analytics-overview', [
             'title'        => t('nav.analytics_overview') . ' · ' . app_name(),
             'currency'     => (string) $org['currency'],
             'from'         => $from,
             'to'           => $to,
+            'period'       => $period,                      // '' | 'month' | 'year' | 'range'
             'granularity'  => $granularity,
             'summary'      => Analytics::summary($userIds, $from, $to),
             'trend'        => Analytics::revenueTrend($userIds, $from, $to, $granularity),
@@ -45,25 +50,35 @@ final class AnalyticsController extends Controller
     }
 
     /**
-     * ?from=&to= (both plain 'Y-m-d', from the filter form's native
-     * <input type="date">) — default to the last 30 days when absent or
-     * not a real date, swapped into order when reversed. No further
-     * clamping (a range spanning years is a perfectly valid ask here).
+     * Which period the page shows, mirroring InvoiceController::resolveOrdersRange():
+     *   ?period=month  → this calendar month
+     *   ?period=year   → this calendar year
+     *   ?from=&to=     → that range (swapped into order when reversed)
+     *   nothing        → everything: the scope's earliest invoice to today
      *
-     * @return array{0:string,1:string}
+     * Returns [from, to, period] with period one of '' (all), 'month',
+     * 'year', 'range' — what the toolbar highlights.
+     *
+     * @param  list<int> $userIds
+     * @return array{0:string,1:string,2:string}
      */
-    private function resolveRange(): array
+    private function resolveRange(array $userIds): array
     {
-        $default = static fn(): array => [date('Y-m-d', strtotime('-29 days')), date('Y-m-d')];
+        $period = (string) ($_GET['period'] ?? '');
+        if ($period === 'month') {
+            return [date('Y-m-01'), date('Y-m-t'), 'month'];
+        }
+        if ($period === 'year') {
+            return [date('Y-01-01'), date('Y-12-31'), 'year'];
+        }
 
         $from = (string) ($_GET['from'] ?? '');
         $to   = (string) ($_GET['to'] ?? '');
-
-        if (!self::isValidDate($from) || !self::isValidDate($to)) {
-            return $default();
+        if (self::isValidDate($from) && self::isValidDate($to)) {
+            return $from <= $to ? [$from, $to, 'range'] : [$to, $from, 'range'];
         }
 
-        return $from <= $to ? [$from, $to] : [$to, $from];
+        return [Analytics::earliestDate($userIds) ?? date('Y-m-d'), date('Y-m-d'), ''];
     }
 
     private static function isValidDate(string $value): bool

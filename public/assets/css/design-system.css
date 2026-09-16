@@ -84,6 +84,18 @@ body {
   padding-bottom: 0;
 }
 
+/* ---- A <select> that sits in a page-header toolbar beside buttons and the
+   date-range pill (analytics-overview.php's granularity, 4.121). Same token,
+   so the row stays one height; width from content, not the form-select
+   default of 100% — it is one control in a row, not a form field. The
+   ds-table toolbar has its own equivalent rule for its filters. ---- */
+.ds-toolbar-select {
+  width: auto;
+  height: var(--ds-control-height);
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 /* ---- Primary color propagation (Bootstrap 5.3 bakes literal hex into
    component-local vars, so the handful of components in use get an
    explicit override here instead of a full Sass rebuild). ---- */

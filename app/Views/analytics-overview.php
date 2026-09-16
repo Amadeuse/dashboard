@@ -3,6 +3,7 @@
  * @var string $currency organization.currency ('GEL' or 'USD')
  * @var string $from     the filter's active start date ('Y-m-d')
  * @var string $to       the filter's active end date ('Y-m-d')
+ * @var string $period   '' (all time) | 'month' | 'year' | 'range' — which toolbar control is active
  * @var string $granularity 'daily'|'weekly'|'monthly' — the trend chart's bucket size
  * @var array  $summary  Analytics::summary() — count/total/average/finalRate
  * @var array  $trend    Analytics::revenueTrend() — {labels, data}
@@ -32,39 +33,53 @@ $granularityLabel = static fn(string $bucket): string => match ($granularity) {
     </nav>
     <h1 class="h3 fw-bold mb-0"><?= t('nav.analytics_overview') ?></h1>
   </div>
-</div>
-
-<!-- Filter -->
-<div class="card ds-card mb-3">
-  <div class="card-body">
-    <form method="get" action="/analytics/overview" class="row g-3 align-items-end">
-      <div class="col-sm-12 col-md-6">
-        <label for="af-range" class="form-label small mb-1"><?= t('analytics.filter_period') ?></label>
-        <?php // The same ds-date-range component /orders uses (flatpickr range
-              // mode, public/vendor/date-range) instead of two native
-              // <input type="date">s — one calendar, themed, Georgian locale.
-              // The hidden from/to inputs keep the ?from=&to= contract
-              // AnalyticsController already reads, so nothing server-side
-              // changed. data-max: no analytics of the future. ?>
-        <div class="ds-date-range" data-ds-date-range data-max="<?= e(date('Y-m-d')) ?>">
-          <i class="bi bi-calendar3 ds-date-range-icon"></i>
-          <input type="text" class="ds-date-range-input" id="af-range" data-ds-date-range-display
-                 placeholder="<?= t('analytics.filter_period') ?>" aria-label="<?= t('analytics.filter_period') ?>">
-          <input type="hidden" name="from" value="<?= e($from) ?>" data-ds-date-range-from>
-          <input type="hidden" name="to" value="<?= e($to) ?>" data-ds-date-range-to>
-        </div>
+  <div class="d-flex flex-wrap gap-2">
+    <?php // The same period control as /orders (4.100–4.108) — the user asked
+          // for the two pages to match: a segmented all/month/year group, the
+          // ds-date-range pill with its own ✓ submit, and — this page's own —
+          // the trend granularity. Every control here reads its height from
+          // --ds-control-height (buttons, the range pill, the select), so the
+          // row lines up; see design-system.css and ds-table.css for the
+          // token's other users.
+          //
+          // Three things carry the query, all rendered from the same PHP
+          // state so they can't disagree: the period links keep granularity;
+          // the range form posts from/to + granularity (no period field —
+          // submitting it *means* a custom range); the granularity select
+          // sits in its own form with the active period/from/to as hidden
+          // inputs and submits itself on change.
+          $g = 'granularity=' . urlencode($granularity); ?>
+    <div class="btn-group" role="group" aria-label="<?= t('orders.period_filter') ?>">
+      <a href="/analytics/overview?<?= $g ?>" class="btn <?= $period === '' ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_all') ?></a>
+      <a href="/analytics/overview?period=month&<?= $g ?>" class="btn <?= $period === 'month' ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_month') ?></a>
+      <a href="/analytics/overview?period=year&<?= $g ?>" class="btn <?= $period === 'year' ? 'btn-primary' : 'btn-outline-secondary' ?>"><?= t('orders.period_year') ?></a>
+    </div>
+    <form method="get" action="/analytics/overview" class="d-flex align-items-center gap-2">
+      <input type="hidden" name="granularity" value="<?= e($granularity) ?>">
+      <div class="ds-date-range <?= $period === 'range' ? 'ds-date-range-active' : '' ?>"
+           data-ds-date-range data-max="<?= e(date('Y-m-d')) ?>">
+        <i class="bi bi-calendar3 ds-date-range-icon"></i>
+        <input type="text" class="ds-date-range-input" data-ds-date-range-display
+               placeholder="<?= t('orders.period_range') ?>" aria-label="<?= t('orders.period_range') ?>">
+        <input type="hidden" name="from" value="<?= $period === 'range' ? e($from) : '' ?>" data-ds-date-range-from>
+        <input type="hidden" name="to" value="<?= $period === 'range' ? e($to) : '' ?>" data-ds-date-range-to>
       </div>
-      <div class="col-sm-6 col-md-3">
-        <label for="af-granularity" class="form-label small mb-1"><?= t('analytics.filter_granularity') ?></label>
-        <select class="form-select" id="af-granularity" name="granularity">
-          <?php foreach (['daily', 'weekly', 'monthly'] as $g): ?>
-            <option value="<?= $g ?>" <?= $granularity === $g ? 'selected' : '' ?>><?= t('analytics.granularity_' . $g) ?></option>
-          <?php endforeach; ?>
-        </select>
-      </div>
-      <div class="col-sm-6 col-md-3">
-        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-funnel me-1"></i><?= t('analytics.filter_apply') ?></button>
-      </div>
+      <button type="submit" class="btn <?= $period === 'range' ? 'btn-primary' : 'btn-outline-secondary' ?>" title="<?= t('orders.period_range') ?>">
+        <i class="bi bi-check-lg"></i>
+      </button>
+    </form>
+    <form method="get" action="/analytics/overview" class="mb-0">
+      <?php if ($period === 'month' || $period === 'year'): ?>
+        <input type="hidden" name="period" value="<?= e($period) ?>">
+      <?php elseif ($period === 'range'): ?>
+        <input type="hidden" name="from" value="<?= e($from) ?>">
+        <input type="hidden" name="to" value="<?= e($to) ?>">
+      <?php endif; ?>
+      <select class="form-select ds-toolbar-select" name="granularity" aria-label="<?= t('analytics.filter_granularity') ?>" onchange="this.form.submit()">
+        <?php foreach (['daily', 'weekly', 'monthly'] as $gr): ?>
+          <option value="<?= $gr ?>" <?= $granularity === $gr ? 'selected' : '' ?>><?= t('analytics.granularity_' . $gr) ?></option>
+        <?php endforeach; ?>
+      </select>
     </form>
   </div>
 </div>
