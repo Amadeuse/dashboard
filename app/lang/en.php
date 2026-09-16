@@ -21,9 +21,7 @@ return [
 
     // Navigation — second level
     'nav.analytics_overview'   => 'Overview',
-    'nav.analytics_reports'    => 'Reports',
     'nav.orders_all'           => 'All orders',
-    'nav.orders_pending'       => 'Pending',
     'nav.orders_new'           => 'New invoice',
     'nav.customers_list'       => 'List',
     'nav.customers_new'        => 'New customer',

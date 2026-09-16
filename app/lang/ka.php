@@ -21,9 +21,7 @@ return [
 
     // ნავიგაცია — მეორე დონე
     'nav.analytics_overview'   => 'მიმოხილვა',
-    'nav.analytics_reports'    => 'რეპორტები',
     'nav.orders_all'           => 'ყველა შეკვეთა',
-    'nav.orders_pending'       => 'მოლოდინში',
     'nav.orders_new'           => 'ახალი ინვოისი',
     'nav.customers_list'       => 'სია',
     'nav.customers_new'        => 'ახალი დამკვეთი',

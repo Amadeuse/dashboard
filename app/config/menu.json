@@ -10,16 +10,7 @@
       {
         "label": "nav.analytics",
         "icon": "bi-bar-chart-fill",
-        "children": [
-          {
-            "label": "nav.analytics_overview",
-            "url": "/analytics/overview"
-          },
-          {
-            "label": "nav.analytics_reports",
-            "url": "#"
-          }
-        ]
+        "url": "/analytics/overview"
       },
       {
         "label": "nav.orders",
@@ -28,10 +19,6 @@
           {
             "label": "nav.orders_all",
             "url": "/orders"
-          },
-          {
-            "label": "nav.orders_pending",
-            "url": "#"
           },
           {
             "label": "nav.orders_new",
