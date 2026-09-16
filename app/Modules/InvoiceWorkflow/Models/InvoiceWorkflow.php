@@ -4,24 +4,32 @@ declare(strict_types=1);
 
 namespace App\Modules\InvoiceWorkflow\Models;
 
-use App\Core\Db;
+use App\Core\ModuleDb;
 
 /**
  * Payment/cancellation state for an invoice, independent of the core
  * invoices.document_state field.
  *
- * A module may use core's own Db/Auth — it is trusted code, not sandboxed
- * (see /help/modules). What it may not do is reach into core *tables* it
- * doesn't own: this one owns `invoice_workflow` and nothing else, joining to
- * `invoices` only through the foreign key its migration declares.
+ * All data access goes through ModuleDb, never App\Core\Db — rule 3 of the
+ * module concept, and the harness fails a module that references Db
+ * directly. select() may read any table (a module can report across
+ * invoices/customers freely); execute() is accepted only for
+ * `invoice_workflow`, the one table this module declares in uninstall.sql.
+ * A typo that pointed a write at `invoices` would throw before reaching
+ * MySQL.
  */
 final class InvoiceWorkflow
 {
     public const STATES = ['unpaid', 'partial', 'paid'];
 
+    private static function db(): ModuleDb
+    {
+        return ModuleDb::for('InvoiceWorkflow');
+    }
+
     public static function for(int $invoiceId): array
     {
-        $row = Db::all('SELECT * FROM invoice_workflow WHERE invoice_id = ?', [$invoiceId])[0] ?? null;
+        $row = self::db()->one('SELECT * FROM invoice_workflow WHERE invoice_id = ?', [$invoiceId]);
 
         return $row ?? [
             'invoice_id'    => $invoiceId,
@@ -48,7 +56,7 @@ final class InvoiceWorkflow
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $out = [];
-        foreach (Db::all("SELECT * FROM invoice_workflow WHERE invoice_id IN ($placeholders)", $ids) as $row) {
+        foreach (self::db()->select("SELECT * FROM invoice_workflow WHERE invoice_id IN ($placeholders)", $ids) as $row) {
             $out[(int) $row['invoice_id']] = $row;
         }
 
@@ -61,17 +69,19 @@ final class InvoiceWorkflow
             return;
         }
 
-        Db::conn()->prepare(
+        self::db()->execute(
             'INSERT INTO invoice_workflow (invoice_id, payment_state, paid_amount) VALUES (?, ?, ?)
-             ON DUPLICATE KEY UPDATE payment_state = VALUES(payment_state), paid_amount = VALUES(paid_amount)'
-        )->execute([$invoiceId, $state, max(0, $paidAmount)]);
+             ON DUPLICATE KEY UPDATE payment_state = VALUES(payment_state), paid_amount = VALUES(paid_amount)',
+            [$invoiceId, $state, max(0, $paidAmount)]
+        );
     }
 
     public static function setCancelled(int $invoiceId, bool $cancelled): void
     {
-        Db::conn()->prepare(
+        self::db()->execute(
             'INSERT INTO invoice_workflow (invoice_id, cancelled_at) VALUES (?, ?)
-             ON DUPLICATE KEY UPDATE cancelled_at = VALUES(cancelled_at)'
-        )->execute([$invoiceId, $cancelled ? date('Y-m-d H:i:s') : null]);
+             ON DUPLICATE KEY UPDATE cancelled_at = VALUES(cancelled_at)',
+            [$invoiceId, $cancelled ? date('Y-m-d H:i:s') : null]
+        );
     }
 }

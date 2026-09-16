@@ -318,6 +318,32 @@ final class ModuleRegistry
         unset(self::$enabledByTenant[$ruler]);
     }
 
+    /**
+     * The tables a module owns: every DROP TABLE in its uninstall.sql,
+     * lowercased. One declaration serves three things — the pre-uninstall
+     * export (ModuleArchive::exportData), the write boundary (ModuleDb) and
+     * the uninstall itself — so they cannot disagree about what is the
+     * module's. A module without uninstall.sql owns nothing and can write
+     * nothing.
+     *
+     * @return list<string>
+     */
+    public static function ownedTables(string $code): array
+    {
+        $file = self::dir($code) . '/uninstall.sql';
+        if (!is_file($file)) {
+            return [];
+        }
+
+        preg_match_all(
+            '/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?/i',
+            (string) file_get_contents($file),
+            $m
+        );
+
+        return array_values(array_unique(array_map('strtolower', $m[1] ?? [])));
+    }
+
     /** Tenants with this module switched on — the uninstall confirmation shows the count. @return list<int> */
     public static function tenantsUsing(string $code): array
     {

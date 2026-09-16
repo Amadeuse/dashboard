@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Modules\InvoiceWorkflow\Controllers;
 
 use App\Core\Auth;
-use App\Core\Db;
+use App\Core\ModuleDb;
 use App\Modules\InvoiceWorkflow\Models\InvoiceWorkflow;
 
 /**
@@ -66,7 +66,8 @@ final class InvoiceWorkflowController
         }
 
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
-        $found = Db::all(
+        // A read of a core table — exactly what ModuleDb::select() is for.
+        $found = ModuleDb::for('InvoiceWorkflow')->select(
             "SELECT id FROM invoices WHERE id = ? AND created_by IN ($placeholders)",
             array_merge([$id], $ids)
         );

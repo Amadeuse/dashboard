@@ -6855,6 +6855,89 @@ customers/products/invoices (სატესტო მონაცემი მ�
 რა **არა** (`routes.php`, `menu.json`, `app/Modules/`, `.env`).
 
 
+### 4.119 მოდულის კონცეფცია — ოთხი წესი, სამი აღსრულებული
+
+user-მა ჩამოაყალიბა, რა უნდა ჰქონდეს მოდულს ბირთვისგან და რა არა.
+ოთხი წესი; პირველი სამი **მექანიკურად აღსრულდება** — harness-შიც და
+ZIP-ატვირთვაზეც — მეოთხე სენდბოქსის კონფიგურაციაა.
+
+| # | წესი | აღსრულება |
+|---|---|---|
+| 1 | ბირთვისგან მართვა და სტილი, **უცვლელად**; საკუთარი სტილი უნიკალური, ბირთვზე გავლენის გარეშე | `ModuleLint`: `module.css`-ის ყველა სელექტორი `.<კოდი>-` პრეფიქსით |
+| 2 | მენიუ ინსტალაციისას **„მოდულები" ქვემენიუში** | `ds_menu()`: ერთი ბირთვის პუნქტი, თითო მოდულზე ერთი შვილი; `menu.json`-ს `section` აღარ აქვს |
+| 3 | ბაზა: **კითხვა ყველგან, წერა მხოლოდ საკუთარ ცხრილებში** → ნებისმიერი რეპორტი | `ModuleDb`: `select()` ნებისმიერზე, `execute()` მხოლოდ `uninstall.sql`-ის ცხრილებზე; `ModuleLint`: `App\Core\Db` მოდულში — შეცდომა |
+| 4 | `modules.loc` ავტორიზაციის გარეშე | სენდბოქსის `index.php` ყველა მოთხოვნას tenant 1-ად შედის; auth-კონტროლერი/view-ები წაშლილი |
+
+#### ბირთვის ახალი ნაწილები (dashboard.loc, სინქრონირებული სენდბოქსში)
+
+- **`ModuleDb`** — `for($code)`, `select()`, `one()`, `execute()`,
+  `lastInsertId()`, `transaction()`, `ownedTables()`. Წერის სამიზნეს
+  regex-ით ამოიღებს (INSERT/REPLACE/UPDATE/DELETE/ALTER/TRUNCATE/DROP/
+  CREATE), კომენტარებს წინ ჩამოაჭრის, schema-კვალიფიცირებულს და
+  მრავალცხრილიან წერას (JOIN) **უარყოფს**, `SELECT … INTO OUTFILE`-ს —
+  ასევე. Multi-statement-ს MySQL-ის native prepare თავად უარყოფს
+  (`EMULATE_PREPARES=false`).
+- **`ModuleDbException`** — კოდი + მიზეზი + SQL ერთ სტრიქონად.
+- **`ModuleLint`** — `check($code)` / `checkDir($dir, $code)`. PHP-ს
+  tokenizer-ით კომენტარებს **ჯერ ჩამოაჭრის** (პირველი ვერსია საკუთარ
+  docblock-ს იჭერდა — „never App\Core\Db" წესის აღწერაა, არა
+  დარღვევა). Ამოწმებს: `Db` გამოყენება, ბირთვის გზები (`app/lang/`…),
+  CSS-სელექტორის პრეფიქსი.
+- **`ModuleRegistry::ownedTables()`** — `uninstall.sql`-ის `DROP TABLE`
+  ხაზები, ერთ ადგილას. Იგივე სია სამ რამეს ემსახურება: ექსპორტს,
+  წერის საზღვარს, თავად uninstall-ს — ერთმანეთს ვერ დაშორდებიან.
+- **`ModuleArchive::installUpload()`** — staging-ში `ModuleLint::checkDir()`;
+  დარღვევით ZIP `app/Modules/`-ს **არ აღწევს**.
+- **`ds_menu()`** — მოდულების ჩანაწერები `nav.modules` მშობლის ქვეშ,
+  `nav.main`-ის ბოლოში, მხოლოდ თუ ≥1 მოდულს აქვს `menu.json`.
+
+#### პატიოსანი საზღვარი
+
+Წესები 1 და 3 **დაცული კონტრაქტია, არა sandbox**. PHP-ში მოდული
+ბირთვის პროცესშია — `Db::conn()` პირდაპირ გამოძახება ტექნიკურად
+შესაძლებელია. Რაც რეალურად გვაქვს: `ModuleDb` ჩერდება პატიოსან
+შეცდომას, `ModuleLint` — არაპატიოსან მცდელობას (ვერც ტესტს გაივლის,
+ვერც დაინსტალდება). Ნამდვილი sandbox (MySQL-user თითო მოდულზე)
+აპლიკაციას DB-ადმინის უფლებას მოსთხოვდა runtime-ზე — უფრო დიდი
+რისკია. Ეს ჩაწერილია `/help/modules`-შიც და `AGENT_PROMPT.md`-შიც.
+
+#### გადამოწმებულია
+
+**`ModuleDb`** — 29 შემთხვევა, **29 გავიდა**: 5 კითხვა (core SELECT,
+JOIN, CTE, SHOW, კომენტარი წინ) — დაშვებული; 3 შენიღბული წერა (OUTFILE,
+INSERT select()-ში, `/* SELECT */ UPDATE`) — უარყოფილი; 4 წერა საკუთარზე
+(INSERT/UPDATE/DELETE/ON DUPLICATE, ტრანზაქციის rollback) — დაშვებული;
+**15 წერა core-ზე** (UPDATE/DELETE/INSERT/DROP/TRUNCATE/ALTER, backtick,
+შერეული case, კომენტარი წინ, schema.table, JOIN-UPDATE, JOIN-DELETE,
+CALL, SELECT execute()-ში) — **ყველა უარყოფილი**; stacked statement —
+driver-მა უარყო; uninstall.sql-ის გარეშე მოდული — ვერაფერს წერს.
+
+**`ModuleLint`** — საბოტაჟით: `Db::all` მოდელში + `.btn`/`.card .x`
+CSS-ში → **3 დარღვევა დაჭერილი**, ტესტები არ გაშვებულა; აღდგენის შემდეგ
+— სუფთა.
+
+**მოდულები**: InvoiceWorkflow (→ `ModuleDb`, v2.1.0) contract ok + **13/13**;
+ModuleTemplate (→ `ModuleDb`, `.moduletemplate-*` CSS, ახალი `menu.json`)
+contract ok + **14/14**. Ორივე ცოცხალ სენდბოქსში: badge `/orders`-ზე,
+panel `/invoices?edit=1`-ზე, **„მოდულები → შაბლონი"** sidebar-ში.
+
+**სენდბოქსი ავტორიზაციის გარეშე**: ქუქის გარეშე `/`, `/orders`,
+`/invoices`, `/settings/modules`, `/help/modules` — **ყველა 200**.
+
+**dashboard.loc**: ყველა გვერდი სუფთა; `/help/modules`-ზე კონცეფციის
+ცხრილი + `ModuleDb`-ის სექცია; „მოდულები" მენიუ **არ ჩანს** (არცერთი
+მოდული არაა ჩართული tenant 1-ზე — სწორია). InvoiceWorkflow v2.1.0
+გაგზავნილია ცოცხალშიც, lint სუფთა.
+
+#### დოკუმენტაცია
+
+`AGENT_PROMPT.md` (სენდბოქსში): §1-ში ოთხი წესის ცხრილი აღსრულებით,
+§6a მენიუ, §8 `ModuleDb` API `Db`-ის ნაცვლად + რას იღებს/უარყოფს
+`execute()`, §9 — საზღვარი ცხრილია და არა მწკრივი, §11 — CSS-პრეფიქსი
+აღსრულებულია. `/help/modules` (ბირთვი): კონცეფციის ბარათი + 4a
+„ბაზა — ModuleDb". ka/en **610 = 610**.
+
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.

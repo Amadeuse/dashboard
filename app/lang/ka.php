@@ -29,6 +29,7 @@ return [
     'nav.customers_new'        => 'ახალი დამკვეთი',
     'nav.settings_general'     => 'ზოგადი',
     'nav.settings_users'       => 'მომხმარებლები და როლები',
+    'nav.modules'              => 'მოდულები',
     'nav.settings_modules'     => 'მოდულები',
 
     // ზედა პანელი
@@ -381,15 +382,32 @@ return [
     'help.mod_hook_form_aside'  => 'ინვოისის ფორმის გვერდით პანელში. invoice = null ახალ, ჯერ შეუნახავ ინვოისზე.',
     'help.mod_hook_saved'       => 'ინვოისი ბაზაში ჩაიწერა და id ცნობილია.',
 
+    'help.mod_concept'          => 'მოდულის კონცეფცია — ოთხი წესი',
+    'help.mod_concept_intro'    => 'პირველ სამს ტესტ-harness-იც და ZIP-ვალიდატორიც მექანიკურად ამოწმებს: დარღვევით მოდული ვერც ტესტს გაივლის და ვერც დაინსტალდება.',
+    'help.mod_concept_rule'     => 'წესი',
+    'help.mod_concept_enforced' => 'აღსრულება',
+    'help.mod_concept_1'  => 'ბირთვისგან იღებ მართვის ელემენტებს და სტილს — არასდროს ცვლი. საკუთარი CSS მოდულზეა მიბმული (.yourcode-…) და .btn-ს, .card-ს ან სხვა მოდულს ვერ შეეხება.',
+    'help.mod_concept_1e' => 'module.css-ის ყველა სელექტორი .<კოდი>- პრეფიქსით',
+    'help.mod_concept_2'  => 'ნავიგაციის ადგილს არ ირჩევ. ერთი მენიუს ჩანაწერი „მოდულები" პუნქტის ქვეშ ჯდება, სხვა მოდულების გვერდით.',
+    'help.mod_concept_2e' => 'menu.json-ს section-ველი არ აქვს',
+    'help.mod_concept_3'  => 'ბაზა: კითხვა ყველგან, წერა — მხოლოდ საკუთარ ცხრილებში. SELECT ინვოისებზე, კლიენტებზე, პროდუქციაზე — ნებისმიერი რეპორტი. INSERT/UPDATE/DELETE — მხოლოდ იმ ცხრილებზე, რომლებიც შენმა მიგრაციებმა შექმნა.',
+    'help.mod_concept_3e' => 'წერა უარიყოფა MySQL-მდე; App\Core\Db-ს გამოყენება — lint-შეცდომა',
+
+    'help.mod_db'       => 'ბაზა — ModuleDb',
+    'help.mod_db_intro' => 'App\Core\Db მოდულისთვის აკრძალულია. ყველაფერი ModuleDb-ით: select() ნებისმიერ ცხრილს კითხულობს, execute() მხოლოდ შენს ცხრილებში წერს — იმათში, რომლებიც uninstall.sql-ის DROP TABLE ხაზებშია.',
+    'help.mod_db_read'  => 'ბირთვის ცხრილის კითხვა',
+    'help.mod_db_own'   => 'საკუთარ ცხრილში წერა',
+    'help.mod_db_note'  => 'უფლების საზღვარი ცხრილია, არა მწკრივი: კითხვისასაც ruler-ით გაფილტვრა შენი მოვალეობაა. ModuleDb დამცავია პატიოსანი შეცდომისგან, არა sandbox — მოდული ბირთვის უფლებებით მუშაობს.',
+
     'help.mod_visual' => 'ვიზუალის წესები',
     'help.mod_do'     => 'შეიძლება',
     'help.mod_dont'   => 'არ შეიძლება',
     'help.mod_do_1'   => 'ბირთვის კლასები: .ds-card, .ds-table, Bootstrap-ის უტილიტები.',
     'help.mod_do_2'   => 'ფერი მხოლოდ ტოკენებიდან: var(--bs-primary), var(--ds-radius), bg-success-subtle.',
-    'help.mod_do_3'   => 'assets/module.css — მხოლოდ განლაგებისთვის (grid, gap, სიგანე).',
+    'help.mod_do_3'   => 'assets/module.css — მხოლოდ განლაგებისთვის, ყველა სელექტორი .<კოდი>- პრეფიქსით (აღსრულებულია).',
     'help.mod_dont_1' => 'პირდაპირი ფერი (#0d6efd, rgb(...)) — dark mode-ს გატეხავს.',
     'help.mod_dont_2' => 'საკუთარი შრიფტი ან ზომების სკალა.',
-    'help.mod_dont_3' => 'ბირთვის კლასების გადაფარვა (.btn, .card თავად).',
+    'help.mod_dont_3' => 'ბირთვის კლასების გადაფარვა (.btn, .card) — ვერც შეძლებ: არაპრეფიქსიანი სელექტორი lint-ს არ გაივლის.',
 
     'help.mod_packaging' => 'ZIP-ად შეფუთვა',
     'help.mod_zip_note'  => 'არქივის შიგნით ზუსტად ერთი საქაღალდე უნდა იყოს, მოდულის კოდის სახელით:',
@@ -450,6 +468,7 @@ return [
     'modules.err_install'    => '„%s"-ის ინსტალაცია ვერ მოხერხდა: %s',
     'modules.err_uninstall'  => '„%s"-ის წაშლა ვერ მოხერხდა: %s',
     'modules.err_uninstall_first' => 'ჯერ დეინსტალაცია გააკეთეთ: %s',
+    'modules.err_contract'   => '„%s" კონტრაქტს არღვევს და არ დაინსტალდება:%s',
     'modules.err_bad_code'   => 'მოდულის კოდი არასწორია.',
 
     'error.csrf'          => 'სესია ამოიწურა. გვერდი განაახლე და თავიდან სცადე.',

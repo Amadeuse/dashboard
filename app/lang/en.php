@@ -29,6 +29,7 @@ return [
     'nav.customers_new'        => 'New customer',
     'nav.settings_general'     => 'General',
     'nav.settings_users'       => 'Users & roles',
+    'nav.modules'              => 'Modules',
     'nav.settings_modules'     => 'Modules',
 
     // Topbar
@@ -378,15 +379,32 @@ return [
     'help.mod_hook_form_aside'  => 'In the invoice form aside. invoice is null for a new, unsaved invoice.',
     'help.mod_hook_saved'       => 'The invoice was written and its id is known.',
 
+    'help.mod_concept'          => 'The module concept - four rules',
+    'help.mod_concept_intro'    => 'The first three are checked mechanically by the test harness and the ZIP validator: a module that breaks them neither passes its tests nor gets installed.',
+    'help.mod_concept_rule'     => 'Rule',
+    'help.mod_concept_enforced' => 'Enforced by',
+    'help.mod_concept_1'  => 'From core you take controls and style - you never change them. Your own CSS is scoped to your module (.yourcode-...) and cannot touch a .btn, a .card or another module.',
+    'help.mod_concept_1e' => 'every selector in module.css starts with .<code>-',
+    'help.mod_concept_2'  => 'Navigation is not yours to place. Your one menu entry lands under the core item "Modules", alongside every other module.',
+    'help.mod_concept_2e' => 'menu.json has no section field',
+    'help.mod_concept_3'  => 'Database: read anywhere, write only your own tables. SELECT across invoices, customers, products - any report you like. INSERT/UPDATE/DELETE only on tables your migrations created.',
+    'help.mod_concept_3e' => 'the write is refused before MySQL; using App\Core\Db is a lint error',
+
+    'help.mod_db'       => 'Database - ModuleDb',
+    'help.mod_db_intro' => 'App\Core\Db is off limits to a module. Everything goes through ModuleDb: select() reads any table, execute() writes only your own - the ones named by DROP TABLE lines in your uninstall.sql.',
+    'help.mod_db_read'  => 'reading a core table',
+    'help.mod_db_own'   => 'writing your own table',
+    'help.mod_db_note'  => 'The boundary is the table, not the row: filtering reads by ruler is still your job. ModuleDb guards against the honest mistake; it is not a sandbox - a module runs with core privileges.',
+
     'help.mod_visual' => 'Visual rules',
     'help.mod_do'     => 'Do',
     'help.mod_dont'   => 'Do not',
     'help.mod_do_1'   => 'Use core classes: .ds-card, .ds-table, Bootstrap utilities.',
     'help.mod_do_2'   => 'Take colour from tokens only: var(--bs-primary), var(--ds-radius), bg-success-subtle.',
-    'help.mod_do_3'   => 'assets/module.css for layout only (grid, gap, widths).',
+    'help.mod_do_3'   => 'assets/module.css for layout only, every selector prefixed .<code>- (enforced).',
     'help.mod_dont_1' => 'Hard-coded colour (#0d6efd, rgb(...)) - it breaks dark mode.',
     'help.mod_dont_2' => 'Your own font or size scale.',
-    'help.mod_dont_3' => 'Overriding core classes (.btn, .card themselves).',
+    'help.mod_dont_3' => 'Overriding core classes (.btn, .card) - you cannot: an unprefixed selector fails lint.',
 
     'help.mod_packaging' => 'Packaging as a ZIP',
     'help.mod_zip_note'  => 'The archive must contain exactly one folder, named after the module code:',
@@ -447,6 +465,7 @@ return [
     'modules.err_install'    => 'Could not install "%s": %s',
     'modules.err_uninstall'  => 'Could not remove "%s": %s',
     'modules.err_uninstall_first' => 'Uninstall it first: %s',
+    'modules.err_contract'   => '"%s" breaks the module contract and was not installed:%s',
     'modules.err_bad_code'   => 'Invalid module code.',
 
     'error.csrf'          => 'Your session expired. Refresh the page and try again.',

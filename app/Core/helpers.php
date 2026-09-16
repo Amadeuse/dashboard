@@ -107,9 +107,18 @@ function ds_lang_url(string $code): string
  * Read on every request (so edits show on refresh); broken core JSON throws
  * instead of silently rendering an empty nav.
  *
- * Each enabled module's own menu.json item is merged into the section it
- * names. Unlike the core file, a module's is third-party: malformed JSON
- * there costs that module its menu entry, not the whole sidebar.
+ * Modules (4.119, rule 2 of the module concept): every enabled module that
+ * ships a menu.json gets ONE entry, and all of them sit under a single core
+ * item "მოდულები" at the end of the main section. A module does not choose
+ * where in the menu it lands — the first module system let it name a
+ * section, and that is how module entries ended up scattered among core
+ * ones. The parent item only appears when at least one module has a menu.
+ *
+ * A module's menu.json is just { "label": "yc.nav", "icon": "bi-…", "url": "/list" }.
+ * The url is relative to the module and resolved against its /m/<code> base,
+ * the same rule ModuleRouter applies to routes, so a menu entry and the route
+ * it points at cannot drift apart. Third-party JSON: a malformed file costs
+ * that module its entry, not the whole sidebar.
  */
 function ds_menu(): array
 {
@@ -120,25 +129,32 @@ function ds_menu(): array
         JSON_THROW_ON_ERROR
     );
 
+    $moduleItems = [];
     foreach (ModuleRegistry::enabledCodes() as $code) {
         $file = ModuleRegistry::dir($code) . '/menu.json';
         if (!is_file($file)) {
             continue;
         }
 
-        // Third-party JSON: a broken menu.json costs that module its menu
-        // entry, not the whole sidebar.
-        $fragment = json_decode((string) file_get_contents($file), true);
-        if (!is_array($fragment) || !isset($fragment['section'], $fragment['item'])) {
+        $item = json_decode((string) file_get_contents($file), true);
+        if (!is_array($item) || !isset($item['label'], $item['url']) || !is_string($item['url'])) {
             continue;
         }
 
         Lang::loadModule($code);
-        $item = ds_module_menu_item($fragment['item'], '/m/' . strtolower($code));
 
+        $base = '/m/' . strtolower($code);
+        $url  = $item['url'];
+        $moduleItems[] = [
+            'label' => (string) $item['label'],
+            'url'   => str_starts_with($url, $base) || !str_starts_with($url, '/') ? $url : $base . $url,
+        ];
+    }
+
+    if ($moduleItems !== []) {
         foreach ($menu as &$section) {
-            if ($section['section'] === $fragment['section']) {
-                $section['items'][] = $item;
+            if ($section['section'] === 'nav.main') {
+                $section['items'][] = ['label' => 'nav.modules', 'icon' => 'bi-puzzle', 'children' => $moduleItems];
                 break;
             }
         }
@@ -146,29 +162,6 @@ function ds_menu(): array
     }
 
     return $menu;
-}
-
-/**
- * A module's menu URLs are written relative to the module ('/things'), and
- * resolved here against its own /m/<code> base — the same rule ModuleRouter
- * applies to its routes, so a menu entry and the route it points at can't
- * drift apart. An absolute core path ('/orders') is left alone: a module may
- * legitimately link into the app it extends.
- */
-function ds_module_menu_item(array $item, string $base): array
-{
-    if (isset($item['url']) && is_string($item['url'])) {
-        $url = $item['url'];
-        $item['url'] = str_starts_with($url, $base) || !str_starts_with($url, '/')
-            ? $url
-            : $base . $url;
-    }
-
-    foreach ($item['children'] ?? [] as $i => $child) {
-        $item['children'][$i] = ds_module_menu_item($child, $base);
-    }
-
-    return $item;
 }
 
 /**

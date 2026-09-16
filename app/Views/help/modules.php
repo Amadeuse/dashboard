@@ -71,6 +71,24 @@ $kindClass = [
 <!-- ------------------------------------------------------------------ -->
 <div class="card ds-card mb-4">
   <div class="card-body">
+    <h2 class="h6 fw-bold mb-3"><?= t('help.mod_concept') ?></h2>
+    <p class="small text-secondary"><?= t('help.mod_concept_intro') ?></p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle small mb-0">
+        <thead><tr><th style="width:2rem">#</th><th><?= t('help.mod_concept_rule') ?></th><th><?= t('help.mod_concept_enforced') ?></th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><?= t('help.mod_concept_1') ?></td><td><code>ModuleLint</code> — <?= t('help.mod_concept_1e') ?></td></tr>
+          <tr><td>2</td><td><?= t('help.mod_concept_2') ?></td><td><code>ds_menu()</code> — <?= t('help.mod_concept_2e') ?></td></tr>
+          <tr><td>3</td><td><?= t('help.mod_concept_3') ?></td><td><code>ModuleDb</code> + <code>ModuleLint</code> — <?= t('help.mod_concept_3e') ?></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<div class="card ds-card mb-4">
+  <div class="card-body">
     <h2 class="h6 fw-bold mb-3">1. <?= t('help.mod_structure') ?></h2>
     <div class="table-responsive">
       <pre class="small mb-3 p-3 rounded" style="background:var(--bs-tertiary-bg);">app/Modules/<b>YourCode</b>/
@@ -172,6 +190,20 @@ final class Module implements ModuleInterface
       </table>
     </div>
     <p class="small text-secondary mb-0"><?= t('help.mod_hooks_more') ?></p>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------------ -->
+<div class="card ds-card mb-4">
+  <div class="card-body">
+    <h2 class="h6 fw-bold mb-3">4a. <?= t('help.mod_db') ?></h2>
+    <p class="small text-secondary"><?= t('help.mod_db_intro') ?></p>
+    <pre class="small mb-3 p-3 rounded" style="background:var(--bs-tertiary-bg);">$db = ModuleDb::for('<b>YourCode</b>');
+
+$db-&gt;select('SELECT … FROM invoices WHERE created_by IN (…)', $ids);   <span class="text-success-emphasis">// ✓ <?= t('help.mod_db_read') ?></span>
+$db-&gt;execute('UPDATE your_table SET … WHERE id = ? AND ruler = ?', …); <span class="text-success-emphasis">// ✓ <?= t('help.mod_db_own') ?></span>
+$db-&gt;execute('UPDATE invoices SET total = 0');                         <span class="text-danger-emphasis">// ✗ ModuleDbException</span></pre>
+    <p class="small text-secondary mb-0"><?= t('help.mod_db_note') ?></p>
   </div>
 </div>
 

@@ -79,6 +79,18 @@ final class ModuleArchive
 
             self::requireManifest($staging . '/' . $code);
 
+            // The module concept's rules (no Db, no core paths, scoped CSS) —
+            // checked on the staged copy, so a module that breaks them never
+            // reaches app/Modules/. Same checks the test harness runs; an
+            // author who ran the harness has already seen these pass.
+            $violations = ModuleLint::checkDir($staging . '/' . $code, $code);
+            if ($violations !== []) {
+                self::rmdir($staging);
+                throw new \RuntimeException(t('modules.err_contract', $code, "
+• " . implode("
+• ", $violations)));
+            }
+
             if (!@rename($staging . '/' . $code, $dest)) {
                 self::rmdir($staging);
                 throw new \RuntimeException(t('modules.err_extract'));
@@ -170,17 +182,7 @@ final class ModuleArchive
      */
     public static function exportData(string $code): ?string
     {
-        $sqlFile = ModuleRegistry::dir($code) . '/uninstall.sql';
-        if (!is_file($sqlFile)) {
-            return null;
-        }
-
-        preg_match_all(
-            '/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?`?([A-Za-z0-9_]+)`?/i',
-            (string) file_get_contents($sqlFile),
-            $m
-        );
-        $tables = array_unique($m[1] ?? []);
+        $tables = ModuleRegistry::ownedTables($code);
         if ($tables === []) {
             return null;
         }
