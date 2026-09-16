@@ -198,6 +198,7 @@ return [
     'cust.report_back'             => 'დამკვეთებში დაბრუნება',
 
     // ანალიტიკის მიმოხილვა (/analytics/overview, 4.92)
+    'analytics.filter_period' => 'პერიოდი',
     'analytics.filter_from'        => 'დან',
     'analytics.filter_to'          => 'მდე',
     'analytics.filter_granularity' => 'დაჯგუფება',

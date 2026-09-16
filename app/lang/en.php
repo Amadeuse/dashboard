@@ -198,6 +198,7 @@ return [
     'cust.report_back'             => 'Back to customers',
 
     // Analytics overview (/analytics/overview, 4.92)
+    'analytics.filter_period' => 'Period',
     'analytics.filter_from'        => 'From',
     'analytics.filter_to'          => 'To',
     'analytics.filter_granularity' => 'Group by',

@@ -38,13 +38,21 @@ $granularityLabel = static fn(string $bucket): string => match ($granularity) {
 <div class="card ds-card mb-3">
   <div class="card-body">
     <form method="get" action="/analytics/overview" class="row g-3 align-items-end">
-      <div class="col-sm-6 col-md-3">
-        <label for="af-from" class="form-label small mb-1"><?= t('analytics.filter_from') ?></label>
-        <input type="date" class="form-control" id="af-from" name="from" value="<?= e($from) ?>" max="<?= e($to) ?>">
-      </div>
-      <div class="col-sm-6 col-md-3">
-        <label for="af-to" class="form-label small mb-1"><?= t('analytics.filter_to') ?></label>
-        <input type="date" class="form-control" id="af-to" name="to" value="<?= e($to) ?>" max="<?= e(date('Y-m-d')) ?>">
+      <div class="col-sm-12 col-md-6">
+        <label for="af-range" class="form-label small mb-1"><?= t('analytics.filter_period') ?></label>
+        <?php // The same ds-date-range component /orders uses (flatpickr range
+              // mode, public/vendor/date-range) instead of two native
+              // <input type="date">s — one calendar, themed, Georgian locale.
+              // The hidden from/to inputs keep the ?from=&to= contract
+              // AnalyticsController already reads, so nothing server-side
+              // changed. data-max: no analytics of the future. ?>
+        <div class="ds-date-range" data-ds-date-range data-max="<?= e(date('Y-m-d')) ?>">
+          <i class="bi bi-calendar3 ds-date-range-icon"></i>
+          <input type="text" class="ds-date-range-input" id="af-range" data-ds-date-range-display
+                 placeholder="<?= t('analytics.filter_period') ?>" aria-label="<?= t('analytics.filter_period') ?>">
+          <input type="hidden" name="from" value="<?= e($from) ?>" data-ds-date-range-from>
+          <input type="hidden" name="to" value="<?= e($to) ?>" data-ds-date-range-to>
+        </div>
       </div>
       <div class="col-sm-6 col-md-3">
         <label for="af-granularity" class="form-label small mb-1"><?= t('analytics.filter_granularity') ?></label>

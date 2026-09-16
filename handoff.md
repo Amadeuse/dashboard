@@ -6938,6 +6938,29 @@ panel `/invoices?edit=1`-ზე, **„მოდულები → შაბლ�
 „ბაზა — ModuleDb". ka/en **610 = 610**.
 
 
+### 4.120 native `<input type="date">` → flatpickr ყველგან
+
+user: „ყველგან სადაც `type="date"`-ია, flatpickr გამოიყენე."
+
+Ძებნამ **ერთი** ადგილი იპოვა: `/analytics/overview`-ის ფილტრი — ორი
+native input, `from`/`to`. Ეს ზუსტად ის წყვილია, რასაც `ds-date-range`
+კომპონენტი უკვე აკეთებს `/orders`-ზე (`4.106`). Ახალი კოდი არ
+დაწერილა — კომპონენტი გამოვიყენე: ორი `col-md-3` → ერთი `col-md-6`,
+ერთი ლეიბლი `analytics.filter_period` („პერიოდი"). Hidden `from`/`to`
+inputs `?from=&to=` კონტრაქტს ინარჩუნებს, `AnalyticsController`
+უცვლელია.
+
+**გადამოწმებულია ცოცხლად** (SuperUser → tenant 1): `input[type=date]`
+გვერდზე — **0**; flatpickr მიბმული, `mode: range`, `showMonths: 2`,
+ლოკალი ქართული (`იანვარი`); default 30-დღიანი დიაპაზონი ჩანს
+(`2026-08-18 — 2026-09-16`); `setDate()` → hidden inputs განახლდა →
+`?from=2026-09-01&to=2026-09-10&granularity=daily` → სერვერმა იგივე
+დააბრუნა. Შეცდომა არაა.
+
+`analytics.filter_from`/`filter_to` გასაღებები რჩება — გამოუყენებელი,
+უვნებელი.
+
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.
