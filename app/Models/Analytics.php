@@ -68,7 +68,11 @@ final class Analytics
      * ('2026-W36'). Keys match MySQL's own DATE_FORMAT for the join: %Y-%m-%d,
      * %x-W%v (ISO year-week, Monday-first — PHP's 'o-\WW'), %Y-%m.
      *
-     * @return list<array{key:string, start:string, end:string, total:float}>
+     * Each point also carries the invoice count, so the "how many / how big"
+     * chart (4.125) rides on the same buckets and the same query — average
+     * is total/count, done in the view, zero where count is zero.
+     *
+     * @return list<array{key:string, start:string, end:string, total:float, count:int}>
      */
     public static function revenueTrend(array $userIds, string $from, string $to, string $granularity): array
     {
@@ -78,20 +82,21 @@ final class Analytics
             default   => '%Y-%m-%d',
         };
         $ph     = self::placeholders($userIds);
-        $totals = [];
+        $byKey = [];
         foreach (Db::all(
-            "SELECT DATE_FORMAT(issue_date, '$format') AS bucket, SUM(total) AS total
+            "SELECT DATE_FORMAT(issue_date, '$format') AS bucket, SUM(total) AS total, COUNT(*) AS cnt
                FROM invoices
               WHERE created_by IN ($ph) AND issue_date BETWEEN ? AND ?
               GROUP BY bucket",
             [...$userIds, $from, $to]
         ) as $r) {
-            $totals[$r['bucket']] = round((float) $r['total'], 2);
+            $byKey[$r['bucket']] = [round((float) $r['total'], 2), (int) $r['cnt']];
         }
 
         $out = [];
         foreach (self::buckets($from, $to, $granularity) as [$key, $start, $end]) {
-            $out[] = ['key' => $key, 'start' => $start, 'end' => $end, 'total' => $totals[$key] ?? 0.0];
+            [$total, $count] = $byKey[$key] ?? [0.0, 0];
+            $out[] = ['key' => $key, 'start' => $start, 'end' => $end, 'total' => $total, 'count' => $count];
         }
 
         return $out;

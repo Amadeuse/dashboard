@@ -119,7 +119,7 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
   <!-- Revenue trend — no h-100: the user doesn't want it stretched down to
        the height of the two cards beside it (4.124); it ends where the
        chart ends. -->
-  <div class="col-lg-8">
+  <div class="col-lg-8 d-flex flex-column gap-3">
     <div class="card ds-card">
       <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.chart_title') ?></h2></div>
       <div class="card-body">
@@ -131,6 +131,39 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
         <?php else: ?>
           <canvas id="analyticsTrendChart" height="90"></canvas>
         <?php endif; ?>
+      </div>
+    </div>
+
+    <!-- Under the trend (4.125): the two questions it leaves open. Left —
+         how concentrated is revenue (top-5 customers vs everyone else, a
+         doughnut: the list beside it gives amounts, not shares). Right — is
+         revenue moving because of more invoices or bigger ones (count as
+         bars, average as a line, on the trend's own buckets). Both on the
+         same $trend / $topCustomers data the page already has. -->
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card ds-card h-100">
+          <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.concentration_title') ?></h2></div>
+          <div class="card-body">
+            <?php if (!$hasRevenue): ?>
+              <div class="text-secondary small"><?= t('analytics.empty') ?></div>
+            <?php else: ?>
+              <canvas id="analyticsConcentrationChart" height="180"></canvas>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card ds-card h-100">
+          <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.volume_title') ?></h2></div>
+          <div class="card-body">
+            <?php if (!$hasRevenue): ?>
+              <div class="text-secondary small"><?= t('analytics.empty') ?></div>
+            <?php else: ?>
+              <canvas id="analyticsVolumeChart" height="180"></canvas>
+            <?php endif; ?>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -182,6 +215,31 @@ if ($hasRevenue) {
     $jsLabels = json_encode(array_map($bucketLabel, $trend), JSON_UNESCAPED_UNICODE);
     $jsData   = json_encode(array_column($trend, 'total'));
 
+    // Volume: count per bucket, and average = total/count (0 where nothing
+    // was invoiced, so the line sits on the axis instead of leaving a hole).
+    $jsCounts   = json_encode(array_column($trend, 'count'));
+    $jsAverages = json_encode(array_map(
+        static fn(array $b): float => $b['count'] > 0 ? round($b['total'] / $b['count'], 2) : 0.0,
+        $trend
+    ));
+
+    // Concentration: the top-5 slices plus one "everyone else" slice, from
+    // the period total the summary already computed. Names escaped here
+    // rather than trusted into JS.
+    $topSum   = array_sum(array_column($topCustomers, 'total'));
+    $others   = max(0.0, $summary['total'] - $topSum);
+    $jsSliceLabels = json_encode(array_merge(
+        array_map(static fn(array $c): string => $c['name'], $topCustomers),
+        $others > 0 ? [t('analytics.concentration_others')] : []
+    ), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
+    $jsSliceData = json_encode(array_merge(
+        array_map(static fn(array $c): float => round($c['total'], 2), $topCustomers),
+        $others > 0 ? [round($others, 2)] : []
+    ));
+    $jsOthersIndex = $others > 0 ? count($topCustomers) : -1;
+    $jsVolumeCountLabel = addslashes(t('analytics.volume_count'));
+    $jsVolumeAvgLabel   = addslashes(t('analytics.volume_avg'));
+
     // heredoc below interpolates variables, not calls — resolve the URL first.
     $chartJs = ds_asset('/vendor/chartjs/js/chart.umd.min.js');
     $scripts = <<<HTML
@@ -204,6 +262,50 @@ if ($hasRevenue) {
       scales: {
         x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0 } },
         y: { grid: { color: 'rgba(148,163,184,.15)' }, beginAtZero: true },
+      },
+    }
+  });
+
+  // ---- Customer concentration (4.125) ----------------------------------
+  // Slices go from the full primary down through lighter tints, one step per
+  // customer; "everyone else" is neutral grey so it reads as the remainder,
+  // not as another customer. rgba over --bs-primary-rgb keeps it on-theme.
+  const primaryRgb = getComputedStyle(document.documentElement).getPropertyValue('--bs-primary-rgb').trim() || '13,110,253';
+  const slices = $jsSliceData;
+  const othersIndex = $jsOthersIndex;
+  const sliceColors = slices.map((_, i) =>
+    i === othersIndex ? 'rgba(148,163,184,.45)' : 'rgba(' + primaryRgb + ',' + (1 - i * 0.16).toFixed(2) + ')');
+  const total = slices.reduce((a, b) => a + b, 0);
+  new Chart(document.getElementById('analyticsConcentrationChart'), {
+    type: 'doughnut',
+    data: { labels: $jsSliceLabels, datasets: [{ data: slices, backgroundColor: sliceColors, borderWidth: 2 }] },
+    options: {
+      cutout: '62%',
+      plugins: {
+        legend: { position: 'right', labels: { boxWidth: 10, usePointStyle: true, pointStyle: 'circle' } },
+        tooltip: { callbacks: { label: (c) => ' ' + c.label + ': ' + (total ? Math.round(c.parsed / total * 100) : 0) + '%' } },
+      },
+    }
+  });
+
+  // ---- Volume: how many, how big (4.125) ---------------------------------
+  // Same buckets as the revenue trend. Count as bars on the left axis, the
+  // average invoice as a line on the right — two scales, because a count of
+  // 12 and an average of 4 800 ₾ share no useful axis.
+  new Chart(document.getElementById('analyticsVolumeChart'), {
+    data: {
+      labels: $jsLabels,
+      datasets: [
+        { type: 'bar',  label: '$jsVolumeCountLabel', data: $jsCounts, backgroundColor: 'rgba(' + primaryRgb + ',.35)', borderRadius: 4, maxBarThickness: 28, yAxisID: 'count', order: 2 },
+        { type: 'line', label: '$jsVolumeAvgLabel', data: $jsAverages, borderColor: primary, backgroundColor: primary, tension: .3, pointRadius: 2, yAxisID: 'avg', order: 1 },
+      ],
+    },
+    options: {
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } } },
+      scales: {
+        x:     { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0 } },
+        count: { position: 'left',  beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(148,163,184,.15)' } },
+        avg:   { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } },
       },
     }
   });
