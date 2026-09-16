@@ -42,11 +42,6 @@
     "section": "nav.system",
     "items": [
       {
-        "label": "nav.design_system",
-        "icon": "bi-palette-fill",
-        "url": "/style-guide"
-      },
-      {
         "label": "nav.settings",
         "icon": "bi-gear-fill",
         "children": [

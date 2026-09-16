@@ -66,7 +66,6 @@ final class ActivityLog
      */
     private const LABELS = [
         'GET /'                          => 'superuser.act_dashboard',
-        'GET /style-guide'               => 'superuser.act_style_guide',
         'GET /customers'                 => 'superuser.act_customers_view',
         'POST /customers'                => 'superuser.act_customers_save',
         'GET /customers/report'          => 'superuser.act_customer_report',

@@ -399,8 +399,6 @@ return [
     'help.f_profile_d'         => 'Name, phone, avatar.',
     'help.f_profile_settings'  => 'Profile settings',
     'help.f_profile_settings_d'=> 'Change password, language.',
-    'help.f_style_guide'       => 'Design system',
-    'help.f_style_guide_d'     => 'Every component and token on one page - the living reference.',
 
     'help.f_login'     => 'Sign in with a password',
     'help.f_login_d'   => 'Email and password; remember-me for the browser, an idle timeout for the session.',
@@ -693,7 +691,6 @@ return [
     'superuser.activity_col_ip'      => 'IP',
     'superuser.activity_empty'       => 'No activity recorded yet.',
     'superuser.act_dashboard'              => 'Viewed the dashboard',
-    'superuser.act_style_guide'            => 'Viewed the design system',
     'superuser.act_customers_view'         => 'Viewed customers',
     'superuser.act_customers_save'         => 'Saved a customer',
     'superuser.act_customer_report'        => 'Viewed a customer report',

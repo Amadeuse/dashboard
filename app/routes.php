@@ -14,7 +14,6 @@ use App\Controllers\ModuleController;
 use App\Controllers\OrganizationController;
 use App\Controllers\ProductController;
 use App\Controllers\ProfileController;
-use App\Controllers\StyleGuideController;
 use App\Controllers\SuperUserController;
 use App\Controllers\UserController;
 
@@ -34,7 +33,6 @@ use App\Controllers\UserController;
  */
 
 $router->get('/', [DashboardController::class, 'index']);
-$router->get('/style-guide', [StyleGuideController::class, 'index']);
 $router->get('/analytics/overview', [AnalyticsController::class, 'overview']);
 
 $router->get('/customers', [CustomerController::class, 'index']);

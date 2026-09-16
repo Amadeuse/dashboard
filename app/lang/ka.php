@@ -402,8 +402,6 @@ return [
     'help.f_profile_d'         => 'სახელი, ტელეფონი, ავატარი.',
     'help.f_profile_settings'  => 'პროფილის პარამეტრები',
     'help.f_profile_settings_d'=> 'პაროლის შეცვლა, ენა.',
-    'help.f_style_guide'       => 'დიზაინ-სისტემა',
-    'help.f_style_guide_d'     => 'ყველა კომპონენტი და ტოკენი ერთ გვერდზე — ცოცხალი საცნობარო.',
 
     'help.f_login'     => 'შესვლა პაროლით',
     'help.f_login_d'   => 'ელფოსტა და პაროლი; „დამიმახსოვრე" ბრაუზერისთვის, უმოქმედობის ვადა სესიისთვის.',
@@ -696,7 +694,6 @@ return [
     'superuser.activity_col_ip'      => 'IP',
     'superuser.activity_empty'       => 'აქტივობა არ დაფიქსირებულა.',
     'superuser.act_dashboard'              => 'სამუშაო მაგიდის ნახვა',
-    'superuser.act_style_guide'            => 'დიზაინის სისტემის ნახვა',
     'superuser.act_customers_view'         => 'დამკვეთების ნახვა',
     'superuser.act_customers_save'         => 'დამკვეთის შენახვა',
     'superuser.act_customer_report'        => 'დამკვეთის რეპორტის ნახვა',

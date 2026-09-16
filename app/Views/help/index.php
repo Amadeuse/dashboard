@@ -55,7 +55,6 @@ $sections = [
             ['bi-puzzle',       'help.f_modules',      '/settings/modules'],
             ['bi-person-circle','help.f_profile',      '/profile'],
             ['bi-sliders',      'help.f_profile_settings', '/profile/settings'],
-            ['bi-palette',      'help.f_style_guide',  '/style-guide'],
         ],
     ],
     [
