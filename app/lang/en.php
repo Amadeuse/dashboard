@@ -427,8 +427,7 @@ return [
     'help.mod_security_1'     => 'Only install modules whose author you trust.',
     'help.mod_security_2'     => 'The author is responsible for csrf_verify() on every POST, and an ownership check on every id.',
     'help.mod_security_3'     => 'Upload validation protects against a malicious archive, not malicious code.',
-
-    'help.mod_reference' => 'Live reference: app/Modules/InvoiceWorkflow/ - a module written to every rule above.',
+    'help.mod_reference' => 'Reference: the InvoiceWorkflow module in the modules.loc workshop (app/Modules/InvoiceWorkflow/) - written to every rule above.',
     'superuser.act_module_upload'       => 'Uploaded a module',
     'superuser.act_module_uninstall'    => 'Uninstalled a module',
     'superuser.act_module_remove_files' => 'Deleted module files',

@@ -430,8 +430,7 @@ return [
     'help.mod_security_1'     => 'დააინსტალირეთ მხოლოდ ის მოდული, რომლის ავტორსაც ენდობით.',
     'help.mod_security_2'     => 'ავტორის მოვალეობაა: csrf_verify() ყველა POST-ზე და მფლობელობის შემოწმება ყოველი id-სთვის.',
     'help.mod_security_3'     => 'ატვირთვის ვალიდაცია საშიში არქივისგან იცავს, არა საშიში კოდისგან.',
-
-    'help.mod_reference' => 'ცოცხალი ნიმუში: app/Modules/InvoiceWorkflow/ — ყველა ზემოთ აღწერილი წესით დაწერილი მოდული.',
+    'help.mod_reference' => 'ნიმუში: InvoiceWorkflow მოდული modules.loc სახელოსნოში (app/Modules/InvoiceWorkflow/) — ყველა ზემოთ აღწერილი წესით დაწერილი.',
     'superuser.act_module_upload'       => 'მოდულის ატვირთვა',
     'superuser.act_module_uninstall'    => 'მოდულის დეინსტალაცია',
     'superuser.act_module_remove_files' => 'მოდულის ფაილების წაშლა',
