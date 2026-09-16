@@ -120,7 +120,7 @@ final class InvoiceController extends Controller
             'title'         => t('page.invoices') . ' · ' . app_name(),
             'customers'     => Customer::all($ruler),
             'products'      => Product::all($ruler),
-            'units'         => Unit::all(),
+            'units'         => Unit::all($ruler),
             'org'           => $org,
             'invoicePrefix' => $invoicePrefix,
             'previewNumber' => $previewNumber,

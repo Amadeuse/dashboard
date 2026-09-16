@@ -21,7 +21,7 @@ final class ProductController extends Controller
         $this->view('products', [
             'title'   => t('page.products') . ' · ' . app_name(),
             'rows'    => $rows,
-            'units'   => Unit::all(),
+            'units'   => Unit::all($ruler),
             'productTypes' => ProductType::all($ruler),
             'currency' => (string) Organization::get($ruler)['currency'],
             'total'   => count($rows),

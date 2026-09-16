@@ -34,8 +34,12 @@ final class ProductType
         return (int) $pdo->lastInsertId();
     }
 
-    public static function update(int $id, string $name, int $ruler): void
+    /** Returns the rows changed — 0 for another tenant's id, which the controller answers with 404. */
+    public static function update(int $id, string $name, int $ruler): int
     {
-        Db::conn()->prepare('UPDATE product_types SET name = ? WHERE id = ? AND ruler = ?')->execute([$name, $id, $ruler]);
+        $st = Db::conn()->prepare('UPDATE product_types SET name = ? WHERE id = ? AND ruler = ?');
+        $st->execute([$name, $id, $ruler]);
+
+        return $st->rowCount();
     }
 }
