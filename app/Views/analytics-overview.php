@@ -139,8 +139,12 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
          doughnut: the list beside it gives amounts, not shares). Right — is
          revenue moving because of more invoices or bigger ones (count as
          bars, average as a line, on the trend's own buckets). Both on the
-         same $trend / $topCustomers data the page already has. -->
-    <div class="row g-3">
+         same $trend / $topCustomers data the page already has.
+         mt-auto (4.126): both columns of the outer row are the same height
+         (flex stretch), so pushing each column's last card to its bottom
+         puts this row and "top products" on one baseline — without
+         stretching any card, which the user didn't want (4.124). -->
+    <div class="row g-3 mt-auto">
       <div class="col-md-6">
         <div class="card ds-card h-100">
           <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.concentration_title') ?></h2></div>
@@ -189,7 +193,7 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
       </div>
     </div>
 
-    <div class="card ds-card">
+    <div class="card ds-card mt-auto">
       <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('cust.report_top_products') ?></h2></div>
       <div class="card-body">
         <?php if ($topProducts === []): ?>
