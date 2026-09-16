@@ -115,66 +115,36 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
   </div>
 </div>
 
-<div class="row g-3">
-  <!-- Revenue trend — no h-100: the user doesn't want it stretched down to
-       the height of the two cards beside it (4.124); it ends where the
-       chart ends. -->
-  <div class="col-lg-8 d-flex flex-column gap-3">
-    <div class="card ds-card">
+<!-- Two rows, each a set of equal-height cards (4.127). The lists (five
+     rows each) set a row's height; the chart cards take it — their canvases
+     fill the card (.ds-chart-fill + maintainAspectRatio:false in the script
+     below) instead of dictating a height from an aspect ratio. That is what
+     makes the rows close with no gap at any viewport width: the earlier
+     column layout could only ever bottom-align by leaving space above the
+     last card (4.126), because a fixed-ratio chart never happens to be
+     exactly as tall as a five-row list.
+
+     Row 1 — the trend beside the customers it is made of.
+     Row 2 — the user's own grouping: the two charts added in 4.125 and the
+     top-products list "on one line". -->
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">
+    <div class="card ds-card h-100">
       <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.chart_title') ?></h2></div>
-      <div class="card-body">
+      <div class="card-body d-flex flex-column">
         <?php if (!$hasRevenue): ?>
           <div class="text-center text-secondary py-5">
             <i class="bi bi-bar-chart d-block mb-2" style="font-size:2rem;opacity:.4;"></i>
             <?= t('analytics.empty') ?>
           </div>
         <?php else: ?>
-          <canvas id="analyticsTrendChart" height="90"></canvas>
+          <div class="ds-chart-fill"><canvas id="analyticsTrendChart"></canvas></div>
         <?php endif; ?>
       </div>
     </div>
-
-    <!-- Under the trend (4.125): the two questions it leaves open. Left —
-         how concentrated is revenue (top-5 customers vs everyone else, a
-         doughnut: the list beside it gives amounts, not shares). Right — is
-         revenue moving because of more invoices or bigger ones (count as
-         bars, average as a line, on the trend's own buckets). Both on the
-         same $trend / $topCustomers data the page already has.
-         mt-auto (4.126): both columns of the outer row are the same height
-         (flex stretch), so pushing each column's last card to its bottom
-         puts this row and "top products" on one baseline — without
-         stretching any card, which the user didn't want (4.124). -->
-    <div class="row g-3 mt-auto">
-      <div class="col-md-6">
-        <div class="card ds-card h-100">
-          <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.concentration_title') ?></h2></div>
-          <div class="card-body">
-            <?php if (!$hasRevenue): ?>
-              <div class="text-secondary small"><?= t('analytics.empty') ?></div>
-            <?php else: ?>
-              <canvas id="analyticsConcentrationChart" height="180"></canvas>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
-      <div class="col-md-6">
-        <div class="card ds-card h-100">
-          <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.volume_title') ?></h2></div>
-          <div class="card-body">
-            <?php if (!$hasRevenue): ?>
-              <div class="text-secondary small"><?= t('analytics.empty') ?></div>
-            <?php else: ?>
-              <canvas id="analyticsVolumeChart" height="180"></canvas>
-            <?php endif; ?>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
-
-  <!-- Top customers + top products -->
-  <div class="col-lg-4 d-flex flex-column gap-3">
-    <div class="card ds-card">
+  <div class="col-lg-4">
+    <div class="card ds-card h-100">
       <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.top_customers') ?></h2></div>
       <div class="card-body">
         <?php if ($topCustomers === []): ?>
@@ -192,8 +162,36 @@ $hasRevenue = array_sum(array_column($trend, 'total')) > 0;
         <?php endif; ?>
       </div>
     </div>
+  </div>
+</div>
 
-    <div class="card ds-card mt-auto">
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card ds-card h-100">
+      <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.concentration_title') ?></h2></div>
+      <div class="card-body d-flex flex-column">
+        <?php if (!$hasRevenue): ?>
+          <div class="text-secondary small"><?= t('analytics.empty') ?></div>
+        <?php else: ?>
+          <div class="ds-chart-fill"><canvas id="analyticsConcentrationChart"></canvas></div>
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card ds-card h-100">
+      <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('analytics.volume_title') ?></h2></div>
+      <div class="card-body d-flex flex-column">
+        <?php if (!$hasRevenue): ?>
+          <div class="text-secondary small"><?= t('analytics.empty') ?></div>
+        <?php else: ?>
+          <div class="ds-chart-fill"><canvas id="analyticsVolumeChart"></canvas></div>
+        <?php endif; ?>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card ds-card h-100">
       <div class="card-header"><h2 class="h6 fw-bold mb-0"><?= t('cust.report_top_products') ?></h2></div>
       <div class="card-body">
         <?php if ($topProducts === []): ?>
@@ -262,6 +260,7 @@ if ($hasRevenue) {
       datasets: [{ data: $jsData, backgroundColor: primary, borderRadius: 4, maxBarThickness: 40 }],
     },
     options: {
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0 } },
@@ -284,6 +283,7 @@ if ($hasRevenue) {
     type: 'doughnut',
     data: { labels: $jsSliceLabels, datasets: [{ data: slices, backgroundColor: sliceColors, borderWidth: 2 }] },
     options: {
+      maintainAspectRatio: false,
       cutout: '62%',
       plugins: {
         legend: { position: 'right', labels: { boxWidth: 10, usePointStyle: true, pointStyle: 'circle' } },
@@ -305,6 +305,7 @@ if ($hasRevenue) {
       ],
     },
     options: {
+      maintainAspectRatio: false,
       plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, usePointStyle: true } } },
       scales: {
         x:     { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 0 } },

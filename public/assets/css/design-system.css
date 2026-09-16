@@ -354,6 +354,28 @@ details.card { interpolate-size: allow-keywords; }
   border-top-right-radius: calc(var(--ds-radius) - 1px);
 }
 
+/* A chart that takes its card's height instead of setting it (4.127) —
+   analytics-overview.php. The card is h-100 in a row whose height comes
+   from a sibling (a five-row list); this wrapper grows to fill the card
+   body and Chart.js (maintainAspectRatio:false) sizes the canvas to it.
+   position:relative + min-height:0 are what Chart.js needs to resize
+   without the canvas's own intrinsic size feeding back into the layout;
+   the floor keeps a chart legible when nothing beside it is tall. */
+.ds-chart-fill {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 200px;
+}
+/* Out of the flow entirely: a canvas in the flow still reports an intrinsic
+   size (Chart.js's fallback aspect ratio — 1:1 for a doughnut), which made
+   the doughnut card taller than the list beside it and dragged the whole row
+   up with it. Absolutely positioned, the canvas takes the wrapper's size and
+   can never set it. */
+.ds-chart-fill > canvas {
+  position: absolute;
+  inset: 0;
+}
+
 /* A .ds-card wrapped in this — dashboard.php's stat cards — lifts on hover to read as clickable. */
 .ds-card-link {
   display: block;
