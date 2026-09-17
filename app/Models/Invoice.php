@@ -20,6 +20,38 @@ final class Invoice
 {
     public const DOCUMENT_STATES = ['draft', 'final'];
 
+    public const DISCOUNT_TYPES = ['percent', 'amount'];
+
+    /**
+     * The invoice's final amount from its line subtotal and discount (4.135).
+     * One formula, used by save() when writing `total` and by every view that
+     * shows the summary block — so the form's live JS, the preview, the PDF
+     * and the stored figure can never disagree by a rounding.
+     *
+     * Prices are VAT-inclusive, so this is the whole story: the discount
+     * comes off the total, and the informational VAT line is derived from
+     * whatever is left. Never below zero — an amount larger than the subtotal
+     * is clamped, not refused (validate() already rejects it; this is the
+     * last line of defence for a stored row edited by hand).
+     */
+    public static function applyDiscount(float $subtotal, string $type, float $value): float
+    {
+        $off = $type === 'percent' ? $subtotal * $value / 100 : $value;
+
+        return round(max(0.0, $subtotal - $off), 2);
+    }
+
+    /** The subtotal before discount — Σ quantity × price over the given items. */
+    public static function subtotal(array $items): float
+    {
+        $sum = 0.0;
+        foreach ($items as $item) {
+            $sum += (float) $item['quantity'] * (float) $item['unit_price'];
+        }
+
+        return round($sum, 2);
+    }
+
     /**
      * "{prefix} {issue_date} {0004}" — the one place this format is written,
      * every view calls this instead of re-formatting. The number itself is
@@ -214,10 +246,7 @@ final class Invoice
         ?array $tenantMemberIds = null,
         ?int $startNumber = null,
     ): ?int {
-        $total = 0.0;
-        foreach ($clean['items'] as $item) {
-            $total += (float) $item['quantity'] * (float) $item['unit_price'];
-        }
+        $total = self::applyDiscount(self::subtotal($clean['items']), $clean['discount_type'], (float) $clean['discount_value']);
 
         $conn = Db::conn();
         $conn->beginTransaction();
@@ -235,9 +264,9 @@ final class Invoice
                 return null;
             }
 
-            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, document_state = ?, is_zero = ?, is_recurring = ?, notes = ? WHERE id = ?')
+            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, discount_type = ?, discount_value = ?, document_state = ?, is_zero = ?, is_recurring = ?, notes = ? WHERE id = ?')
                 ->execute([
-                    (int) $clean['customer_id'], $total, $clean['document_state'],
+                    (int) $clean['customer_id'], $total, $clean['discount_type'], $clean['discount_value'], $clean['document_state'],
                     $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $editingId,
                 ]);
             $conn->prepare('DELETE FROM invoice_items WHERE invoice_id = ?')->execute([$editingId]);
@@ -251,9 +280,9 @@ final class Invoice
             $sequenceNumber = $maxSeq !== false && $maxSeq !== null ? max((int) $maxSeq + 1, (int) $startNumber) : (int) $startNumber;
 
             $conn->prepare(
-                'INSERT INTO invoices (sequence_number, customer_id, issue_date, total, document_state, is_zero, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO invoices (sequence_number, customer_id, issue_date, total, discount_type, discount_value, document_state, is_zero, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
-                $sequenceNumber, (int) $clean['customer_id'], date('Y-m-d'), $total,
+                $sequenceNumber, (int) $clean['customer_id'], date('Y-m-d'), $total, $clean['discount_type'], $clean['discount_value'],
                 $clean['document_state'], $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $createdBy,
                 bin2hex(random_bytes(32)),
             ]);
@@ -308,8 +337,20 @@ final class Invoice
             'is_zero'        => isset($input['is_zero']) ? 1 : 0,
             'is_recurring'   => isset($input['is_recurring']) ? 1 : 0,
             'notes'          => trim((string) ($input['notes'] ?? '')),
+            'discount_type'  => in_array($input['discount_type'] ?? '', self::DISCOUNT_TYPES, true) ? $input['discount_type'] : 'percent',
+            'discount_value' => trim((string) ($input['discount_value'] ?? '')),
         ];
         $errors = [];
+
+        // Empty means none. Otherwise a non-negative number; a percent no more
+        // than 100. An amount is checked against the subtotal once the items
+        // are known, below.
+        if ($clean['discount_value'] === '') {
+            $clean['discount_value'] = '0';
+        } elseif (!is_numeric($clean['discount_value']) || (float) $clean['discount_value'] < 0
+            || ($clean['discount_type'] === 'percent' && (float) $clean['discount_value'] > 100)) {
+            $errors['discount_value'] = terr('inv.err_discount_invalid');
+        }
 
         if (!ctype_digit($clean['customer_id']) || self::missing('customers', (int) $clean['customer_id'], $ruler)) {
             $errors['customer_id'] = terr('inv.err_customer_required');
@@ -356,6 +397,11 @@ final class Invoice
 
         if ($items === [] && !isset($errors['items_0'])) {
             $errors['items'] = terr('inv.err_items_required');
+        }
+
+        if ($clean['discount_type'] === 'amount' && !isset($errors['discount_value'])
+            && (float) $clean['discount_value'] > self::subtotal($items)) {
+            $errors['discount_value'] = terr('inv.err_discount_exceeds');
         }
 
         $clean['items'] = $items;

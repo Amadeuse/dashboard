@@ -32,6 +32,15 @@ if ($customerTaxId === '0') {
 // pdf/invoice.php both already use: vat = total * rate / (100 + rate).
 $vatRate        = (float) ($org['vat_rate'] ?? 18);
 $vatAmount      = (float) $invoice['total'] * $vatRate / (100 + $vatRate);
+// Discount (4.135): the subtotal is Σ lines, the stored total is what's
+// left after the discount — shown as two extra lines only when a discount
+// exists, so an undiscounted invoice looks exactly as it did.
+$subtotal    = \App\Models\Invoice::subtotal($items);
+$discountOff = round($subtotal - (float) $invoice['total'], 2);
+$hasDiscount = (float) $invoice['discount_value'] > 0 && $discountOff > 0;
+$discountLabel = t('inv.discount') . ((string) $invoice['discount_type'] === 'percent'
+    ? ' (' . rtrim(rtrim(number_format((float) $invoice['discount_value'], 2, '.', ''), '0'), '.') . '%)'
+    : '');
 $vatRateDisplay = rtrim(rtrim(number_format($vatRate, 2), '0'), '.') ?: '0';
 $uploadUrl      = '/assets/uploads/organization/';
 ?>
@@ -98,6 +107,16 @@ $uploadUrl      = '/assets/uploads/organization/';
   </div>
   <div class="col-md-5">
     <div class="border rounded-3 p-3">
+      <?php if ($hasDiscount): ?>
+        <div class="d-flex justify-content-between small text-secondary mb-2">
+          <span><?= t('inv.subtotal') ?>:</span>
+          <span><?= e(money($subtotal, $org['currency'])) ?></span>
+        </div>
+        <div class="d-flex justify-content-between small text-secondary mb-2">
+          <span><?= e($discountLabel) ?>:</span>
+          <span>&minus; <?= e(money($discountOff, $org['currency'])) ?></span>
+        </div>
+      <?php endif; ?>
       <div class="d-flex justify-content-between small text-secondary mb-2">
         <span><?= t('inv.vat') ?> (<?= e($vatRateDisplay) ?>%):</span>
         <span><?= e(money($vatAmount, $org['currency'])) ?></span>

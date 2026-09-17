@@ -16,6 +16,15 @@
  * or a logged-in tenant viewer's own "ბეჭდვა" navigation.
  */
 $uploadUrl = '/assets/uploads/organization/';
+// Discount (4.135): the subtotal is Σ lines, the stored total is what's
+// left after the discount — shown as two extra lines only when a discount
+// exists, so an undiscounted invoice looks exactly as it did.
+$subtotal    = \App\Models\Invoice::subtotal($items);
+$discountOff = round($subtotal - (float) $invoice['total'], 2);
+$hasDiscount = (float) $invoice['discount_value'] > 0 && $discountOff > 0;
+$discountLabel = t('inv.discount') . ((string) $invoice['discount_type'] === 'percent'
+    ? ' (' . rtrim(rtrim(number_format((float) $invoice['discount_value'], 2, '.', ''), '0'), '.') . '%)'
+    : '');
 $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
 ?>
 
@@ -59,6 +68,16 @@ $fmtQty    = static fn(string $q): string => rtrim(rtrim($q, '0'), '.') ?: '0';
           <?php endforeach; ?>
         </tbody>
         <tfoot>
+          <?php if ($hasDiscount): ?>
+          <tr class="text-secondary small">
+            <td colspan="3" class="text-end"><?= t('inv.subtotal') ?></td>
+            <td class="text-end"><?= e(money($subtotal, $org['currency'])) ?></td>
+          </tr>
+          <tr class="text-secondary small">
+            <td colspan="3" class="text-end"><?= e($discountLabel) ?></td>
+            <td class="text-end">&minus; <?= e(money($discountOff, $org['currency'])) ?></td>
+          </tr>
+          <?php endif; ?>
           <tr class="fw-bold border-top">
             <td colspan="3" class="text-end"><?= t('inv.total') ?></td>
             <td class="text-end"><?= e(money((float) $invoice['total'], $org['currency'])) ?></td>

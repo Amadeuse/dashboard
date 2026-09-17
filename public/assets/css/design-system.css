@@ -376,6 +376,14 @@ details.card { interpolate-size: allow-keywords; }
   inset: 0;
 }
 
+/* The discount control on the invoice form (4.135): a small input-group
+   (value + %/₾ toggle) sitting on the right of its summary row. input-group
+   defaults to 100% width; capped here so the label beside it keeps its
+   place, and the two toggle buttons stay as narrow as their glyph. */
+.ds-discount-group { width: auto; max-width: 11rem; flex: 0 0 auto; }
+.ds-discount-group .form-control { min-width: 4.5rem; }
+.ds-discount-group .btn { padding-inline: .6rem; }
+
 /* A .ds-card wrapped in this — dashboard.php's stat cards — lifts on hover to read as clickable. */
 .ds-card-link {
   display: block;

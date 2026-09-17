@@ -259,11 +259,41 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
                           placeholder="<?= e(t('inv.notes')) ?>"><?= $val('notes') ?></textarea>
               </div>
               <div class="col-md-4">
-                <div class="d-flex justify-content-between text-secondary small pb-2 border-bottom">
+                <?php // Discount (4.135): invoice-level, percent or amount, on
+                      // the VAT-inclusive subtotal. The two hidden-ish states
+                      // (type + value) post as discount_type/discount_value;
+                      // Invoice::validate() bounds them, Invoice::applyDiscount()
+                      // is the one formula — the JS below mirrors it for the
+                      // live figures only, the server recomputes on save.
+                      $discountType  = ($old['discount_type'] ?? 'percent') === 'amount' ? 'amount' : 'percent';
+                      $discountValue = (string) ($old['discount_value'] ?? ''); ?>
+                <div class="d-flex justify-content-between text-secondary small pb-2">
+                  <span><?= t('inv.subtotal') ?>:</span>
+                  <span id="invoiceSubtotal"><?= e(currency_symbol($currency)) ?> 0.00</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-center gap-2 pb-2 border-bottom">
+                  <label for="invoice_discount" class="text-secondary small mb-0 text-nowrap"><?= t('inv.discount') ?>:</label>
+                  <div class="input-group input-group-sm ds-discount-group">
+                    <input type="text" inputmode="decimal" class="form-control text-end <?= $bad('discount_value') ?>"
+                           id="invoice_discount" name="discount_value" value="<?= e($discountValue) ?>"
+                           placeholder="0" form="invoiceMainForm" data-discount-value>
+                    <input type="hidden" name="discount_type" value="<?= $discountType ?>" form="invoiceMainForm" data-discount-type>
+                    <button type="button" class="btn btn-outline-secondary <?= $discountType === 'percent' ? 'active' : '' ?>" data-discount-set="percent">%</button>
+                    <button type="button" class="btn btn-outline-secondary <?= $discountType === 'amount' ? 'active' : '' ?>" data-discount-set="amount"><?= e(currency_symbol($currency)) ?></button>
+                  </div>
+                </div>
+                <?php if (isset($errors['discount_value'])): ?>
+                  <div class="text-danger small pt-1"><?= e($errors['discount_value']) ?></div>
+                <?php endif; ?>
+                <div class="d-flex justify-content-between text-secondary small pt-2" id="invoiceDiscountRow" hidden>
+                  <span><?= t('inv.discount_applied') ?>:</span>
+                  <span id="invoiceDiscountAmount">&minus; <?= e(currency_symbol($currency)) ?> 0.00</span>
+                </div>
+                <div class="d-flex justify-content-between text-secondary small pt-2">
                   <span><?= t('inv.vat') ?> (<?= e($vatRateDisplay) ?>%):</span>
                   <span id="invoiceVat"><?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
-                <div class="d-flex justify-content-between fw-semibold pt-2">
+                <div class="d-flex justify-content-between fw-semibold pt-2 border-top mt-2">
                   <span><?= t('inv.grand_total') ?>:</span>
                   <span id="invoiceGrandTotal"><?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
@@ -550,6 +580,11 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script()
 
   const container   = document.getElementById('invoiceItems');
   const grandTotalEl = document.getElementById('invoiceGrandTotal');
+  const subtotalEl   = document.getElementById('invoiceSubtotal');
+  const discountRow  = document.getElementById('invoiceDiscountRow');
+  const discountAmtEl = document.getElementById('invoiceDiscountAmount');
+  const discountValueEl = document.querySelector('[data-discount-value]');
+  const discountTypeEl  = document.querySelector('[data-discount-type]');
   const vatEl        = document.getElementById('invoiceVat');
   const products    = JSON.parse(container.dataset.products);
   const units       = JSON.parse(container.dataset.units);
@@ -675,12 +710,32 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script()
     container.querySelectorAll('[data-item-row]').forEach((row) => {
       sum += parseFloat(row.querySelector('[data-item-line-total]').value) || 0;
     });
-    // sum is already VAT-inclusive (see the org.vat_rate docblock note above)
+    subtotalEl.textContent = currencySym + ' ' + sum.toFixed(2);
+
+    // Discount (4.135) — Invoice::applyDiscount() in JS: percent of the
+    // subtotal or a flat amount, never below zero. Display only; the server
+    // recomputes from the posted type/value on save.
+    const dv   = parseFloat(discountValueEl.value) || 0;
+    const off  = discountTypeEl.value === 'percent' ? sum * dv / 100 : dv;
+    const total = Math.max(0, sum - off);
+    discountRow.hidden = !(dv > 0);
+    discountAmtEl.textContent = '\u2212 ' + currencySym + ' ' + Math.min(off, sum).toFixed(2);
+
+    // total is already VAT-inclusive (see the org.vat_rate docblock note above)
     // — this extracts how much of it is VAT, it doesn't add anything on top:
     // vat = total * rate / (100 + rate), not total * rate / 100.
-    vatEl.textContent = currencySym + ' ' + (sum * (vatRate / (100 + vatRate))).toFixed(2);
-    grandTotalEl.textContent = currencySym + ' ' + sum.toFixed(2);
+    vatEl.textContent = currencySym + ' ' + (total * (vatRate / (100 + vatRate))).toFixed(2);
+    grandTotalEl.textContent = currencySym + ' ' + total.toFixed(2);
   }
+
+  discountValueEl.addEventListener('input', updateGrandTotal);
+  document.querySelectorAll('[data-discount-set]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      discountTypeEl.value = btn.dataset.discountSet;
+      document.querySelectorAll('[data-discount-set]').forEach((b) => b.classList.toggle('active', b === btn));
+      updateGrandTotal();
+    });
+  });
 
   function addRow(values) {
     container.insertAdjacentHTML('beforeend', rowHtml());

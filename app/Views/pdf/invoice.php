@@ -52,6 +52,15 @@ if ($customerTaxId === '0') {
 // vat = total * rate / (100 + rate), not total * rate / 100.
 $vatRate   = (float) ($org['vat_rate'] ?? 18);
 $vatAmount = (float) $invoice['total'] * $vatRate / (100 + $vatRate);
+// Discount (4.135): the subtotal is Σ lines, the stored total is what's
+// left after the discount — shown as two extra lines only when a discount
+// exists, so an undiscounted invoice looks exactly as it did.
+$subtotal    = \App\Models\Invoice::subtotal($items);
+$discountOff = round($subtotal - (float) $invoice['total'], 2);
+$hasDiscount = (float) $invoice['discount_value'] > 0 && $discountOff > 0;
+$discountLabel = t('inv.discount') . ((string) $invoice['discount_type'] === 'percent'
+    ? ' (' . rtrim(rtrim(number_format((float) $invoice['discount_value'], 2, '.', ''), '0'), '.') . '%)'
+    : '');
 ?>
 <!DOCTYPE html>
 <html>
@@ -265,6 +274,16 @@ $vatAmount = (float) $invoice['total'] * $vatRate / (100 + $vatRate);
       <td class="summary-wrap-spacer"></td>
       <td class="summary-wrap">
         <table class="summary-table">
+          <?php if ($hasDiscount): ?>
+          <tr>
+            <td class="summary-label"><?= t('inv.subtotal') ?>:</td>
+            <td class="summary-value"><?= e(money($subtotal, $org['currency'])) ?></td>
+          </tr>
+          <tr>
+            <td class="summary-label"><?= e($discountLabel) ?>:</td>
+            <td class="summary-value">&minus; <?= e(money($discountOff, $org['currency'])) ?></td>
+          </tr>
+          <?php endif; ?>
           <tr>
             <td class="summary-label"><?= t('inv.vat') ?>:</td>
             <td class="summary-value"><?= e(money($vatAmount, $org['currency'])) ?></td>
