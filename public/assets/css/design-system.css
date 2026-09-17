@@ -384,6 +384,11 @@ details.card { interpolate-size: allow-keywords; }
 .ds-discount-group .form-control { min-width: 4.5rem; }
 .ds-discount-group .btn { padding-inline: .6rem; }
 
+/* A line in the invoice form's "this customer's invoices" panel (4.136) —
+   each is a link to that invoice's edit page; the hover is the only cue,
+   so it is a clear one. */
+.ds-invoice-link:hover { color: var(--bs-primary) !important; }
+
 /* A .ds-card wrapped in this — dashboard.php's stat cards — lifts on hover to read as clickable. */
 .ds-card-link {
   display: block;

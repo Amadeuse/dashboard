@@ -284,10 +284,12 @@ $discountLabel = t('inv.discount') . ((string) $invoice['discount_type'] === 'pe
             <td class="summary-value">&minus; <?= e(money($discountOff, $org['currency'])) ?></td>
           </tr>
           <?php endif; ?>
+          <?php if ($invoice['show_vat']): // 4.136 — the invoice's own switch ?>
           <tr>
             <td class="summary-label"><?= t('inv.vat') ?>:</td>
             <td class="summary-value"><?= e(money($vatAmount, $org['currency'])) ?></td>
           </tr>
+          <?php endif; ?>
         </table>
         <table class="total-table">
           <tr>

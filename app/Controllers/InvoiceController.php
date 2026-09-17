@@ -61,7 +61,7 @@ final class InvoiceController extends Controller
                     'invoice_id'      => (string) $editId,
                     'customer_id'     => (string) $invoice['customer_id'],
                     'document_state'  => (string) $invoice['document_state'],
-                    'is_zero'         => $invoice['is_zero'] ? 1 : 0,
+                    'show_vat'        => $invoice['show_vat'] ? 1 : 0,
                     'is_recurring'    => $invoice['is_recurring'] ? 1 : 0,
                     'notes'           => (string) ($invoice['notes'] ?? ''),
                     'discount_type'   => (string) ($invoice['discount_type'] ?? 'percent'),
@@ -113,6 +113,7 @@ final class InvoiceController extends Controller
         $invoicesByCustomer = [];
         foreach (Invoice::all(Auth::invoiceScopeUserIds()) as $inv) {
             $invoicesByCustomer[(int) $inv['customer_id']][] = [
+                'id'     => (int) $inv['id'],
                 'number' => Invoice::number($inv, $invoicePrefix),
                 'total'  => number_format((float) $inv['total'], 2),
             ];
@@ -634,7 +635,7 @@ final class InvoiceController extends Controller
             'duplicate_of'    => (string) $sourceId,
             'customer_id'     => (string) $invoice['customer_id'],
             'document_state'  => Invoice::DOCUMENT_STATES[0],
-            'is_zero'         => $invoice['is_zero'] ? 1 : 0,
+            'show_vat'        => $invoice['show_vat'] ? 1 : 0,
             'is_recurring'    => $invoice['is_recurring'] ? 1 : 0,
             'notes'           => (string) ($invoice['notes'] ?? ''),
             'discount_type'   => (string) ($invoice['discount_type'] ?? 'percent'),

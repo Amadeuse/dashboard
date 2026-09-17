@@ -117,10 +117,12 @@ $uploadUrl      = '/assets/uploads/organization/';
           <span>&minus; <?= e(money($discountOff, $org['currency'])) ?></span>
         </div>
       <?php endif; ?>
+      <?php if ($invoice['show_vat']): ?>
       <div class="d-flex justify-content-between small text-secondary mb-2">
         <span><?= t('inv.vat') ?> (<?= e($vatRateDisplay) ?>%):</span>
         <span><?= e(money($vatAmount, $org['currency'])) ?></span>
       </div>
+      <?php endif; ?>
       <div class="d-flex justify-content-between fw-bold text-primary fs-5">
         <span><?= t('inv.grand_total') ?>:</span>
         <span><?= e(money((float) $invoice['total'], $org['currency'])) ?></span>

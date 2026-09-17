@@ -273,7 +273,7 @@ return [
     'inv.status_label'        => 'ინვოისის სტატუსი',
     'inv.status_draft'        => 'პირველადი',
     'inv.status_final'        => 'საბოლოო',
-    'inv.flag_zero'           => 'ნულოვანი',
+    'inv.show_vat'            => 'დღგ-ს გამოჩენა',
     'inv.flag_recurring'      => 'განმეორებადი',
     'inv.customer_invoices'       => 'დამკვეთის ინვოისები',
     'inv.customer_invoices_empty' => 'ინვოისები არ მოიძებნა.',

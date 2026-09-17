@@ -273,7 +273,7 @@ return [
     'inv.status_label'        => 'Invoice status',
     'inv.status_draft'        => 'Draft',
     'inv.status_final'        => 'Final',
-    'inv.flag_zero'           => 'Zero',
+    'inv.show_vat'            => 'Show VAT',
     'inv.flag_recurring'      => 'Recurring',
     'inv.customer_invoices'       => "Customer's invoices",
     'inv.customer_invoices_empty' => 'No invoices found.',

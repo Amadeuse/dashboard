@@ -289,7 +289,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
                   <span><?= t('inv.discount_applied') ?>:</span>
                   <span id="invoiceDiscountAmount">&minus; <?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
-                <div class="d-flex justify-content-between text-secondary small pt-2">
+                <div class="d-flex justify-content-between text-secondary small pt-2" id="invoiceVatRow">
                   <span><?= t('inv.vat') ?> (<?= e($vatRateDisplay) ?>%):</span>
                   <span id="invoiceVat"><?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
@@ -423,8 +423,12 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
         <?php endforeach; ?>
 
         <div class="form-check form-switch mt-1">
-          <input class="form-check-input" type="checkbox" id="invoice_zero" name="is_zero" form="invoiceMainForm" <?= !empty($old['is_zero']) ? 'checked' : '' ?>>
-          <label class="form-check-label" for="invoice_zero"><?= t('inv.flag_zero') ?></label>
+          <?php // show_vat (4.136): checked by default on a fresh form; after a
+                // failed submit or on edit it follows what was posted/stored.
+                // A checkbox is absent from POST when off, hence the isset. ?>
+          <input class="form-check-input" type="checkbox" id="invoice_show_vat" name="show_vat" form="invoiceMainForm"
+                 data-show-vat <?= ($old === [] || !empty($old['show_vat'])) ? 'checked' : '' ?>>
+          <label class="form-check-label" for="invoice_show_vat"><?= t('inv.show_vat') ?></label>
         </div>
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="invoice_recurring" name="is_recurring" form="invoiceMainForm" <?= !empty($old['is_recurring']) ? 'checked' : '' ?>>
@@ -645,8 +649,11 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script()
       customerInvoicesPanel.innerHTML = `<div class="text-secondary small text-center py-2">${escapeHtml(customerInvoicesEmptyText)}</div>`;
       return;
     }
+    // Each line links to that invoice's edit page (4.136). The id comes
+    // from the server alongside number/total; the href is built from it as
+    // a bare integer, never from anything a customer typed.
     customerInvoicesPanel.innerHTML = list.map((inv) =>
-      `<div class="d-flex justify-content-between small mb-1"><span>${escapeHtml(inv.number)}</span><span class="fw-semibold">${escapeHtml(inv.total)}</span></div>`
+      `<a href="/invoices?edit=${parseInt(inv.id, 10)}" class="d-flex justify-content-between small mb-1 text-decoration-none text-body ds-invoice-link"><span>${escapeHtml(inv.number)}</span><span class="fw-semibold">${escapeHtml(inv.total)}</span></a>`
     ).join('');
   }
 
@@ -729,6 +736,15 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script()
   }
 
   discountValueEl.addEventListener('input', updateGrandTotal);
+
+  // show_vat (4.136): the summary's VAT line follows the switch, the same
+  // way the PDF/preview will — the total is unaffected either way (prices
+  // are VAT-inclusive; this only decides whether the extracted VAT is shown).
+  const showVatEl = document.querySelector('[data-show-vat]');
+  const vatRowEl  = document.getElementById('invoiceVatRow');
+  const syncVatRow = () => { vatRowEl.hidden = !showVatEl.checked; };
+  showVatEl.addEventListener('change', syncVatRow);
+  syncVatRow();
   document.querySelectorAll('[data-discount-set]').forEach((btn) => {
     btn.addEventListener('click', () => {
       discountTypeEl.value = btn.dataset.discountSet;

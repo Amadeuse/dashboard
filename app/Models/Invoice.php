@@ -199,7 +199,7 @@ final class Invoice
     }
 
     /**
-     * @param array{customer_id:string,document_state:string,is_zero:int,is_recurring:int,notes:string,items:list<array{product_id:string,unit_id:string,quantity:string,unit_price:string}>} $clean
+     * @param array{customer_id:string,document_state:string,show_vat:int,is_recurring:int,notes:string,items:list<array{product_id:string,unit_id:string,quantity:string,unit_price:string}>} $clean
      * @param string|null $expectedUpdatedAt for an edit: the `updated_at` the
      *   form was loaded with (a hidden field — see invoices.php). Ignored
      *   when $editingId is null (a brand new row has nothing to conflict with).
@@ -264,10 +264,10 @@ final class Invoice
                 return null;
             }
 
-            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, discount_type = ?, discount_value = ?, document_state = ?, is_zero = ?, is_recurring = ?, notes = ? WHERE id = ?')
+            $conn->prepare('UPDATE invoices SET customer_id = ?, total = ?, discount_type = ?, discount_value = ?, document_state = ?, show_vat = ?, is_recurring = ?, notes = ? WHERE id = ?')
                 ->execute([
                     (int) $clean['customer_id'], $total, $clean['discount_type'], $clean['discount_value'], $clean['document_state'],
-                    $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $editingId,
+                    $clean['show_vat'], $clean['is_recurring'], $clean['notes'], $editingId,
                 ]);
             $conn->prepare('DELETE FROM invoice_items WHERE invoice_id = ?')->execute([$editingId]);
             $invoiceId = $editingId;
@@ -280,10 +280,10 @@ final class Invoice
             $sequenceNumber = $maxSeq !== false && $maxSeq !== null ? max((int) $maxSeq + 1, (int) $startNumber) : (int) $startNumber;
 
             $conn->prepare(
-                'INSERT INTO invoices (sequence_number, customer_id, issue_date, total, discount_type, discount_value, document_state, is_zero, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                'INSERT INTO invoices (sequence_number, customer_id, issue_date, total, discount_type, discount_value, document_state, show_vat, is_recurring, notes, created_by, view_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $sequenceNumber, (int) $clean['customer_id'], date('Y-m-d'), $total, $clean['discount_type'], $clean['discount_value'],
-                $clean['document_state'], $clean['is_zero'], $clean['is_recurring'], $clean['notes'], $createdBy,
+                $clean['document_state'], $clean['show_vat'], $clean['is_recurring'], $clean['notes'], $createdBy,
                 bin2hex(random_bytes(32)),
             ]);
             $invoiceId = (int) $conn->lastInsertId();
@@ -314,7 +314,7 @@ final class Invoice
 
     /**
      * @return array{0: array<string,mixed>, 1: array<string,string>} [clean, errors]
-     *   clean = ['customer_id','document_state','is_zero','is_recurring','notes',
+     *   clean = ['customer_id','document_state','show_vat','is_recurring','notes',
      *            'items' => list of ['product_id','unit_id','quantity','unit_price']]
      *   notes is free text, no validation — an empty textarea just stores ''.
      *
@@ -334,7 +334,9 @@ final class Invoice
         $clean = [
             'customer_id'    => trim((string) ($input['customer_id'] ?? '')),
             'document_state' => $documentState,
-            'is_zero'        => isset($input['is_zero']) ? 1 : 0,
+            // A checkbox: absent when unchecked. The form renders it checked by
+            // default, so a fresh invoice shows VAT unless the user turns it off.
+            'show_vat'       => isset($input['show_vat']) ? 1 : 0,
             'is_recurring'   => isset($input['is_recurring']) ? 1 : 0,
             'notes'          => trim((string) ($input['notes'] ?? '')),
             'discount_type'  => in_array($input['discount_type'] ?? '', self::DISCOUNT_TYPES, true) ? $input['discount_type'] : 'percent',
