@@ -20,6 +20,8 @@ use App\Models\User;
  */
 final class AuthController extends Controller
 {
+    private const OTP_MAX_ATTEMPTS = 5;
+
     public function showLogin(): void
     {
         if (Auth::check()) {
@@ -70,6 +72,7 @@ final class AuthController extends Controller
             'identity' => $channel === 'sms' ? $user['phone'] : $identity,
             'hash'     => password_hash($code, PASSWORD_DEFAULT),
             'expires'  => time() + 600,
+            'attempts' => 0,
         ];
 
         $sent = $channel === 'sms'
@@ -87,6 +90,16 @@ final class AuthController extends Controller
         $code     = trim((string) ($_POST['code'] ?? ''));
         $otp      = $_SESSION['otp'] ?? null;
         $matchIdentity = $channel === 'sms' ? (Sms::normalize($identity) ?? $identity) : $identity;
+
+        // Five guesses per code, then it is gone (4.134). A six-digit code
+        // has 900 000 values and lives ten minutes; without a cap, enough
+        // parallel requests would walk through them — the code's hash sits
+        // in the guesser's own session, so nothing else was in the way.
+        // Counted before verifying, so a slow bcrypt compare can't be raced.
+        if ($otp !== null && ++$_SESSION['otp']['attempts'] > self::OTP_MAX_ATTEMPTS) {
+            unset($_SESSION['otp']);
+            $otp = null;
+        }
 
         if ($otp === null || $otp['channel'] !== $channel || $otp['identity'] !== $matchIdentity
             || $otp['expires'] < time() || !password_verify($code, $otp['hash'])

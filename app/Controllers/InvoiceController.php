@@ -255,7 +255,7 @@ final class InvoiceController extends Controller
         // locking check against the row's real updated_at.
         $expectedUpdatedAt = $editingId !== null ? (string) ($_POST['updated_at'] ?? '') : null;
 
-        [$clean, $errors] = Invoice::validate($_POST);
+        [$clean, $errors] = Invoice::validate($_POST, Auth::tenantId());
 
         // Round-trips a staged "დუბლირება" copy's own marker (see
         // invoices.php's hidden duplicate_of field, 4.95) through a failed

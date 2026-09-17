@@ -427,6 +427,23 @@ function flash(string $key, mixed $value = null): mixed
 }
 
 /** POST → redirect → GET, so a refresh never re-submits the form. */
+/**
+ * A redirect target that came from the request (a hidden "redirect" field,
+ * ?next=…), reduced to something that can only ever be a path on this site
+ * (4.134). Returns $fallback for anything else.
+ *
+ * "Starts with a slash" is not enough: "//evil.com" is a protocol-relative
+ * URL, and browsers normalise a backslash to a slash, so "/\evil.com" gets
+ * there too. The path must start with a single "/" followed by a character
+ * that is neither slash nor backslash, and carry no control characters (a
+ * CR/LF would be a header split — PHP's header() refuses those itself, but
+ * this should not be the layer that finds out).
+ */
+function ds_local_path(string $to, string $fallback): string
+{
+    return preg_match('#^/(?![/\\\\])[^\x00-\x1F\x7F]*$#', $to) ? $to : $fallback;
+}
+
 function redirect(string $to): never
 {
     header('Location: ' . $to);

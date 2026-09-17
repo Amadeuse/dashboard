@@ -146,8 +146,6 @@ final class ModuleController extends Controller
     /** Toggling from the topbar dropdown should stay on the current page. */
     private function backTo(): string
     {
-        $to = (string) ($_POST['redirect'] ?? '');
-
-        return str_starts_with($to, '/') && !str_starts_with($to, '//') ? $to : '/settings/modules';
+        return ds_local_path((string) ($_POST['redirect'] ?? ''), '/settings/modules');
     }
 }

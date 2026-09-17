@@ -288,8 +288,16 @@ final class Invoice
      *   clean = ['customer_id','document_state','is_zero','is_recurring','notes',
      *            'items' => list of ['product_id','unit_id','quantity','unit_price']]
      *   notes is free text, no validation — an empty textarea just stores ''.
+     *
+     * $ruler (4.134): every referenced row — the customer, each line's product
+     * and unit — has to be this tenant's. Existence alone was checked before,
+     * so a posted customer_id belonging to another tenant was accepted, and
+     * the invoice then JOINed and displayed that customer's name, tax id,
+     * phone, email and address on every page and PDF: a cross-tenant read
+     * through a foreign key. Units are the one table with shared rows
+     * (ruler NULL, migrations/039), so those pass for everyone.
      */
-    public static function validate(array $input): array
+    public static function validate(array $input, int $ruler): array
     {
         $documentState = (string) ($input['document_state'] ?? '');
         $documentState = in_array($documentState, self::DOCUMENT_STATES, true) ? $documentState : self::DOCUMENT_STATES[0];
@@ -303,7 +311,7 @@ final class Invoice
         ];
         $errors = [];
 
-        if (!ctype_digit($clean['customer_id']) || self::missing('customers', (int) $clean['customer_id'])) {
+        if (!ctype_digit($clean['customer_id']) || self::missing('customers', (int) $clean['customer_id'], $ruler)) {
             $errors['customer_id'] = terr('inv.err_customer_required');
         }
 
@@ -323,12 +331,12 @@ final class Invoice
                 continue; // the trailing empty row users can always type into
             }
 
-            if (!ctype_digit($productId) || self::missing('products', (int) $productId)) {
+            if (!ctype_digit($productId) || self::missing('products', (int) $productId, $ruler)) {
                 $errors['items_' . $i] = terr('inv.err_product_required');
                 continue;
             }
 
-            if (!ctype_digit($unitId) || self::missing('units', (int) $unitId)) {
+            if (!ctype_digit($unitId) || self::missing('units', (int) $unitId, $ruler, sharedAllowed: true)) {
                 $errors['items_' . $i] = terr('prod.err_unit_required');
                 continue;
             }
@@ -355,8 +363,15 @@ final class Invoice
         return [$clean, $errors];
     }
 
-    private static function missing(string $table, int $id): bool
+    /**
+     * True when no row with this id belongs to the tenant. $table is always a
+     * literal at the call sites above, never input. $sharedAllowed is for
+     * units, whose NULL-ruler rows are everyone's.
+     */
+    private static function missing(string $table, int $id, int $ruler, bool $sharedAllowed = false): bool
     {
-        return Db::all("SELECT 1 FROM `$table` WHERE id = ? LIMIT 1", [$id]) === [];
+        $where = $sharedAllowed ? '(ruler IS NULL OR ruler = ?)' : 'ruler = ?';
+
+        return Db::all("SELECT 1 FROM `$table` WHERE id = ? AND $where LIMIT 1", [$id, $ruler]) === [];
     }
 }

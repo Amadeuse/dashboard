@@ -7374,6 +7374,86 @@ Tenant 31-ის ჰეში აღდგენილია.
 იდენტური.
 
 
+### 4.134 სისტემატური უსაფრთხოების აუდიტი — 7 კატეგორია, 4 გასწორება
+
+user: „შევამოწმოთ ეგ სისტემურიც." Შვიდი კატეგორია, თითოეული
+მექანიკურად მთელ კოდზე, არა შერჩევით.
+
+| # | კატეგორია | მეთოდი | შედეგი |
+|---|---|---|---|
+| 1 | CSRF | ყველა POST-მარშრუტი → handler-ში `csrf_verify()`? | **26/26** ✓ |
+| 2 | XSS | ყველა `<?=` view-ებში, `e()`-ს გარეშე → წყარომდე მიდევნებული | **78/78** უსაფრთხო ✓ (closure-ები `e()`-ით, `number_format`, `urlencode`, `t()`, hardcoded) |
+| 3 | SQL | ყველა query ინტერპოლირებული ცვლადით | **12/12** უსაფრთხო ✓ (`FIELDS` const, placeholder-ები, ლიტერალი `$table`, int `$limit`) — მაგრამ სვიპმა #3a იპოვა |
+| 3a | **უცხო FK ინვოისში** | `Invoice::validate()` `missing()` ruler-ის გარეშე | 🔴 **გასწორდა** |
+| 4 | ატვირთვები | 3 handler: ზომა ✓, ext-whitelist ✓, random სახელი ✓ | 🟡 **SVG XSS — გასწორდა** |
+| 5 | Open redirect | `$_POST['redirect']` ყველგან | 🟡 **`/\evil.com` bypass — გასწორდა** |
+| 6 | Auth | session_regenerate ✓, reset-token sha256+expiry+hash_equals ✓, OAuth state ✓, share-token random_bytes(32)+hash_equals ✓ | 🟡 **OTP ცდების ლიმიტი — გასწორდა** |
+| 7 | Mass assignment / deploy | `$_POST` მთლიანად მოდელში? `display_errors`? `.env` docroot-ში? | არცერთი ✓ |
+
+#### 3a — უცხო დამკვეთი/პროდუქტი ინვოისში (cross-tenant read)
+
+`Invoice::validate()` `customer_id`/`item_product_id`/`item_unit_id`-ზე
+მხოლოდ **არსებობას** ამოწმებდა. Tenant 31 `customer_id=1545`-ით (tenant
+1-ის დამკვეთი) ინვოისს შექმნიდა — და ინვოისი JOIN-ით tenant 1-ის
+დამკვეთის სახელს, ს/კ-ს, ტელეფონს, ელფოსტას, მისამართს აჩვენებდა
+სიაში, ფორმაში, PDF-ში. Იგივე პროდუქტებზე (სახელი, ფასი).
+
+`validate(array $input, int $ruler)`; `missing($table, $id, $ruler,
+$sharedAllowed)` — units-ისთვის `ruler IS NULL OR ruler = ?` (039-ის
+საერთო default-ები). `Product::lookupMissing()` იგივე ფორმით — units-ს
+იქაც არ ჰქონდა.
+
+**გადამოწმებულია tenant 31-ით**: უცხო დამკვეთი → ვალიდაციის შეცდომა;
+უცხო პროდუქტი → შეცდომა; საკუთარი → შეიქმნა (id 60, წაშლილი).
+**Სისტემაში ისტორიულად 0** ინვოისია უცხო დამკვეთით — ბაგი არავის
+გამოუყენებია.
+
+#### 4 — SVG stored XSS
+
+`OrganizationController` ლოგო/ხელმოწერისთვის `svg`-ს უშვებდა. SVG-ში
+`<script>`/`onload`/`javascript:` შეიძლება იყოს; პირდაპირ გახსნისას
+(`/assets/uploads/organization/<name>.svg`) აპლიკაციის origin-ში
+სრულდება — სესიის ქურდობა. Ორმაგი დაცვა:
+- **`public/assets/uploads/.htaccess`**: `php_flag engine off` (ყველა
+  ატვირთვაზე, defence in depth) + `Content-Security-Policy: sandbox`
+  (პირდაპირ გახსნილ SVG-ს null origin და სკრიპტი არა; `<img>` უცვლელი) +
+  `nosniff`. `mod_headers` ჩართულია, `AllowOverride` მუშაობს.
+- **კოდში**: SVG-ის შიგთავსი `<script|<foreignObject|<iframe|<embed|
+  <object|javascript:|\bon[a-z]+\s*=` → უარყოფა. Dev-სერვერი
+  (`php -S`) `.htaccess`-ს არ კითხულობს — ამიტომ ორივე. Ტესტი: სუფთა
+  ლოგო (`version=`, `stroke-linejoin=`) გადის; 5 თავდასხმა უარყოფილი.
+
+#### 5 — Open redirect: `/\evil.com`
+
+`str_starts_with('/') && !str_starts_with('//')` — ბრაუზერები `\`-ს
+`/`-ად ნორმალიზებენ, ანუ `/\evil.com` → `//evil.com`. Ახალი
+**`ds_local_path($to, $fallback)`** helper-ი: `^/` + მეორე სიმბოლო არა
+`/` და არა `\` + კონტროლ-სიმბოლოები არა. 3 ადგილას (`ModuleController`,
+workshop-ის `ModuleController`, workshop-ის `InvoiceWorkflow`).
+`AGENT_PROMPT.md` §8-ში დამატებული — მოდულის ავტორმაც ეს გამოიყენოს.
+Ტესტი: 12 შემთხვევა, `//`, `/\`, `http://`, CRLF, ცარიელი, `orders` →
+fallback; `/orders?x=1`, `/m/mod/list#a` → გადის.
+
+#### 6 — OTP brute-force
+
+6 ციფრი (900k), 10 წუთი, hash-ი თავდამსხმელის საკუთარ სესიაში,
+**ცდების ლიმიტი არა**. `password_verify` ~50ms-ს ხარჯავს, მაგრამ 100
+პარალელური მოთხოვნით 10 წუთში გადაიხედებოდა. `OTP_MAX_ATTEMPTS = 5`,
+`attempts` სესიაში, **verify-მდე** ითვლება (bcrypt-ის race არ არის);
+მე-6 ცდაზე კოდი იშლება.
+
+#### Რაც **არ** გასწორდა (გადაწყვეტილება user-ისაა)
+
+**პაროლით შესვლის lockout** — არ არსებობს. bcrypt ანელებს, მაგრამ
+თროთლი არაა. Სესიური მრიცხველი უსარგებლოა (თავდამსხმელი სესიას
+ანულებს) — სჭირდება DB-ცხრილი (`login_attempts`: email/IP, count,
+until). Ეს ფუნქციაა, არა ერთხაზიანი — ცალკე გადაწყვეტილება.
+
+**გადამოწმებულია ცოცხლად**: 10 გვერდი (SuperUser → tenant 1) — ყველა
+200, სუფთა. Workshop სინქრონირებული (`app/Core` იდენტური), InvoiceWorkflow
+**13/13**. Tenant 31-ის ჰეში აღდგენილი, სატესტო ინვოისი წაშლილი.
+
+
 ## 5. კონვენციები
 
 - **პასუხები ქართულად** — მომხმარებელმა ცალსახად მოითხოვა.

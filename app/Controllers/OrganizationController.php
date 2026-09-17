@@ -107,6 +107,17 @@ final class OrganizationController extends Controller
             return null;
         }
 
+        // SVG is the one allowed type that is a document, not a bitmap: it
+        // can carry <script>, event handlers and embedded frames, and opened
+        // directly it would run them in this site's origin (4.134). Reject
+        // anything a logo has no business containing. Belt to the braces of
+        // uploads/.htaccess's CSP sandbox, which the php -S dev server does
+        // not apply.
+        if ($ext === 'svg' && preg_match('/<script|<foreignObject|<iframe|<embed|<object|javascript:|\bon[a-z]+\s*=/i', (string) file_get_contents($file['tmp_name']))) {
+            $errors[$field] = terr('org.err_image_type');
+            return null;
+        }
+
         if (!is_dir(self::UPLOAD_DIR)) {
             mkdir(self::UPLOAD_DIR, 0755, true);
         }

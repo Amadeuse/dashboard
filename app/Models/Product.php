@@ -83,7 +83,7 @@ final class Product
             $errors['name'] = terr('cust.err_too_long', 255);
         }
 
-        if (!ctype_digit($clean['unit_id']) || self::lookupMissing('units', (int) $clean['unit_id'])) {
+        if (!ctype_digit($clean['unit_id']) || self::lookupMissing('units', (int) $clean['unit_id'], $ruler, sharedAllowed: true)) {
             $errors['unit_id'] = terr('prod.err_unit_required');
         }
 
@@ -98,14 +98,17 @@ final class Product
         return [$clean, $errors];
     }
 
-    /** $ruler, when given, also requires the row to belong to that tenant (product_type_id) — units has no ruler column, so it's left unfiltered there. */
-    private static function lookupMissing(string $table, int $id, ?int $ruler = null): bool
+    /**
+     * True when no row with this id belongs to the tenant. $sharedAllowed is
+     * for units, whose NULL-ruler rows (migrations/039) are everyone's; a
+     * product type is always one tenant's own. Same shape as
+     * Invoice::missing() — $table is a literal at every call site.
+     */
+    private static function lookupMissing(string $table, int $id, int $ruler, bool $sharedAllowed = false): bool
     {
-        if ($ruler === null) {
-            return Db::all("SELECT 1 FROM `$table` WHERE id = ? LIMIT 1", [$id]) === [];
-        }
+        $where = $sharedAllowed ? '(ruler IS NULL OR ruler = ?)' : 'ruler = ?';
 
-        return Db::all("SELECT 1 FROM `$table` WHERE id = ? AND ruler = ? LIMIT 1", [$id, $ruler]) === [];
+        return Db::all("SELECT 1 FROM `$table` WHERE id = ? AND $where LIMIT 1", [$id, $ruler]) === [];
     }
 
     /** Column order for the prepared statement, matching self::FIELDS. */
