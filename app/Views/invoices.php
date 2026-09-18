@@ -285,7 +285,7 @@ $itemRow = static function (int $i, array $row, ?string $err) use ($products, $u
                 <?php if (isset($errors['discount_value'])): ?>
                   <div class="text-danger small pt-1"><?= e($errors['discount_value']) ?></div>
                 <?php endif; ?>
-                <div class="d-flex justify-content-between text-secondary small pt-2" id="invoiceDiscountRow" hidden>
+                <div class="d-flex justify-content-between text-secondary small pt-2 d-none" id="invoiceDiscountRow">
                   <span><?= t('inv.discount_applied') ?>:</span>
                   <span id="invoiceDiscountAmount">&minus; <?= e(currency_symbol($currency)) ?> 0.00</span>
                 </div>
@@ -725,7 +725,7 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script()
     const dv   = parseFloat(discountValueEl.value) || 0;
     const off  = discountTypeEl.value === 'percent' ? sum * dv / 100 : dv;
     const total = Math.max(0, sum - off);
-    discountRow.hidden = !(dv > 0);
+    discountRow.classList.toggle('d-none', !(dv > 0)); // same d-flex-vs-hidden reason as syncVatRow
     discountAmtEl.textContent = '\u2212 ' + currencySym + ' ' + Math.min(off, sum).toFixed(2);
 
     // total is already VAT-inclusive (see the org.vat_rate docblock note above)
@@ -742,7 +742,9 @@ $scripts = ds_invoice_preview_script() . ds_share_link_script()
   // are VAT-inclusive; this only decides whether the extracted VAT is shown).
   const showVatEl = document.querySelector('[data-show-vat]');
   const vatRowEl  = document.getElementById('invoiceVatRow');
-  const syncVatRow = () => { vatRowEl.hidden = !showVatEl.checked; };
+  // d-none, not the hidden attribute: Bootstrap's .d-flex{display:flex!important}
+  // is declared after [hidden] and would win; .d-none is declared last.
+  const syncVatRow = () => { vatRowEl.classList.toggle('d-none', !showVatEl.checked); };
   showVatEl.addEventListener('change', syncVatRow);
   syncVatRow();
   document.querySelectorAll('[data-discount-set]').forEach((btn) => {

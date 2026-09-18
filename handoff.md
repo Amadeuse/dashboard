@@ -7544,6 +7544,16 @@ class="… ds-invoice-link">`-ად აწყობს (href მხოლოდ
 - **Ინვოისი 62** (tenant 1, 180.00, 2026-09-18 01:35) ჩემი **არ** არის —
   user-ის საკუთარი ტესტი, ხელუხლებელი
 
+**Follow-up (იმავე დღეს)**: user-მა შენიშნა, რომ ფორმაში გადამრთველი
+ხაზს **არ** მალავდა. Მიზეზი: `hidden` ატრიბუტი `d-flex` ხაზზე —
+Bootstrap-ის `.d-flex{display:flex!important}` `[hidden]{display:none!important}`-ის
+შემდეგაა და იგებს. Ჩემი წინა ტესტი `row.hidden`-ს ამოწმებდა, არა
+computed `display`-ს. Გასწორება: ორივე ხაზი (`#invoiceVatRow`,
+`#invoiceDiscountRow` — იმავე ბაგით) `d-none` კლასით იმართება (ის
+display-utility-ებში ბოლოა). Გადამოწმებული `getComputedStyle().display`-ით:
+flex→none→flex. **Წესი**: `d-flex`/`d-block` ელემენტს `hidden`-ით ვერ
+დამალავ — `d-none`.
+
 
 ## 5. კონვენციები
 
